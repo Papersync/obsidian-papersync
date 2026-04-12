@@ -1,90 +1,87 @@
-# Obsidian Sample Plugin
+# PaperSynced for Obsidian
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+Syncs handwritten scans from [PaperSynced](https://github.com/papersynced) mobile app into your Obsidian vault as markdown notes.
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+One tap on your phone, one note in your vault, forty-five seconds. No typing, no backend, no third party reads your notes.
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## How it works
 
-## First time developing plugins?
+1. **Capture** handwritten notes with the PaperSynced mobile app
+2. The app converts them to markdown using your own LLM API key (BYOK)
+3. Scans are saved to your Google Drive or iCloud Drive
+4. **This plugin** picks them up and creates vault notes automatically
 
-Quick starting guide for new plugin devs:
+## Features
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+- Google Drive polling (30s interval) or iCloud Drive folder watching
+- Configurable note template with frontmatter (Dataview/Bases-ready)
+- Embedded scan images in your vault
+- Append-only: multiple scans on the same day go into the same note
+- Status bar indicator + ribbon icon for force-sync
+- OAuth PKCE for Google Drive (no client secret needed)
+- iCloud path auto-detection on macOS
 
-## Releasing new releases
+## Installation
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+### BRAT (recommended during registry review)
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) in Obsidian
+2. Add this repo: `papersynced/obsidian-papersynced`
+3. Enable PaperSynced in Community Plugins
 
-## Adding your plugin to the community plugin list
+### Community Plugin Registry
 
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
+Search "PaperSynced" in Obsidian Settings > Community Plugins > Browse (available after registry approval).
 
-## How to use
+### Manual
 
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
+Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/papersynced/obsidian-papersynced/releases/latest) into `<vault>/.obsidian/plugins/obsidian-papersynced/`.
 
-## Manually installing the plugin
+## Setup
 
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
+1. Enable the plugin
+2. Settings will open automatically on first run
+3. Choose your sync backend:
+   - **Google Drive**: Click "Connect" and authorize with your Google account
+   - **iCloud Drive**: The plugin auto-detects your iCloud folder on macOS
+4. Configure your note template and target folder
+5. Scans start syncing automatically
 
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
+## Template Variables
 
-## Funding URL
+| Variable | Description | Example |
+|---|---|---|
+| `{{date}}` | Full ISO 8601 timestamp | `2026-04-12T14:30:00.000Z` |
+| `{{date_short}}` | Date only | `2026-04-12` |
+| `{{confidence}}` | AI confidence score (0-100) | `87` |
+| `{{provider}}` | LLM provider used | `claude` |
+| `{{model}}` | Model name | `claude-sonnet-4` |
+| `{{image}}` | Obsidian image embed | `![[attachments/papersynced/scan.jpg]]` |
+| `{{markdown}}` | Converted markdown content | (your handwritten text) |
 
-You can include funding URLs where people who use your plugin can financially support it.
+## Privacy
 
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
+- The plugin stores **zero LLM API keys** (all AI runs on your phone)
+- Google Drive: one OAuth token stored in your OS keychain via Obsidian's Secret Storage API
+- iCloud: no authentication needed (local filesystem)
+- No telemetry, no analytics, no outbound requests except to Google APIs
+- MIT licensed, fully open source
 
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+## Requirements
+
+- Obsidian v1.11.4 or later (for Secret Storage API)
+- PaperSynced mobile app installed and configured
+- Google Drive or iCloud Drive account matching your mobile app setup
+
+## Development
+
+```bash
+npm install
+npm run dev      # watch mode
+npm test         # run tests
+npm run build    # production build
 ```
 
-If you have multiple URLs, you can also do:
+## License
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
-```
-
-## API Documentation
-
-See https://docs.obsidian.md
+MIT

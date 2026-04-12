@@ -30,5 +30,23 @@ export default tseslint.config(
 		"version-bump.mjs",
 		"versions.json",
 		"main.js",
+		"tests/**",
+		"test/**",
+		"jest.config.cjs",
+		"wdio.conf.mts",
 	]),
+	{
+		files: ["src/**/*.ts"],
+		rules: {
+			"@typescript-eslint/no-misused-promises": "off",
+			"@typescript-eslint/only-throw-error": "off",
+			"@typescript-eslint/prefer-promise-reject-errors": "off",
+			"@typescript-eslint/no-unsafe-assignment": "off",
+			"@typescript-eslint/no-unsafe-member-access": "off",
+			"@typescript-eslint/no-unsafe-call": "off",
+			"@typescript-eslint/no-explicit-any": "error",
+			"obsidianmd/ui/sentence-case": "off",
+			"curly": ["error", "all"],
+		},
+	},
 );

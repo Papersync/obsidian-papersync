@@ -1,8 +1,27 @@
-/*
+.papersynced-template-container {
+	margin-top: 8px;
+	margin-bottom: 16px;
+}
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.papersynced-template-editor {
+	width: 100%;
+	min-height: 280px;
+	font-family: var(--font-monospace);
+	font-size: var(--font-smaller);
+	line-height: 1.5;
+	padding: 12px;
+	resize: vertical;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 4px;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	tab-size: 2;
+	white-space: pre;
+	overflow-wrap: normal;
+	overflow-x: auto;
+}
 
-If your plugin does not need CSS, delete this file.
-
-*/
+.papersynced-template-editor:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
