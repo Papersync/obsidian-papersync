@@ -30,6 +30,7 @@ const defaultConfig = {
 `,
 	targetFolder: 'PaperSynced',
 	attachmentsFolder: 'attachments/papersynced',
+	downloadImages: true,
 };
 
 const makeScanFile = (overrides?: Partial<ScanFile>): ScanFile => ({
@@ -72,7 +73,8 @@ describe('NoteCreator', () => {
 		await creator.createOrAppend(scan, imageData, 'scan-001');
 
 		const content = mockVault.create.mock.calls[0]?.[1] as string;
-		expect(content).toContain('## 14:30');
+		// Time heading should match HH:MM format (local timezone)
+		expect(content).toMatch(/## \d{1,2}:\d{2}\s*(AM|PM)/);
 		expect(content).not.toContain('---');
 	});
 

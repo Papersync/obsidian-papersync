@@ -25,3 +25,31 @@
 	border-color: var(--interactive-accent);
 	outline: none;
 }
+
+.papersynced-sub-setting {
+	margin-left: 20px;
+	border-left: 2px solid var(--background-modifier-border);
+	padding-left: 12px;
+}
+
+.papersynced-template-desc {
+	margin-bottom: 8px;
+}
+
+.papersynced-var-table {
+	font-size: var(--font-smaller);
+	border-collapse: collapse;
+	width: 100%;
+	margin-top: 4px;
+}
+
+.papersynced-var-table td {
+	padding: 2px 8px 2px 0;
+	vertical-align: top;
+}
+
+.papersynced-var-token {
+	font-family: var(--font-monospace);
+	color: var(--text-accent);
+	white-space: nowrap;
+}

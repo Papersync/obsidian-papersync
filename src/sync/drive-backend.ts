@@ -19,6 +19,7 @@ interface DriveFile {
 
 interface DriveListResponse {
 	files: DriveFile[];
+	nextPageToken?: string;
 }
 
 export class DriveBackend implements SyncBackend {
@@ -85,16 +86,27 @@ export class DriveBackend implements SyncBackend {
 			query += ` and createdTime > '${this.lastSyncTimestamp}'`;
 			logger.info(`Filtering for files created after ${this.lastSyncTimestamp}`);
 		}
-		const url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime)&orderBy=createdTime&pageSize=100`;
-		logger.info(`Listing files: ${url.slice(0, 120)}...`);
 
-		const response = await requestUrl({
-			url,
-			headers: { Authorization: `Bearer ${token}` },
-		});
+		const allFiles: DriveFile[] = [];
+		let pageToken: string | undefined;
 
-		const listData = response.json as DriveListResponse;
-		const allFiles: DriveFile[] = listData.files ?? [];
+		do {
+			let url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime),nextPageToken&orderBy=createdTime&pageSize=100`;
+			if (pageToken) {
+				url += `&pageToken=${encodeURIComponent(pageToken)}`;
+			}
+
+			const response = await requestUrl({
+				url,
+				headers: { Authorization: `Bearer ${token}` },
+			});
+
+			const listData = response.json as DriveListResponse;
+			allFiles.push(...(listData.files ?? []));
+			pageToken = listData.nextPageToken;
+		} while (pageToken);
+
+		logger.info(`Drive returned ${allFiles.length} files total`);
 		const jsonFiles = allFiles.filter((f) => f.name.endsWith('.json'));
 		const imageFiles = allFiles.filter((f) => f.name.endsWith('.jpg') || f.name.endsWith('.jpeg') || f.name.endsWith('.png'));
 		logger.info(`Drive returned ${allFiles.length} files (${jsonFiles.length} JSON, ${imageFiles.length} images)`);
@@ -152,10 +164,10 @@ export class DriveBackend implements SyncBackend {
 		return response.arrayBuffer;
 	}
 
-	async markSynced(ref: ScanReference): Promise<void> {
+	async markSynced(ref: ScanReference, scanData?: ScanFile): Promise<void> {
 		const token = await this.oauthManager.getValidAccessToken();
 
-		const scan = await this.fetchScan(ref);
+		const scan = scanData ?? await this.fetchScan(ref);
 		const updated = { ...scan, synced: true };
 
 		await requestUrl({

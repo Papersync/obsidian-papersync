@@ -10,12 +10,13 @@ export interface NoteCreatorConfig {
 	templateString: string;
 	targetFolder: string;
 	attachmentsFolder: string;
+	downloadImages: boolean;
 }
 
 export class NoteCreator {
 	private app: App;
 	private vault: Vault;
-	private config: NoteCreatorConfig;
+	readonly config: NoteCreatorConfig;
 
 	constructor(app: App, vault: Vault, config: NoteCreatorConfig) {
 		this.app = app;
@@ -25,23 +26,29 @@ export class NoteCreator {
 
 	async createOrAppend(
 		scanFile: ScanFile,
-		imageData: ArrayBuffer,
+		imageData: ArrayBuffer | null,
 		scanId: string
 	): Promise<string> {
-		const imagePath = await saveImageToVault(
-			this.vault,
-			imageData,
-			this.config.attachmentsFolder,
-			scanId
-		);
+		let imagePath = '';
+		if (this.config.downloadImages && imageData) {
+			imagePath = await saveImageToVault(
+				this.vault,
+				imageData,
+				this.config.attachmentsFolder,
+				scanId
+			);
+		}
 
 		const createdDate = new Date(scanFile.createdAt);
 		const dailyConfig = getDailyNotesConfig(this.app);
 
 		const dateShort = formatDateWithPattern(createdDate, dailyConfig.format);
-		const hours = String(createdDate.getUTCHours()).padStart(2, '0');
-		const minutes = String(createdDate.getUTCMinutes()).padStart(2, '0');
-		const time = `${hours}:${minutes}`;
+		const h24 = createdDate.getHours();
+		const minutes = String(createdDate.getMinutes()).padStart(2, '0');
+		const time24 = `${String(h24).padStart(2, '0')}:${minutes}`;
+		const h12 = h24 % 12 || 12;
+		const ampm = h24 < 12 ? 'AM' : 'PM';
+		const time12 = `${h12}:${minutes} ${ampm}`;
 		const rawFolder = this.config.targetFolder || dailyConfig.folder;
 		const noteFolder = rawFolder ? formatDateWithPattern(createdDate, rawFolder) : '';
 
@@ -57,7 +64,8 @@ export class NoteCreator {
 		const context: TemplateContext = {
 			date: scanFile.createdAt,
 			date_short: dateShort,
-			time,
+			time: time12,
+			time_24h: time24,
 			confidence: scanFile.confidence,
 			provider: scanFile.provider,
 			model: scanFile.model,

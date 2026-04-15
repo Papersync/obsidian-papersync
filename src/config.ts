@@ -4,4 +4,5 @@ export const GOOGLE_SCANS_FOLDER = 'PaperSynced/scans';
 export const DEFAULT_POLL_INTERVAL_S = 30;
 export const MAX_RETRIES = 2;
 export const OAUTH_TIMEOUT_MS = 3 * 60 * 1000;
-export const DEV_MODE = true; // Set to false for production builds
+declare const __DEV_MODE__: boolean;
+export const DEV_MODE: boolean = typeof __DEV_MODE__ !== 'undefined' ? __DEV_MODE__ : false;

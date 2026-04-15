@@ -111,7 +111,7 @@ export default class PaperSyncedPlugin extends Plugin {
 			this.syncState.setStatus('error');
 		}
 
-		this.startSync();
+		void this.startSync();
 	}
 
 	async resolveTargetFolder(): Promise<void> {
@@ -123,11 +123,11 @@ export default class PaperSyncedPlugin extends Plugin {
 		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
 	}
 
-	startSync(): void {
+	async startSync(): Promise<void> {
 		this.syncEngine?.stop();
 		this.unsubscribeSyncState?.();
 
-		void this.resolveTargetFolder();
+		await this.resolveTargetFolder();
 
 		logger.info(`startSync — backendType: ${this.settings.backendType}, setupComplete: ${String(this.settings.setupComplete)}, oauthAuthenticated: ${String(this.oauthManager?.isAuthenticated)}`);
 
@@ -143,6 +143,7 @@ export default class PaperSyncedPlugin extends Plugin {
 			templateString: this.settings.templateString,
 			targetFolder: this.settings.targetFolder,
 			attachmentsFolder: this.settings.attachmentsFolder,
+			downloadImages: this.settings.downloadImages,
 		};
 
 		if (this.settings.backendType === 'drive' && this.oauthManager?.isAuthenticated) {

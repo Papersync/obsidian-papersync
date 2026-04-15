@@ -26,7 +26,7 @@ One tap on your phone, one note in your vault, forty-five seconds. No typing, no
 ### BRAT (recommended during registry review)
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) in Obsidian
-2. Add this repo: `papersynced/obsidian-papersynced`
+2. Add this repo: `Papersync/obsidian-papersynced`
 3. Enable PaperSynced in Community Plugins
 
 ### Community Plugin Registry
@@ -35,7 +35,7 @@ Search "PaperSynced" in Obsidian Settings > Community Plugins > Browse (availabl
 
 ### Manual
 
-Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/papersynced/obsidian-papersynced/releases/latest) into `<vault>/.obsidian/plugins/obsidian-papersynced/`.
+Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersynced/releases/latest) into `<vault>/.obsidian/plugins/obsidian-papersynced/`.
 
 ## Setup
 
@@ -49,15 +49,34 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 ## Template Variables
 
-| Variable | Description | Example |
-|---|---|---|
-| `{{date}}` | Full ISO 8601 timestamp | `2026-04-12T14:30:00.000Z` |
-| `{{date_short}}` | Date only | `2026-04-12` |
-| `{{confidence}}` | AI confidence score (0-100) | `87` |
-| `{{provider}}` | LLM provider used | `claude` |
-| `{{model}}` | Model name | `claude-sonnet-4` |
-| `{{image}}` | Obsidian image embed | `![[attachments/papersynced/scan.jpg]]` |
-| `{{markdown}}` | Converted markdown content | (your handwritten text) |
+| Variable         | Description                                                 | Example                                |
+| ---------------- | ----------------------------------------------------------- | -------------------------------------- |
+| `{{markdown}}`   | Converted markdown content                                  | `# Meeting Notes\n- Action items...`   |
+| `{{image_file}}` | Vault path to the scan image                                | `attachments/papersynced/scan-001.jpg` |
+| `{{time}}`       | 12-hour time with AM/PM                                     | `2:30 PM`                              |
+| `{{time_24h}}`   | 24-hour time                                                | `14:30`                                |
+| `{{separator}}`  | `---` when appending to an existing note, empty on new file | `---` or ``                            |
+| `{{date}}`       | Full ISO 8601 timestamp                                     | `2026-04-12T14:30:00.000Z`             |
+| `{{date_short}}` | Date formatted per Daily Notes setting                      | `2026-04-12`                           |
+| `{{confidence}}` | AI confidence score (0-100)                                 | `87`                                   |
+
+### Default Template
+
+```markdown
+{{separator}}
+
+## {{time}}
+
+{{markdown}}
+
+> [!abstract]- Source
+> ![[{{image_file}}]]
+```
+
+- **`{{time}}`** is 12h by default — swap with `{{time_24h}}` if you prefer 24h format
+- **`{{separator}}`** renders `---` only when appending to an existing note — keeps the first entry clean
+- **`{{image_file}}`** is a raw vault path — wrap it in `![[...]]` for an embed, or `> ![[...]]` inside a callout for collapsible
+- **Notes folder** supports date tokens (`YYYY`, `MM`, `DD`) — e.g., `Journal/YYYY/MM` creates `Journal/2026/04/`
 
 ## Privacy
 

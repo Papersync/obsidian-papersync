@@ -78,8 +78,7 @@ export class SyncEngine {
 	}
 
 	private async processBatch(refs: ScanReference[]): Promise<void> {
-		if (this.state.isSyncing) {return;}
-		this.state.setSyncing(true);
+		if (!this.state.tryStartSync()) {return;}
 
 		const unsyncedRefs = refs
 			.filter((r) => r.imagePath !== '')
@@ -105,9 +104,11 @@ export class SyncEngine {
 						return 'skipped';
 					}
 
-					const imageData = await this.backend.fetchImage(ref);
+					const imageData = this.noteCreator.config.downloadImages
+						? await this.backend.fetchImage(ref)
+						: null;
 					await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);
-					await this.backend.markSynced(ref);
+					await this.backend.markSynced(ref, scanFile);
 					return 'synced';
 				});
 
@@ -141,8 +142,9 @@ export class SyncEngine {
 	private handleOnline = (): void => {
 		logger.info('Network restored — resuming sync');
 		this.state.setStatus('idle');
+		this.backend.stop();
 		this.backend.start();
-		void this.forceSyncNow();
+		// forceSyncNow not needed — backend.start() triggers the first poll
 	};
 
 	private handleOffline = (): void => {

@@ -59,6 +59,7 @@ const noteConfig = {
 	templateString: '{{separator}}\n\n## {{time}}\n\n{{markdown}}\n\n> [!abstract]- Original scan\n> ![[{{image_file}}]]',
 	targetFolder: 'PaperSynced',
 	attachmentsFolder: 'attachments/papersynced',
+	downloadImages: true,
 };
 
 describe('SyncEngine integration', () => {
@@ -97,10 +98,8 @@ describe('SyncEngine integration', () => {
 	it('creates a vault note with rendered template', async () => {
 		await engine.forceSyncNow();
 
-		expect(mockVault.create).toHaveBeenCalledWith(
-			'PaperSynced/2026-04-12.md',
-			expect.stringContaining('## 14:30')
-		);
+		const createdContent = mockVault.create.mock.calls[0]?.[1] as string;
+		expect(createdContent).toMatch(/## \d{1,2}:\d{2}\s*(AM|PM)/);
 		expect(mockVault.create).toHaveBeenCalledWith(
 			'PaperSynced/2026-04-12.md',
 			expect.stringContaining('# Integration Test')

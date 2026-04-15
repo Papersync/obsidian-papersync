@@ -3,7 +3,8 @@ import { renderTemplate, TemplateContext } from '@/notes/template-engine';
 const defaultContext: TemplateContext = {
 	date: '2026-04-12T14:30:00.000Z',
 	date_short: '2026-04-12',
-	time: '14:30',
+	time: '2:30 PM',
+	time_24h: '14:30',
 	confidence: 87,
 	provider: 'claude',
 	model: 'claude-sonnet-4',
@@ -32,7 +33,7 @@ describe('renderTemplate', () => {
 > ![[{{image_file}}]]
 `;
 		const result = renderTemplate(template, defaultContext);
-		expect(result).toContain('## 14:30');
+		expect(result).toContain('## 2:30 PM');
 		expect(result).toContain('# Meeting Notes');
 		expect(result).toContain('> ![[attachments/papersynced/scan-001.jpg]]');
 	});

@@ -1,5 +1,20 @@
 describe('Template editor', function () {
+	let isConnected: boolean;
+
+	before(async function () {
+		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+		await browser.pause(1000);
+		const body = await browser.$('body');
+		const text = await body.getText();
+		isConnected = !text.includes('Connect your account');
+		await browser.keys('Escape');
+	});
+
 	beforeEach(async function () {
+		if (!isConnected) {
+			this.skip();
+			return;
+		}
 		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
 		await browser.pause(1000);
 	});
@@ -13,17 +28,14 @@ describe('Template editor', function () {
 		const textarea = await browser.$('.papersynced-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 
-		// Store original value
 		const original = await textarea.getValue();
 		expect(original.length).toBeGreaterThan(0);
 
-		// Clear and type new content
 		await textarea.clearValue();
 		await textarea.setValue('## Test\n\n{{markdown}}');
 		const newValue = await textarea.getValue();
 		expect(newValue).toContain('## Test');
 
-		// Restore original
 		await textarea.clearValue();
 		await textarea.setValue(original);
 	});
@@ -45,7 +57,6 @@ describe('Template editor', function () {
 
 		expect(await textarea.isDisplayed()).toBe(true);
 
-		// Should be full-width
 		const size = await textarea.getSize();
 		expect(size.width).toBeGreaterThan(200);
 		expect(size.height).toBeGreaterThan(100);

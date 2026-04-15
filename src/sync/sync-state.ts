@@ -60,6 +60,12 @@ export class SyncState {
 		}
 	}
 
+	tryStartSync(): boolean {
+		if (this._isSyncing) {return false;}
+		this._isSyncing = true;
+		return true;
+	}
+
 	setSyncing(syncing: boolean): void {
 		this._isSyncing = syncing;
 	}

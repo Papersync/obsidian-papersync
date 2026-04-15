@@ -14,6 +14,7 @@ export interface PluginSettings {
 	targetFolder: string;
 	attachmentsFolder: string;
 	templateString: string;
+	downloadImages: boolean;
 	debugLogging: boolean;
 	oauthExpiresAt: number;
 	oauthRefreshToken: string;
@@ -39,6 +40,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	targetFolder: '',  // resolved on first setup from daily notes config
 	attachmentsFolder: 'attachments/papersynced',
 	templateString: DEFAULT_TEMPLATE,
+	downloadImages: true,
 	debugLogging: false,
 	oauthExpiresAt: 0,
 	oauthRefreshToken: '',
@@ -80,8 +82,9 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 
 	private setSyncBusy(busy: boolean): void {
 		if (!this.syncButton) {return;}
-		this.syncButton.textContent = busy ? 'Syncing...' : 'Sync now';
-		this.syncButton.disabled = busy || !this.plugin.syncEngine;
+		const isReady = !!this.plugin.syncEngine;
+		this.syncButton.textContent = busy ? 'Syncing...' : isReady ? 'Sync now' : 'Sync now';
+		this.syncButton.disabled = busy || !isReady;
 		if (busy) {
 			this.syncButton.addClass('is-loading');
 		} else {
@@ -132,7 +135,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 						await this.plugin.oauthManager?.startAuthFlow();
 						this.plugin.settings.setupComplete = true;
 						await this.plugin.saveSettings();
-						this.plugin.startSync();
+						await this.plugin.startSync();
 						new Notice(STRINGS.SETTINGS_CONNECTED);
 					} catch (err) {
 						this.plugin.settings.backendType = 'none';
@@ -165,7 +168,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 
 					if (folderPath) {
-						this.plugin.startSync();
+						await this.plugin.startSync();
 						new Notice('iCloud sync started');
 					}
 
@@ -211,6 +214,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName('iCloud folder path')
 				.setDesc('Change the watched folder if needed.')
+				.setClass('papersynced-sub-setting')
 				.addText((text) =>
 					text
 						.setValue(this.plugin.settings.icloudFolderPath)
@@ -234,7 +238,6 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 					.onClick(asyncHandler(async () => {
 						if (!this.plugin.syncEngine || this.plugin.syncState.isSyncing) {return;}
 						this.setSyncBusy(true);
-						// Yield to browser so it paints the disabled state before the long sync
 						await new Promise((r) => setTimeout(r, 50));
 						await this.plugin.syncEngine.forceSyncNow();
 						this.setSyncBusy(false);
@@ -259,17 +262,31 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName('Attachments folder')
-			.setDesc('Subfolder in this vault for embedded scan images.')
-			.addText((text) =>
-				text
-					.setPlaceholder('attachments/papersynced')
-					.setValue(this.plugin.settings.attachmentsFolder)
-					.onChange(asyncValueHandler(async (value) => {
-						this.plugin.settings.attachmentsFolder = value;
-						await this.plugin.saveSettings();
-					}))
+			.setName('Save scan images')
+			.setDesc('Download the original scan image into your vault. If off, remove {{image_file}} from your template.')
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.downloadImages).onChange(asyncValueHandler(async (value) => {
+					this.plugin.settings.downloadImages = value;
+					await this.plugin.saveSettings();
+					this.display();
+				}))
 			);
+
+		if (this.plugin.settings.downloadImages) {
+			new Setting(containerEl)
+				.setName('Attachments folder')
+				.setDesc('Subfolder in this vault for embedded scan images.')
+				.setClass('papersynced-sub-setting')
+				.addText((text) =>
+					text
+						.setPlaceholder('attachments/papersynced')
+						.setValue(this.plugin.settings.attachmentsFolder)
+						.onChange(asyncValueHandler(async (value) => {
+							this.plugin.settings.attachmentsFolder = value;
+							await this.plugin.saveSettings();
+						}))
+				);
+		}
 
 		if (this.plugin.settings.backendType === 'drive') {
 			new Setting(containerEl)
@@ -293,12 +310,25 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 	private renderTemplateSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Note Template").setHeading();
 
-		const descEl = containerEl.createEl('p', {
-			text: 'Template for synced notes. Available variables:',
-			cls: 'setting-item-description',
-		});
-		const codeEl = descEl.createEl('code');
-		codeEl.setText('{{markdown}}, {{image_file}}, {{time}}, {{separator}}, {{date}}, {{date_short}}, {{confidence}}, {{provider}}, {{model}}');
+		const descContainer = containerEl.createDiv({ cls: 'setting-item-description papersynced-template-desc' });
+		descContainer.createEl('p', { text: 'Template for synced notes. Available variables:' });
+
+		const varList = descContainer.createEl('table', { cls: 'papersynced-var-table' });
+		const vars: Array<[string, string]> = [
+			['{{markdown}}', 'Converted text'],
+			['{{image_file}}', 'Image vault path — use ![[{{image_file}}]]'],
+			['{{time}}', '12h time (2:30 PM)'],
+			['{{time_24h}}', '24h time (14:30)'],
+			['{{separator}}', '--- on append, empty on new file'],
+			['{{date_short}}', 'Date per Daily Notes format'],
+			['{{date}}', 'Full ISO timestamp'],
+			['{{confidence}}', 'AI score (0-100)'],
+		];
+		for (const [token, desc] of vars) {
+			const row = varList.createEl('tr');
+			row.createEl('td', { text: token, cls: 'papersynced-var-token' });
+			row.createEl('td', { text: desc });
+		}
 
 		const textareaContainer = containerEl.createDiv({ cls: 'papersynced-template-container' });
 		const textarea = textareaContainer.createEl('textarea', {
@@ -339,7 +369,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 					this.plugin.settings = { ...DEFAULT_SETTINGS, backendType: keepBackend, setupComplete: keepSetup };
 					await this.plugin.saveSettings();
 					await this.plugin.resolveTargetFolder();
-					this.plugin.startSync();
+					await this.plugin.startSync();
 					new Notice('Settings reset (account kept)');
 					this.display();
 				}))

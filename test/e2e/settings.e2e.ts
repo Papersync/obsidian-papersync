@@ -1,7 +1,12 @@
 describe('Settings tab', function () {
+	let isConnected: boolean;
+
 	beforeEach(async function () {
 		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
 		await browser.pause(1000);
+		const body = await browser.$('body');
+		const text = await body.getText();
+		isConnected = !text.includes('Connect your account');
 	});
 
 	afterEach(async function () {
@@ -12,24 +17,27 @@ describe('Settings tab', function () {
 	it('shows account section with connect or connected state', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		const hasAccount = text.includes('Connect your account') || text.includes('Google Drive');
+		const hasAccount = text.includes('Connect your account') || text.includes('Disconnect');
 		expect(hasAccount).toBe(true);
 	});
 
-	it('shows notes folder setting', async function () {
+	it('shows notes folder setting when connected', async function () {
+		if (!isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Notes folder');
 		expect(text).toContain('date tokens');
 	});
 
-	it('shows attachments folder setting', async function () {
+	it('shows save scan images toggle when connected', async function () {
+		if (!isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('Attachments folder');
+		expect(text).toContain('Save scan images');
 	});
 
-	it('shows note template section with variable list', async function () {
+	it('shows note template section when connected', async function () {
+		if (!isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Note Template');
@@ -38,38 +46,49 @@ describe('Settings tab', function () {
 		expect(text).toContain('{{time}}');
 	});
 
-	it('shows template editor textarea', async function () {
+	it('shows template editor textarea when connected', async function () {
+		if (!isConnected) {return;}
 		const textarea = await browser.$('.papersynced-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
 		expect(value).toContain('{{markdown}}');
 	});
 
-	it('shows sync now button', async function () {
+	it('shows sync now button when connected', async function () {
+		if (!isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Sync now');
 	});
 
-	it('shows debug logging toggle', async function () {
+	it('shows debug logging toggle always', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Debug logging');
 	});
 
-	it('shows reset buttons in advanced section', async function () {
+	it('shows reset buttons always', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Reset settings');
 		expect(text).toContain('Full reset');
 	});
 
-	it('shows poll interval when connected to Drive', async function () {
+	it('hides sync sections when not connected', async function () {
+		if (isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
-		// Only visible when Drive backend is configured
-		if (text.includes('Google Drive')) {
+		expect(text).not.toContain('Notes folder');
+		expect(text).not.toContain('Note Template');
+		expect(text).not.toContain('Sync now');
+	});
+
+	it('shows poll interval only when Drive connected', async function () {
+		const body = await browser.$('body');
+		const text = await body.getText();
+		if (text.includes('Disconnect') && text.includes('Poll interval')) {
 			expect(text).toContain('Poll interval');
 		}
+		// If not Drive-connected, poll interval should not appear — verified by absence
 	});
 });

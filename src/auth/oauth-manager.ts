@@ -129,7 +129,9 @@ export class OAuthManager {
 
 				res.writeHead(200, { 'Content-Type': 'text/html' });
 				if (error) {
-					res.end(`<html><body><h1>Authorization failed</h1><p>${error}: ${errorDescription ?? 'Unknown error'}</p><p>You can close this window.</p></body></html>`);
+					const safeError = escapeHtml(error ?? 'Unknown');
+					const safeDesc = escapeHtml(errorDescription ?? 'Unknown error');
+					res.end(`<html><body><h1>Authorization failed</h1><p>${safeError}: ${safeDesc}</p><p>You can close this window.</p></body></html>`);
 					logger.error(`OAuth callback error: ${error} — ${errorDescription ?? 'no description'}`);
 				} else if (code) {
 					res.end('<html><body><h1>Connected!</h1><p>You can close this window and return to Obsidian.</p></body></html>');
@@ -272,6 +274,7 @@ export class OAuthManager {
 		} catch {
 			this.accessToken = null;
 			this.refreshToken = null;
+			this.onTokenChange?.('');
 			throw createSyncError('token_revoked', 'Refresh token revoked — reconnect in settings');
 		}
 	}
@@ -296,4 +299,8 @@ export class OAuthManager {
 	cleanup(): void {
 		this.stopCallbackServer();
 	}
+}
+
+function escapeHtml(str: string): string {
+	return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

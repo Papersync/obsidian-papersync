@@ -2,6 +2,7 @@ export interface TemplateContext {
 	date: string;
 	date_short: string;
 	time: string;
+	time_24h: string;
 	confidence: number;
 	provider: string;
 	model: string;
