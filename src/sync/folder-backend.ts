@@ -8,7 +8,7 @@ import { logger } from '@/utils/logger';
 
 const DEBOUNCE_MS = 500;
 
-export class ICloudBackend implements SyncBackend {
+export class FolderBackend implements SyncBackend {
 	private folderPath: string;
 	private watcher: fs.FSWatcher | null = null;
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -30,10 +30,10 @@ export class ICloudBackend implements SyncBackend {
 				}
 			});
 
-			logger.info(`iCloud watcher started on ${this.folderPath}`);
+			logger.info(`Folder watcher started on ${this.folderPath}`);
 			this.debouncedDiscovery();
 		} catch (err) {
-			logger.error(`Failed to start iCloud watcher: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Failed to start Folder watcher: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	}
 
@@ -46,7 +46,7 @@ export class ICloudBackend implements SyncBackend {
 			clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
-		logger.info('iCloud watcher stopped');
+		logger.info('Folder watcher stopped');
 	}
 
 	private debouncedDiscovery(): void {
@@ -60,7 +60,7 @@ export class ICloudBackend implements SyncBackend {
 					this.onScanDiscovered?.(refs);
 				}
 			} catch (err) {
-				logger.warn(`iCloud discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+				logger.warn(`Folder discovery failed: ${err instanceof Error ? err.message : String(err)}`);
 			}
 		}, DEBOUNCE_MS);
 	}
@@ -124,6 +124,6 @@ export class ICloudBackend implements SyncBackend {
 		const parsed = JSON.parse(content) as Record<string, unknown>;
 		parsed.synced = true;
 		await fs.promises.writeFile(ref.jsonPath, JSON.stringify(parsed, null, 2), 'utf-8');
-		logger.info(`Marked scan ${ref.id} as synced on iCloud`);
+		logger.info(`Marked scan ${ref.id} as synced on Folder`);
 	}
 }

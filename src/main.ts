@@ -1,11 +1,11 @@
 import { Notice, Plugin } from 'obsidian';
-import { DEFAULT_SETTINGS, PaperSyncedSettingTab } from '@/settings';
+import { DEFAULT_SETTINGS, PaperSyncedSettingTab, migrateSettings } from '@/settings';
 import type { PluginSettings } from '@/settings';
 import { setDebugLogging, logger } from '@/utils/logger';
 import { STRINGS } from '@/utils/strings';
 import { OAuthManager } from '@/auth/oauth-manager';
 import { DriveBackend } from '@/sync/drive-backend';
-import { ICloudBackend } from '@/sync/icloud-backend';
+import { FolderBackend } from '@/sync/folder-backend';
 import { SyncEngine } from '@/sync/sync-engine';
 import { SyncState } from '@/sync/sync-state';
 import type { SyncStateSnapshot } from '@/sync/sync-state';
@@ -81,7 +81,17 @@ export default class PaperSyncedPlugin extends Plugin {
 
 	async loadSettings(): Promise<void> {
 		const loaded = await this.loadData();
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded as Partial<PluginSettings>);
+		if (loaded && typeof loaded === 'object') {
+			const raw = loaded as Record<string, unknown>;
+			const versionBefore = raw.settingsVersion;
+			const migrated = migrateSettings(raw);
+			this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated as Partial<PluginSettings>);
+			if (versionBefore !== migrated.settingsVersion) {
+				await this.saveData(this.settings);
+			}
+		} else {
+			this.settings = { ...DEFAULT_SETTINGS };
+		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -151,11 +161,11 @@ export default class PaperSyncedPlugin extends Plugin {
 			this.syncEngine = new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState);
 			this.syncEngine.start();
 			logger.info('Drive sync started');
-		} else if (this.settings.backendType === 'icloud' && this.settings.icloudFolderPath) {
-			const backend = new ICloudBackend(this.settings.icloudFolderPath);
+		} else if (this.settings.backendType === 'folder' && this.settings.folderPath) {
+			const backend = new FolderBackend(this.settings.folderPath);
 			this.syncEngine = new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState);
 			this.syncEngine.start();
-			logger.info('iCloud sync started');
+			logger.info('Folder sync started');
 		} else {
 			logger.info('No backend configured or authenticated — sync not started');
 		}

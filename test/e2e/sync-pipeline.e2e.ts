@@ -29,8 +29,8 @@ describe('Sync pipeline E2E', function () {
 			const plugin = app.plugins.plugins['obsidian-papersynced'];
 			if (!plugin) { throw new Error('Plugin not loaded'); }
 
-			plugin.settings.backendType = 'icloud';
-			plugin.settings.icloudFolderPath = folder;
+			plugin.settings.backendType = 'folder';
+			plugin.settings.folderPath = folder;
 			plugin.settings.targetFolder = 'SyncTest';
 			plugin.settings.attachmentsFolder = 'SyncTest/attachments';
 			plugin.settings.setupComplete = true;

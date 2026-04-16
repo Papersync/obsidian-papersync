@@ -3,14 +3,14 @@ import { detectICloudScansPath } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 
-export type BackendType = 'drive' | 'icloud' | 'none';
+export type BackendType = 'drive' | 'folder' | 'none';
 
 export interface PluginSettings {
 	settingsVersion: number;
 	setupComplete: boolean;
 	backendType: BackendType;
 	drivePollInterval: number;
-	icloudFolderPath: string;
+	folderPath: string;
 	targetFolder: string;
 	attachmentsFolder: string;
 	templateString: string;
@@ -32,11 +32,11 @@ const DEFAULT_TEMPLATE = `{{separator}}
 `;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-	settingsVersion: 1,
+	settingsVersion: 2,
 	setupComplete: false,
 	backendType: 'none',
 	drivePollInterval: 30,
-	icloudFolderPath: '',
+	folderPath: '',
 	targetFolder: '',  // resolved on first setup from daily notes config
 	attachmentsFolder: 'attachments/papersynced',
 	templateString: DEFAULT_TEMPLATE,
@@ -46,6 +46,23 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	oauthRefreshToken: '',
 	lastSyncTimestamp: '',
 };
+
+export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
+	const version = typeof data.settingsVersion === 'number' ? data.settingsVersion : 0;
+
+	if (version < 2) {
+		if (data.backendType === 'icloud') {
+			data.backendType = 'folder';
+		}
+		if ('icloudFolderPath' in data) {
+			data.folderPath = data.icloudFolderPath ?? '';
+			delete data.icloudFolderPath;
+		}
+		data.settingsVersion = 2;
+	}
+
+	return data;
+}
 
 function asyncHandler(fn: () => Promise<void>): () => void {
 	return () => { fn().catch(console.error); };
@@ -111,10 +128,10 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 	private renderAccountSection(containerEl: HTMLElement): void {
 		const { backendType } = this.plugin.settings;
 		const isGoogleConnected = backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
-		const isICloudConnected = backendType === 'icloud' && this.plugin.settings.setupComplete;
+		const isFolderConnected = backendType === 'folder' && this.plugin.settings.setupComplete;
 
-		if (isGoogleConnected || isICloudConnected) {
-			this.renderConnectedState(containerEl, isGoogleConnected ? 'google' : 'icloud');
+		if (isGoogleConnected || isFolderConnected) {
+			this.renderConnectedState(containerEl, isGoogleConnected ? 'google' : 'folder');
 			return;
 		}
 
@@ -162,8 +179,8 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 						new Notice('iCloud folder not found. Enter the path manually after connecting.');
 					}
 
-					this.plugin.settings.backendType = 'icloud';
-					this.plugin.settings.icloudFolderPath = folderPath;
+					this.plugin.settings.backendType = 'folder';
+					this.plugin.settings.folderPath = folderPath;
 					this.plugin.settings.setupComplete = !!folderPath;
 					await this.plugin.saveSettings();
 
@@ -177,7 +194,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			);
 	}
 
-	private renderConnectedState(containerEl: HTMLElement, accountType: 'google' | 'icloud'): void {
+	private renderConnectedState(containerEl: HTMLElement, accountType: 'google' | 'folder'): void {
 		new Setting(containerEl).setName("Account").setHeading();
 
 		if (accountType === 'google') {
@@ -198,12 +215,12 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		} else {
 			new Setting(containerEl)
 				.setName('iCloud Drive')
-				.setDesc(`Watching: ${this.plugin.settings.icloudFolderPath}`)
+				.setDesc(`Watching: ${this.plugin.settings.folderPath}`)
 				.addButton((button) =>
 					button.setButtonText(STRINGS.SETTINGS_DISCONNECT).onClick(asyncHandler(async () => {
 						this.plugin.syncEngine?.stop();
 						this.plugin.settings.backendType = 'none';
-						this.plugin.settings.icloudFolderPath = '';
+						this.plugin.settings.folderPath = '';
 						this.plugin.settings.setupComplete = false;
 						await this.plugin.saveSettings();
 						new Notice('Disconnected from iCloud');
@@ -217,9 +234,9 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				.setClass('papersynced-sub-setting')
 				.addText((text) =>
 					text
-						.setValue(this.plugin.settings.icloudFolderPath)
+						.setValue(this.plugin.settings.folderPath)
 						.onChange(asyncValueHandler(async (value) => {
-							this.plugin.settings.icloudFolderPath = value;
+							this.plugin.settings.folderPath = value;
 							await this.plugin.saveSettings();
 						}))
 				);
