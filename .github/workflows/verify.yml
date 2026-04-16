@@ -31,6 +31,15 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Bundle size check
+        run: |
+          SIZE=$(stat -c%s main.js 2>/dev/null || stat -f%z main.js)
+          echo "Bundle size: ${SIZE} bytes ($(( SIZE / 1024 ))KB)"
+          if [ "$SIZE" -gt 512000 ]; then
+            echo "::error::main.js is $(( SIZE / 1024 ))KB, exceeds 500KB budget"
+            exit 1
+          fi
+
       - name: Archive build artifacts
         uses: actions/upload-artifact@v4
         with:
