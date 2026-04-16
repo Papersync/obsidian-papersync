@@ -15,12 +15,15 @@ describe('First-run wizard', function () {
 			await app.plugins.disablePlugin('obsidian-papersynced');
 			await app.plugins.enablePlugin('obsidian-papersynced');
 		});
-		await browser.pause(2000);
 
-		const body = await browser.$('body');
-		const text = await body.getText();
-		expect(text).toContain('Welcome to PaperSynced');
-		expect(text).toContain('Step 1 of 6');
+		// Wait for wizard modal to appear
+		await browser.waitUntil(
+			async () => (await (await browser.$('body')).getText()).includes('Welcome to PaperSynced'),
+			{ timeout: 5000, timeoutMsg: 'Wizard modal did not appear' }
+		);
+
+		const text = await (await browser.$('body')).getText();
+		expect(text).toContain('Step 1 of 5');
 	});
 
 	it('wizard has Next button on welcome step', async function () {
@@ -34,7 +37,10 @@ describe('First-run wizard', function () {
 	it('closing wizard does not set setupComplete', async function () {
 		// Close the modal
 		await browser.keys('Escape');
-		await browser.pause(500);
+		await browser.waitUntil(
+			async () => !(await (await browser.$('body')).getText()).includes('Welcome to PaperSynced'),
+			{ timeout: 3000, timeoutMsg: 'Modal did not close' }
+		);
 
 		const result = await browser.execute(() => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: { setupComplete: boolean } }> } } }).app;

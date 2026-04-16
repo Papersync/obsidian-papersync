@@ -9,11 +9,12 @@ describe('Folder backend settings', function () {
 		await browser.pause(300);
 	});
 
-	it('shows sync folder heading in settings when not connected', async function () {
+	it('shows storage section with folder option when not connected', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		// If not connected, account section should be visible
-		if (text.includes('Connect your account')) {
+		// When not connected, shows both storage options
+		if (!text.includes('Change Storage')) {
+			expect(text).toContain('A folder on this device');
 			expect(text).toContain('Choose your sync folder');
 		}
 	});
@@ -30,17 +31,16 @@ describe('Folder backend settings', function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
 		if (text.includes('Choose your sync folder')) {
-			// No "Recommended" badge should appear
 			expect(text).not.toContain('Recommended');
 		}
 	});
 
-	it('shows detected sync locations without iCloud-first framing', async function () {
+	it('shows Google Drive and folder as equal storage options', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		if (text.includes('Choose your sync folder')) {
-			// The section should not say "Connect iCloud" as a primary action
-			expect(text).not.toContain('Connect iCloud');
+		if (!text.includes('Change Storage')) {
+			expect(text).toContain('Google Drive');
+			expect(text).toContain('A folder on this device');
 		}
 	});
 });

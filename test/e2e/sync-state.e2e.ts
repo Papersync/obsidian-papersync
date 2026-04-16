@@ -1,4 +1,25 @@
 describe('Sync state management', function () {
+	before(async function () {
+		// Wait for plugin init (wizard may open after 500ms delay), then dismiss all modals
+		await browser.pause(1500);
+		// Keep pressing Escape until no modal remains
+		for (let i = 0; i < 5; i++) {
+			const modal = await browser.$('.modal-bg');
+			if (!(await modal.isExisting())) break;
+			await browser.keys('Escape');
+			await browser.pause(500);
+		}
+		// Ensure setupComplete is true for consistent test state
+		await browser.execute(async () => {
+			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void> }> } } }).app;
+			const plugin = app.plugins.plugins['obsidian-papersynced'];
+			if (plugin) {
+				plugin.settings.setupComplete = true;
+				await plugin.saveSettings();
+			}
+		});
+	});
+
 	it('sync now shows notice when not configured', async function () {
 		// Open settings to check if we're connected
 		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
@@ -8,7 +29,7 @@ describe('Sync state management', function () {
 		await browser.keys('Escape');
 		await browser.pause(300);
 
-		if (settingsText.includes('Connect your account')) {
+		if (!settingsText.includes('Change Storage')) {
 			// Not connected — sync now should show a notice
 			await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
 			await browser.pause(500);

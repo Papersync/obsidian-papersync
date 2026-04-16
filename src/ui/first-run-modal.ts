@@ -4,9 +4,9 @@ import { detectSyncLocations } from '@/utils/platform';
 import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 
-type WizardStep = 'welcome' | 'version-check' | 'backend-pick' | 'auth-or-folder' | 'template' | 'target-folder';
+type WizardStep = 'welcome' | 'backend-pick' | 'auth-or-folder' | 'template' | 'target-folder';
 
-const STEP_ORDER: WizardStep[] = ['welcome', 'version-check', 'backend-pick', 'auth-or-folder', 'template', 'target-folder'];
+const STEP_ORDER: WizardStep[] = ['welcome', 'backend-pick', 'auth-or-folder', 'template', 'target-folder'];
 
 export class FirstRunModal extends Modal {
 	private plugin: PaperSyncedPlugin;
@@ -58,7 +58,6 @@ export class FirstRunModal extends Modal {
 
 		switch (this.currentStep) {
 			case 'welcome': this.renderWelcome(contentEl); break;
-			case 'version-check': this.renderVersionCheck(contentEl); break;
 			case 'backend-pick': this.renderBackendPick(contentEl); break;
 			case 'auth-or-folder': this.renderAuthOrFolder(contentEl); break;
 			case 'template': this.renderTemplate(contentEl); break;
@@ -67,10 +66,10 @@ export class FirstRunModal extends Modal {
 	}
 
 	private renderNavButtons(containerEl: HTMLElement, nextEnabled: boolean, isDone = false): void {
-		const navEl = containerEl.createDiv({ cls: 'papersynced-wizard-nav' });
+		const nav = new Setting(containerEl).setClass('papersynced-wizard-nav');
 
 		if (this.currentStepIndex > 0) {
-			new Setting(navEl).addButton(btn =>
+			nav.addButton(btn =>
 				btn.setButtonText('Back').onClick(() => {
 					this.currentStepIndex--;
 					this.renderCurrentStep();
@@ -78,7 +77,7 @@ export class FirstRunModal extends Modal {
 			);
 		}
 
-		new Setting(navEl).addButton(btn => {
+		nav.addButton(btn => {
 			btn.setButtonText(isDone ? 'Done' : 'Next')
 				.setCta()
 				.setDisabled(!nextEnabled)
@@ -99,24 +98,6 @@ export class FirstRunModal extends Modal {
 			text: 'PaperSynced syncs handwritten scans from your phone into your Obsidian vault as markdown notes. Let\'s set it up.',
 		});
 		this.renderNavButtons(containerEl, true);
-	}
-
-	private renderVersionCheck(containerEl: HTMLElement): void {
-		containerEl.createEl('h2', { text: 'Checking Obsidian version' });
-
-		const MIN_VERSION = '1.11.4';
-		const requireApiVersion = (globalThis as unknown as { requireApiVersion?: (version: string) => boolean }).requireApiVersion;
-		const versionOk = !requireApiVersion || requireApiVersion(MIN_VERSION);
-
-		if (versionOk) {
-			containerEl.createEl('p', { text: `Obsidian version is compatible. Requires ${MIN_VERSION}+.` });
-		} else {
-			containerEl.createEl('p', {
-				text: STRINGS.NOTICE_OBSIDIAN_VERSION,
-				cls: 'mod-warning',
-			});
-		}
-		this.renderNavButtons(containerEl, versionOk);
 	}
 
 	private renderBackendPick(containerEl: HTMLElement): void {

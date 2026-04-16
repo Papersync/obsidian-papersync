@@ -6,7 +6,7 @@ describe('Template editor', function () {
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
-		isConnected = !text.includes('Connect your account');
+		isConnected = text.includes('Change Storage');
 		await browser.keys('Escape');
 	});
 

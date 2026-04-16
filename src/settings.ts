@@ -133,22 +133,57 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		const isGoogleConnected = backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
 		const isFolderConnected = backendType === 'folder' && this.plugin.settings.setupComplete;
 
-		if (isGoogleConnected || isFolderConnected) {
-			this.renderConnectedState(containerEl, isGoogleConnected ? 'google' : 'folder');
+		new Setting(containerEl).setName("Storage").setHeading();
+
+		if (isGoogleConnected) {
+			new Setting(containerEl)
+				.setName('Google Drive')
+				.setDesc(STRINGS.SETTINGS_CONNECTED)
+				.addButton((button) =>
+					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
+						this.plugin.oauthManager?.disconnect();
+						this.plugin.syncEngine?.stop();
+						this.plugin.settings.backendType = 'none';
+						this.plugin.settings.setupComplete = false;
+						await this.plugin.saveSettings();
+						new Notice('Disconnected from Google Drive');
+						this.display();
+					}))
+				);
 			return;
 		}
 
-		new Setting(containerEl).setName("Connect your account").setHeading();
+		if (isFolderConnected) {
+			const displayName = this.getFolderDisplayName();
+			new Setting(containerEl)
+				.setName(displayName)
+				.setDesc(`Saving to ${this.plugin.settings.folderPath}`)
+				.addButton((button) =>
+					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
+						this.plugin.syncEngine?.stop();
+						this.plugin.settings.backendType = 'none';
+						this.plugin.settings.folderPath = '';
+						this.plugin.settings.folderType = '';
+						this.plugin.settings.setupComplete = false;
+						await this.plugin.saveSettings();
+						new Notice(`Disconnected from ${displayName}`);
+						this.display();
+					}))
+				);
+			return;
+		}
+
+		// Not connected — show both options as equal-weight choices
 		containerEl.createEl('p', {
-			text: 'Choose the same account you used in the PaperSynced mobile app.',
+			text: 'Choose the same storage you used in the PaperSynced mobile app.',
 			cls: 'setting-item-description',
 		});
 
 		new Setting(containerEl)
-			.setName('Sign in with Google')
-			.setDesc('Syncs scans from Google Drive.')
+			.setName('Google Drive')
+			.setDesc('Sign in with your Google account')
 			.addButton((button) =>
-				button.setButtonText('Connect Google').setCta().onClick(asyncHandler(async () => {
+				button.setButtonText('Connect').onClick(asyncHandler(async () => {
 					try {
 						this.plugin.settings.backendType = 'drive';
 						await this.plugin.saveSettings();
@@ -166,47 +201,11 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				}))
 			);
 
+		new Setting(containerEl)
+			.setName('A folder on this device')
+			.setDesc('iCloud, Dropbox, Syncthing, or any synced folder');
+
 		this.renderFolderLocationList(containerEl);
-	}
-
-	private renderConnectedState(containerEl: HTMLElement, accountType: 'google' | 'folder'): void {
-		new Setting(containerEl).setName("Account").setHeading();
-
-		if (accountType === 'google') {
-			new Setting(containerEl)
-				.setName('Google Drive')
-				.setDesc(STRINGS.SETTINGS_CONNECTED)
-				.addButton((button) =>
-					button.setButtonText(STRINGS.SETTINGS_DISCONNECT).onClick(asyncHandler(async () => {
-						this.plugin.oauthManager?.disconnect();
-						this.plugin.syncEngine?.stop();
-						this.plugin.settings.backendType = 'none';
-						this.plugin.settings.setupComplete = false;
-						await this.plugin.saveSettings();
-						new Notice('Disconnected from Google Drive');
-						this.display();
-					}))
-				);
-		} else {
-			const displayName = this.getFolderDisplayName();
-			new Setting(containerEl)
-				.setName(displayName)
-				.setDesc(`Watching: ${this.plugin.settings.folderPath}`)
-				.addButton((button) =>
-					button.setButtonText(STRINGS.SETTINGS_DISCONNECT).onClick(asyncHandler(async () => {
-						this.plugin.syncEngine?.stop();
-						this.plugin.settings.backendType = 'none';
-						this.plugin.settings.folderPath = '';
-						this.plugin.settings.folderType = '';
-						this.plugin.settings.setupComplete = false;
-						await this.plugin.saveSettings();
-						new Notice(`Disconnected from ${displayName}`);
-						this.display();
-					}))
-				);
-
-			this.renderFolderLocationList(containerEl);
-		}
 	}
 
 	private getFolderDisplayName(): string {

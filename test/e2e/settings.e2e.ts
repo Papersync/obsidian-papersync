@@ -6,7 +6,7 @@ describe('Settings tab', function () {
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
-		isConnected = !text.includes('Connect your account');
+		isConnected = text.includes('Change Storage');
 	});
 
 	afterEach(async function () {
@@ -14,11 +14,10 @@ describe('Settings tab', function () {
 		await browser.pause(300);
 	});
 
-	it('shows account section with connect or connected state', async function () {
+	it('shows storage section', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		const hasAccount = text.includes('Connect your account') || text.includes('Disconnect');
-		expect(hasAccount).toBe(true);
+		expect(text).toContain('Storage');
 	});
 
 	it('shows notes folder setting when connected', async function () {
