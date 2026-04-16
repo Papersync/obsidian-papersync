@@ -82,7 +82,7 @@ export class OAuthManager {
 		authUrl.searchParams.set('access_type', 'offline');
 		authUrl.searchParams.set('prompt', 'consent');
 
-		logger.info(`OAuth flow starting — client_id: ${this.clientId.slice(0, 12)}...`);
+		logger.info('OAuth flow starting');
 		logger.info(`Redirect URI: ${redirectUri}`);
 		window.open(authUrl.toString());
 		logger.info(`OAuth browser opened on port ${port}`);
@@ -182,8 +182,7 @@ export class OAuthManager {
 			redirect_uri: redirectUri,
 		});
 
-		logger.info(`Token exchange — POST ${GOOGLE_TOKEN_URL}`);
-		logger.info(`Token exchange params — client_id: ${this.clientId.slice(0, 12)}..., redirect_uri: ${redirectUri}`);
+		logger.info('Token exchange — POST to Google token endpoint');
 
 		// Use fetch-style approach: make the request without letting requestUrl throw on non-2xx
 		// by catching and extracting the response body from the error
@@ -220,7 +219,7 @@ export class OAuthManager {
 		}
 
 		if (!tokenData.access_token || !tokenData.refresh_token) {
-			logger.error(`Token response missing tokens: ${JSON.stringify(tokenData)}`);
+			logger.error('Token response missing required fields');
 			throw createSyncError('token_revoked', `Token exchange incomplete — missing ${!tokenData.access_token ? 'access_token' : 'refresh_token'}`);
 		}
 
