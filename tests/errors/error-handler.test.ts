@@ -33,6 +33,24 @@ describe('ErrorHandler', () => {
 			expect(classified.retriable).toBe(false);
 		});
 
+		it('classifies 403 with invalid_grant as token revoked guidance', () => {
+			const classified = handler.classify(new Error('403 invalid_grant token revoked'));
+			expect(classified.type).toBe('permission_denied');
+			expect(classified.guidance).toContain('Reconnect Google Drive');
+		});
+
+		it('classifies 403 with insufficient scope as scope denied guidance', () => {
+			const classified = handler.classify(new Error('403 insufficient scope for drive.file'));
+			expect(classified.type).toBe('permission_denied');
+			expect(classified.guidance).toContain('Disconnect and reconnect');
+		});
+
+		it('classifies unknown 403 with generic guidance', () => {
+			const classified = handler.classify(new Error('403 something unknown'));
+			expect(classified.type).toBe('permission_denied');
+			expect(classified.guidance).toContain('verify the PaperSynced folder');
+		});
+
 		it('classifies 401 unauthorized errors', () => {
 			const classified = handler.classify(new Error('HTTP 401 Unauthorized'));
 			expect(classified.type).toBe('token_expired');

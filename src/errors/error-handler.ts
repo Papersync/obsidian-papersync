@@ -71,7 +71,10 @@ export class ErrorHandler {
 				return createSyncError('rate_limit', err.message, undefined, retryAfterMs);
 			}
 			if (msg.includes('403') || msg.includes('permission')) {
-				return createSyncError('permission_denied', err.message);
+				const guidance = this.classify403Guidance(msg);
+				const error = createSyncError('permission_denied', err.message);
+				error.guidance = guidance;
+				return error;
 			}
 			if (msg.includes('401') || msg.includes('unauthorized')) {
 				return createSyncError('token_expired', err.message);
@@ -82,8 +85,18 @@ export class ErrorHandler {
 		return createSyncError('vault_write_failed', String(err));
 	}
 
+	private classify403Guidance(msg: string): string {
+		if (msg.includes('invalid_grant') || msg.includes('token') && msg.includes('revoked')) {
+			return STRINGS.NOTICE_DRIVE_403_TOKEN_REVOKED;
+		}
+		if (msg.includes('insufficient') || msg.includes('scope') || msg.includes('drive.file')) {
+			return STRINGS.NOTICE_DRIVE_403_SCOPE_DENIED;
+		}
+		return STRINGS.NOTICE_DRIVE_403_UNKNOWN;
+	}
+
 	surface(error: SyncError): void {
-		const userMessage = USER_MESSAGES[error.type];
+		const userMessage = error.guidance ?? USER_MESSAGES[error.type];
 		logger.error(`${error.type}: ${error.message}`);
 
 		if (!error.retriable) {

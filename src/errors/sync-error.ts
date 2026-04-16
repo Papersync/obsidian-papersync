@@ -14,6 +14,7 @@ export interface SyncError {
 	message: string;
 	retriable: boolean;
 	retryAfterMs?: number;
+	guidance?: string;
 }
 
 export function parseRetryAfter(headerValue: string | undefined | null): number | undefined {
