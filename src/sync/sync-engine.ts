@@ -15,6 +15,7 @@ export class SyncEngine {
 	private noteCreator: NoteCreator;
 	private errorHandler: ErrorHandler;
 	readonly state: SyncState;
+	private pendingNetwork = new Set<string>();
 
 	constructor(
 		backend: SyncBackend,
@@ -109,8 +110,15 @@ export class SyncEngine {
 						: null;
 					await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);
 					await this.backend.markSynced(ref, scanFile);
+					this.pendingNetwork.delete(ref.id);
 					return 'synced';
 				});
+
+				if (result === null) {
+					// Check if the error was icloud_offloaded — add to pending network
+					// The error handler already surfaced the notice; we just track it
+					this.pendingNetwork.add(ref.id);
+				}
 
 				if ((result === 'synced' || result === 'skipped') && ref.createdTime) {
 					this.state.advanceTimestamp(ref.createdTime);
@@ -135,7 +143,13 @@ export class SyncEngine {
 		if (synced > 0) {
 			new Notice(STRINGS.NOTICE_SYNC_COMPLETE(synced));
 		}
-		this.state.setStatus('synced', 0);
+
+		if (this.pendingNetwork.size > 0) {
+			this.state.setStatus('synced', this.pendingNetwork.size);
+			new Notice(`Downloading offloaded files — ${this.pendingNetwork.size} scan(s) waiting`);
+		} else {
+			this.state.setStatus('synced', 0);
+		}
 		this.errorHandler.resetRetries();
 	}
 
