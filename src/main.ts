@@ -62,7 +62,7 @@ export default class PaperSyncedPlugin extends Plugin {
 						return;
 					}
 					void createFakeScanOnDrive(this.oauthManager).then(() => {
-						new Notice('Fake scan uploaded — will sync on next poll');
+						new Notice('Fake scan uploaded, will sync on next poll');
 					}).catch((err: unknown) => {
 						new Notice(`Failed: ${err instanceof Error ? err.message : String(err)}`);
 					});
@@ -220,7 +220,7 @@ export default class PaperSyncedPlugin extends Plugin {
 		if (this.syncEngine) {
 			await this.syncEngine.forceSyncNow();
 		} else {
-			new Notice('PaperSynced is not configured — open settings to set up sync');
+			new Notice('PaperSynced is not configured. Open settings to set up sync');
 		}
 	}
 

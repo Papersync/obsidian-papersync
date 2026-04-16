@@ -71,6 +71,7 @@ export class SyncEngine {
 				await this.processBatch(refs);
 			} else {
 				this.state.setStatus('synced', 0);
+				new Notice('All synced, nothing new');
 			}
 		} catch (err) {
 			logger.error(`Force sync failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -146,7 +147,7 @@ export class SyncEngine {
 
 		if (this.pendingNetwork.size > 0) {
 			this.state.setStatus('synced', this.pendingNetwork.size);
-			new Notice(`Downloading offloaded files — ${this.pendingNetwork.size} scan(s) waiting`);
+			new Notice(`${this.pendingNetwork.size} scan(s) waiting for download`);
 		} else {
 			this.state.setStatus('synced', 0);
 		}

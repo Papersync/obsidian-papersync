@@ -94,7 +94,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 
 		const statusText = isBusy
 			? `Syncing (${pendingCount} pending)...`
-			: status === 'error' ? 'Error — check logs'
+			: status === 'error' ? 'Error, check logs'
 			: status === 'offline' ? 'Offline'
 			: this.plugin.syncEngine ? 'Synced' : 'Not connected';
 		this.syncDesc.textContent = statusText;
@@ -221,7 +221,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName('Another folder on this device')
 			.setDesc(detected.length === 0
-				? 'No sync tools detected — browse to pick a folder'
+				? 'No sync tools detected. Browse to pick a folder'
 				: 'Pick any folder on your filesystem')
 			.addButton((button) =>
 				button.setButtonText('Browse').onClick(asyncHandler(async () => {
@@ -260,7 +260,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		this.plugin.settings.setupComplete = true;
 		await this.plugin.saveSettings();
 		await this.plugin.startSync();
-		new Notice(`Folder sync started — watching ${folderPath}`);
+		new Notice(`Now watching ${folderPath} for new scans`);
 		this.display();
 	}
 
@@ -354,7 +354,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		const varList = descContainer.createEl('table', { cls: 'papersynced-var-table' });
 		const vars: Array<[string, string]> = [
 			['{{markdown}}', 'Converted text'],
-			['{{image_file}}', 'Image vault path — use ![[{{image_file}}]]'],
+			['{{image_file}}', 'Image vault path, use ![[{{image_file}}]] to embed'],
 			['{{time}}', '12h time (2:30 PM)'],
 			['{{time_24h}}', '24h time (14:30)'],
 			['{{separator}}', '--- on append, empty on new file'],
@@ -418,7 +418,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 					this.plugin.oauthManager?.disconnect();
 					this.plugin.settings = { ...DEFAULT_SETTINGS };
 					await this.plugin.saveSettings();
-					new Notice('Full reset — reconnect your account');
+					new Notice('Settings cleared. Reconnect your account to continue');
 					this.display();
 				}))
 			);

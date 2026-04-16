@@ -9,8 +9,8 @@ const MAX_RETRIES = 2;
 const BACKOFF_MS = [1000, 3000] as const;
 
 const USER_MESSAGES: Record<SyncErrorType, string> = {
-	network_timeout: 'Network timeout — will retry',
-	rate_limit: 'Rate limited — backing off',
+	network_timeout: 'Network timeout, retrying shortly',
+	rate_limit: 'Rate limited, backing off',
 	permission_denied: STRINGS.NOTICE_DRIVE_PERMISSION,
 	token_expired: STRINGS.NOTICE_TOKEN_EXPIRED,
 	token_revoked: STRINGS.NOTICE_TOKEN_EXPIRED,
