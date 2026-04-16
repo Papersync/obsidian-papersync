@@ -8,18 +8,18 @@ One tap on your phone, one note in your vault, forty-five seconds. No typing, no
 
 1. **Capture** handwritten notes with the PaperSynced mobile app
 2. The app converts them to markdown using your own LLM API key (BYOK)
-3. Scans are saved to your Google Drive or iCloud Drive
+3. Scans are saved to your Google Drive or sync folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync)
 4. **This plugin** picks them up and creates vault notes automatically
 
 ## Features
 
-- Google Drive polling (30s interval) or iCloud Drive folder watching
+- Google Drive polling (30s interval) or folder watching (any sync tool)
+- Auto-detects iCloud, Dropbox, OneDrive, Syncthing, and Obsidian Sync paths
 - Configurable note template with frontmatter (Dataview/Bases-ready)
 - Embedded scan images in your vault
 - Append-only: multiple scans on the same day go into the same note
 - Status bar indicator + ribbon icon for force-sync
 - OAuth PKCE for Google Drive (no client secret needed)
-- iCloud path auto-detection on macOS
 
 ## Installation
 
@@ -43,7 +43,7 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 2. Settings will open automatically on first run
 3. Choose your sync backend:
    - **Google Drive**: Click "Connect" and authorize with your Google account
-   - **iCloud Drive**: The plugin auto-detects your iCloud folder on macOS
+   - **Folder sync**: The plugin auto-detects iCloud, Dropbox, OneDrive, Syncthing, and Obsidian Sync — or pick any folder
 4. Configure your note template and target folder
 5. Scans start syncing automatically
 
@@ -82,7 +82,7 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 - The plugin stores **zero LLM API keys** (all AI runs on your phone)
 - Google Drive: one OAuth token stored in your OS keychain via Obsidian's Secret Storage API
-- iCloud: no authentication needed (local filesystem)
+- Folder sync: no authentication needed (local filesystem)
 - No telemetry, no analytics, no outbound requests except to Google APIs
 - MIT licensed, fully open source
 
@@ -90,7 +90,7 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 - Obsidian v1.11.4 or later (for Secret Storage API)
 - PaperSynced mobile app installed and configured
-- Google Drive or iCloud Drive account matching your mobile app setup
+- Google Drive or a sync folder matching your mobile app setup
 
 ## Development
 

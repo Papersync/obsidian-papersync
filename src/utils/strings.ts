@@ -11,7 +11,7 @@ export const STRINGS = {
 
 	NOTICE_SYNCING: (count: number) => `Syncing ${count} scans...`,
 	NOTICE_SYNC_COMPLETE: (count: number) => `Synced ${count} new notes`,
-	NOTICE_DOWNLOADING_OFFLOADED: 'Downloading offloaded files from iCloud...',
+	NOTICE_DOWNLOADING_OFFLOADED: 'Downloading offloaded files...',
 	NOTICE_TOKEN_EXPIRED: 'Google Drive token expired — reconnect in settings',
 	NOTICE_SCHEMA_MISMATCH: 'Scan format not recognized — update PaperSynced plugin',
 	NOTICE_OBSIDIAN_VERSION: 'PaperSynced requires Obsidian v1.11.4 or later',
