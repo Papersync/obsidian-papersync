@@ -26,6 +26,8 @@ export default class PaperSyncedPlugin extends Plugin {
 	private unsubscribeSyncState: (() => void) | null = null;
 
 	async onload(): Promise<void> {
+		if (!this.checkMinObsidianVersion()) return;
+
 		await this.loadSettings();
 		setDebugLogging(this.settings.debugLogging);
 
@@ -77,6 +79,18 @@ export default class PaperSyncedPlugin extends Plugin {
 		this.unsubscribeSyncState?.();
 		this.oauthManager?.cleanup();
 		logger.info('Plugin unloaded');
+	}
+
+	private checkMinObsidianVersion(): boolean {
+		const MIN_VERSION = '1.11.4';
+		// requireApiVersion is an Obsidian global that checks minAppVersion
+		const requireApiVersion = (globalThis as unknown as { requireApiVersion?: (version: string) => boolean }).requireApiVersion;
+		if (requireApiVersion && !requireApiVersion(MIN_VERSION)) {
+			new Notice(STRINGS.NOTICE_OBSIDIAN_VERSION, 0);
+			logger.error(`Obsidian version too old — requires ${MIN_VERSION}+`);
+			return false;
+		}
+		return true;
 	}
 
 	async loadSettings(): Promise<void> {
