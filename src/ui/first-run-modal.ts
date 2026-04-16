@@ -3,10 +3,10 @@ import type PaperSyncedPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
 
 
-type WizardStep = 'welcome' | 'storage' | 'folder-pick' | 'template' | 'target-folder';
+type WizardStep = 'welcome' | 'storage' | 'folder-pick' | 'target-folder';
 
-const STEP_ORDER: WizardStep[] = ['welcome', 'storage', 'template', 'target-folder'];
-const STEP_ORDER_FOLDER: WizardStep[] = ['welcome', 'storage', 'folder-pick', 'template', 'target-folder'];
+const STEP_ORDER: WizardStep[] = ['welcome', 'storage', 'target-folder'];
+const STEP_ORDER_FOLDER: WizardStep[] = ['welcome', 'storage', 'folder-pick', 'target-folder'];
 
 export class FirstRunModal extends Modal {
 	private plugin: PaperSyncedPlugin;
@@ -15,7 +15,6 @@ export class FirstRunModal extends Modal {
 		backendChoice: 'drive' | 'folder' | null;
 		folderPath: string;
 		folderType: string;
-		templateString: string;
 		targetFolder: string;
 		oauthComplete: boolean;
 	};
@@ -27,7 +26,6 @@ export class FirstRunModal extends Modal {
 			backendChoice: null,
 			folderPath: '',
 			folderType: '',
-			templateString: plugin.settings.templateString,
 			targetFolder: plugin.settings.targetFolder || 'PaperSynced',
 			oauthComplete: false,
 		};
@@ -64,7 +62,6 @@ export class FirstRunModal extends Modal {
 			case 'welcome': this.renderWelcome(contentEl); break;
 			case 'storage': this.renderStorage(contentEl); break;
 			case 'folder-pick': this.renderFolderPick(contentEl); break;
-			case 'template': this.renderTemplate(contentEl); break;
 			case 'target-folder': this.renderTargetFolder(contentEl); break;
 		}
 	}
@@ -139,16 +136,31 @@ export class FirstRunModal extends Modal {
 				);
 		}
 
-		// Folder — "Select" advances to folder pick step
-		const isFolderSelected = this.stepState.backendChoice === 'folder';
+		// Folder — "Browse" opens native folder dialog directly
+		const isFolderSelected = this.stepState.backendChoice === 'folder' && this.stepState.folderPath !== '';
 		new Setting(containerEl)
 			.setName(`${isFolderSelected ? '\u2713 ' : ''}A folder on this device`)
-			.setDesc('iCloud, Dropbox, Syncthing, or any synced folder')
+			.setDesc(isFolderSelected ? this.stepState.folderPath : 'iCloud, Dropbox, Syncthing, or any synced folder')
 			.addButton(btn =>
-				btn.setButtonText(isFolderSelected ? 'Selected' : 'Select').onClick(() => {
-					this.stepState.backendChoice = 'folder';
-					this.stepState.oauthComplete = false;
-					this.renderCurrentStep();
+				btn.setButtonText('Browse').onClick(async () => {
+					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
+					const dialog = electron?.remote?.dialog;
+					if (dialog) {
+						const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+						if (!result.canceled && result.filePaths[0]) {
+							this.stepState.backendChoice = 'folder';
+							this.stepState.folderPath = result.filePaths[0];
+							this.stepState.folderType = 'custom';
+							this.stepState.oauthComplete = false;
+							this.renderCurrentStep();
+						}
+					} else {
+						// Fallback: advance to folder-pick step with detected locations
+						this.stepState.backendChoice = 'folder';
+						this.stepState.oauthComplete = false;
+						this.currentStepIndex++;
+						this.renderCurrentStep();
+					}
 				})
 			);
 
@@ -205,23 +217,6 @@ export class FirstRunModal extends Modal {
 		this.renderNavButtons(containerEl, this.stepState.folderPath !== '');
 	}
 
-	private renderTemplate(containerEl: HTMLElement): void {
-		containerEl.createEl('h2', { text: 'Note template' });
-		containerEl.createEl('p', {
-			text: 'This template determines how each scan appears in your vault. You can change it later in settings.',
-		});
-
-		new Setting(containerEl)
-			.setName('Template')
-			.addTextArea(text =>
-				text
-					.setValue(this.stepState.templateString)
-					.onChange(value => { this.stepState.templateString = value; })
-			);
-
-		this.renderNavButtons(containerEl, true);
-	}
-
 	private renderTargetFolder(containerEl: HTMLElement): void {
 		containerEl.createEl('h2', { text: 'Notes folder' });
 		containerEl.createEl('p', {
@@ -246,7 +241,6 @@ export class FirstRunModal extends Modal {
 			this.plugin.settings.folderPath = this.stepState.folderPath;
 			this.plugin.settings.folderType = this.stepState.folderType;
 		}
-		this.plugin.settings.templateString = this.stepState.templateString;
 		this.plugin.settings.targetFolder = this.stepState.targetFolder;
 		this.plugin.settings.setupComplete = true;
 		await this.plugin.saveSettings();

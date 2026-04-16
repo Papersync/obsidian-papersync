@@ -157,7 +157,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			const displayName = this.getFolderDisplayName();
 			new Setting(containerEl)
 				.setName(displayName)
-				.setDesc(`Saving to ${this.plugin.settings.folderPath}`)
+				.setDesc(`Watching ${this.plugin.settings.folderPath} for new scans`)
 				.addButton((button) =>
 					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
 						this.plugin.syncEngine?.stop();
