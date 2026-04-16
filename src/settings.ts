@@ -201,57 +201,28 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				}))
 			);
 
-		new Setting(containerEl)
-			.setName('A folder on this device')
-			.setDesc('iCloud, Dropbox, Syncthing, or any synced folder');
-
-		this.renderFolderLocationList(containerEl);
-	}
-
-	private getFolderDisplayName(): string {
-		const { folderType } = this.plugin.settings;
-		const typeToName: Record<string, string> = {
-			icloud: 'iCloud Drive',
-			dropbox: 'Dropbox',
-			onedrive: 'OneDrive',
-			syncthing: 'Syncthing',
-			'obsidian-sync': 'Obsidian Sync',
-			custom: 'Folder sync',
-		};
-		return typeToName[folderType] ?? 'Folder sync';
-	}
-
-	private renderFolderLocationList(containerEl: HTMLElement): void {
+		// Folder — show detected locations inline + browse
 		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
 		const detected = detectSyncLocations(vaultPath);
-		const currentPath = this.plugin.settings.folderPath;
-
-		new Setting(containerEl).setName('Choose your sync folder').setHeading();
-
-		if (detected.length === 0 && !currentPath) {
-			containerEl.createEl('p', {
-				text: 'Dropbox, OneDrive, iCloud, Syncthing, or Obsidian Sync were not found at their default locations.',
-				cls: 'setting-item-description',
-			});
-		}
 
 		for (const loc of detected) {
-			const isSelected = currentPath === loc.path;
 			new Setting(containerEl)
-				.setName(`${isSelected ? '\u2713 ' : ''}${loc.displayName}`)
+				.setName(loc.displayName)
 				.setDesc(loc.path)
 				.addButton((button) =>
 					button
-						.setButtonText(isSelected ? 'Selected' : 'Select')
+						.setButtonText('Select')
 						.onClick(asyncHandler(async () => {
 							await this.selectFolderLocation(loc.path, loc.type);
 						}))
 				);
 		}
 
-		// Browse for folder
 		new Setting(containerEl)
-			.setName('Browse for another folder...')
+			.setName('Another folder on this device')
+			.setDesc(detected.length === 0
+				? 'No sync tools detected — browse to pick a folder'
+				: 'Pick any folder on your filesystem')
 			.addButton((button) =>
 				button.setButtonText('Browse').onClick(asyncHandler(async () => {
 					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
@@ -266,6 +237,19 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 					}
 				}))
 			);
+	}
+
+	private getFolderDisplayName(): string {
+		const { folderType } = this.plugin.settings;
+		const typeToName: Record<string, string> = {
+			icloud: 'iCloud Drive',
+			dropbox: 'Dropbox',
+			onedrive: 'OneDrive',
+			syncthing: 'Syncthing',
+			'obsidian-sync': 'Obsidian Sync',
+			custom: 'Folder sync',
+		};
+		return typeToName[folderType] ?? 'Folder sync';
 	}
 
 	private async selectFolderLocation(folderPath: string, folderType: string): Promise<void> {
