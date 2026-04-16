@@ -1,12 +1,10 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import type PaperSyncedPlugin from '@/main';
-import { detectSyncLocations } from '@/utils/platform';
 
 
-type WizardStep = 'welcome' | 'storage' | 'folder-pick' | 'target-folder';
+type WizardStep = 'welcome' | 'storage' | 'target-folder';
 
 const STEP_ORDER: WizardStep[] = ['welcome', 'storage', 'target-folder'];
-const STEP_ORDER_FOLDER: WizardStep[] = ['welcome', 'storage', 'folder-pick', 'target-folder'];
 
 export class FirstRunModal extends Modal {
 	private plugin: PaperSyncedPlugin;
@@ -39,12 +37,8 @@ export class FirstRunModal extends Modal {
 		// Dismissal without completion does NOT set setupComplete
 	}
 
-	private get stepOrder(): WizardStep[] {
-		return this.stepState.backendChoice === 'folder' ? STEP_ORDER_FOLDER : STEP_ORDER;
-	}
-
 	private get currentStep(): WizardStep {
-		return this.stepOrder[this.currentStepIndex] ?? 'welcome';
+		return STEP_ORDER[this.currentStepIndex] ?? 'welcome';
 	}
 
 	private renderCurrentStep(): void {
@@ -52,7 +46,7 @@ export class FirstRunModal extends Modal {
 		contentEl.empty();
 
 		const stepNum = this.currentStepIndex + 1;
-		const totalSteps = this.stepOrder.length;
+		const totalSteps = STEP_ORDER.length;
 		contentEl.createEl('div', {
 			text: `Step ${stepNum} of ${totalSteps}`,
 			cls: 'papersynced-wizard-step-indicator',
@@ -61,7 +55,6 @@ export class FirstRunModal extends Modal {
 		switch (this.currentStep) {
 			case 'welcome': this.renderWelcome(contentEl); break;
 			case 'storage': this.renderStorage(contentEl); break;
-			case 'folder-pick': this.renderFolderPick(contentEl); break;
 			case 'target-folder': this.renderTargetFolder(contentEl); break;
 		}
 	}
@@ -155,66 +148,13 @@ export class FirstRunModal extends Modal {
 							this.renderCurrentStep();
 						}
 					} else {
-						// Fallback: advance to folder-pick step with detected locations
-						this.stepState.backendChoice = 'folder';
-						this.stepState.oauthComplete = false;
-						this.currentStepIndex++;
-						this.renderCurrentStep();
+						new Notice('Folder browser not available');
 					}
 				})
 			);
 
 		const storageChosen = this.stepState.oauthComplete || isFolderSelected;
 		this.renderNavButtons(containerEl, storageChosen);
-	}
-
-	private renderFolderPick(containerEl: HTMLElement): void {
-		containerEl.createEl('h2', { text: 'Choose your sync folder' });
-
-		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
-		const detected = detectSyncLocations(vaultPath);
-
-		if (detected.length === 0) {
-			containerEl.createEl('p', {
-				text: 'Dropbox, OneDrive, iCloud, Syncthing, or Obsidian Sync were not found at their default locations.',
-				cls: 'setting-item-description',
-			});
-		}
-
-		for (const loc of detected) {
-			const isSelected = this.stepState.folderPath === loc.path;
-			new Setting(containerEl)
-				.setName(`${isSelected ? '\u2713 ' : ''}${loc.displayName}`)
-				.setDesc(loc.path)
-				.addButton(btn =>
-					btn.setButtonText(isSelected ? 'Selected' : 'Select').onClick(() => {
-						this.stepState.folderPath = loc.path;
-						this.stepState.folderType = loc.type;
-						this.renderCurrentStep();
-					})
-				);
-		}
-
-		new Setting(containerEl)
-			.setName('Browse for another folder...')
-			.addButton(btn =>
-				btn.setButtonText('Browse').onClick(async () => {
-					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
-					const dialog = electron?.remote?.dialog;
-					if (dialog) {
-						const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-						if (!result.canceled && result.filePaths[0]) {
-							this.stepState.folderPath = result.filePaths[0];
-							this.stepState.folderType = 'custom';
-							this.renderCurrentStep();
-						}
-					} else {
-						new Notice('Folder browser not available — use a detected location above');
-					}
-				})
-			);
-
-		this.renderNavButtons(containerEl, this.stepState.folderPath !== '');
 	}
 
 	private renderTargetFolder(containerEl: HTMLElement): void {

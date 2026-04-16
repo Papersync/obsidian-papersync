@@ -23,7 +23,6 @@ describe('First-run wizard', function () {
 		);
 
 		const text = await (await browser.$('body')).getText();
-		// Step count varies: 3 for Drive, 4 for Folder — on welcome it shows the Drive count
 		expect(text).toContain('Step 1 of 3');
 	});
 
