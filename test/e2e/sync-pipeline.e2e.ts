@@ -31,6 +31,7 @@ describe('Sync pipeline E2E', function () {
 
 			plugin.settings.backendType = 'folder';
 			plugin.settings.folderPath = folder;
+			plugin.settings.folderType = 'custom';
 			plugin.settings.targetFolder = 'SyncTest';
 			plugin.settings.attachmentsFolder = 'SyncTest/attachments';
 			plugin.settings.setupComplete = true;

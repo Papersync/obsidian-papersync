@@ -1,5 +1,6 @@
 import type PaperSyncedPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
+import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 
@@ -11,6 +12,7 @@ export interface PluginSettings {
 	backendType: BackendType;
 	drivePollInterval: number;
 	folderPath: string;
+	folderType: string;
 	targetFolder: string;
 	attachmentsFolder: string;
 	templateString: string;
@@ -37,6 +39,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	backendType: 'none',
 	drivePollInterval: 30,
 	folderPath: '',
+	folderType: '',
 	targetFolder: '',  // resolved on first setup from daily notes config
 	attachmentsFolder: 'attachments/papersynced',
 	templateString: DEFAULT_TEMPLATE,
@@ -163,37 +166,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				}))
 			);
 
-		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
-		const detected = detectSyncLocations(vaultPath);
-		const detectedPath = detected[0]?.path ?? null;
-
-		new Setting(containerEl)
-			.setName('Connect iCloud')
-			.setDesc(
-				detectedPath
-					? `iCloud folder detected at ${detectedPath}`
-					: 'Watches your local iCloud Drive folder for new scans. No sign-in needed.'
-			)
-			.addButton((button) =>
-				button.setButtonText('Connect iCloud').onClick(asyncHandler(async () => {
-					const folderPath = detectedPath ?? '';
-					if (!folderPath) {
-						new Notice('iCloud folder not found. Enter the path manually after connecting.');
-					}
-
-					this.plugin.settings.backendType = 'folder';
-					this.plugin.settings.folderPath = folderPath;
-					this.plugin.settings.setupComplete = !!folderPath;
-					await this.plugin.saveSettings();
-
-					if (folderPath) {
-						await this.plugin.startSync();
-						new Notice('iCloud sync started');
-					}
-
-					this.display();
-				}))
-			);
+		this.renderFolderLocationList(containerEl);
 	}
 
 	private renderConnectedState(containerEl: HTMLElement, accountType: 'google' | 'folder'): void {
@@ -215,34 +188,94 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 					}))
 				);
 		} else {
+			const displayName = this.getFolderDisplayName();
 			new Setting(containerEl)
-				.setName('iCloud Drive')
+				.setName(displayName)
 				.setDesc(`Watching: ${this.plugin.settings.folderPath}`)
 				.addButton((button) =>
 					button.setButtonText(STRINGS.SETTINGS_DISCONNECT).onClick(asyncHandler(async () => {
 						this.plugin.syncEngine?.stop();
 						this.plugin.settings.backendType = 'none';
 						this.plugin.settings.folderPath = '';
+						this.plugin.settings.folderType = '';
 						this.plugin.settings.setupComplete = false;
 						await this.plugin.saveSettings();
-						new Notice('Disconnected from iCloud');
+						new Notice(`Disconnected from ${displayName}`);
 						this.display();
 					}))
 				);
 
+			this.renderFolderLocationList(containerEl);
+		}
+	}
+
+	private getFolderDisplayName(): string {
+		const { folderType } = this.plugin.settings;
+		const typeToName: Record<string, string> = {
+			icloud: 'iCloud Drive',
+			dropbox: 'Dropbox',
+			onedrive: 'OneDrive',
+			syncthing: 'Syncthing',
+			'obsidian-sync': 'Obsidian Sync',
+			custom: 'Folder sync',
+		};
+		return typeToName[folderType] ?? 'Folder sync';
+	}
+
+	private renderFolderLocationList(containerEl: HTMLElement): void {
+		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
+		const detected = detectSyncLocations(vaultPath);
+		const currentPath = this.plugin.settings.folderPath;
+
+		new Setting(containerEl).setName('Choose your sync folder').setHeading();
+
+		if (detected.length === 0 && !currentPath) {
+			containerEl.createEl('p', {
+				text: 'Dropbox, OneDrive, iCloud, Syncthing, or Obsidian Sync were not found at their default locations.',
+				cls: 'setting-item-description',
+			});
+		}
+
+		for (const loc of detected) {
+			const isSelected = currentPath === loc.path;
 			new Setting(containerEl)
-				.setName('iCloud folder path')
-				.setDesc('Change the watched folder if needed.')
-				.setClass('papersynced-sub-setting')
-				.addText((text) =>
-					text
-						.setValue(this.plugin.settings.folderPath)
-						.onChange(asyncValueHandler(async (value) => {
-							this.plugin.settings.folderPath = value;
-							await this.plugin.saveSettings();
+				.setName(`${isSelected ? '\u2713 ' : ''}${loc.displayName}`)
+				.setDesc(loc.path)
+				.addButton((button) =>
+					button
+						.setButtonText(isSelected ? 'Selected' : 'Select')
+						.onClick(asyncHandler(async () => {
+							await this.selectFolderLocation(loc.path, loc.type);
 						}))
 				);
 		}
+
+		// "Pick another folder..." row
+		new Setting(containerEl)
+			.setName('Pick another folder...')
+			.setDesc('Enter a custom folder path for any sync tool.')
+			.addText((text) =>
+				text
+					.setPlaceholder('/path/to/PaperSynced/scans')
+					.setValue(currentPath && !detected.find(d => d.path === currentPath) ? currentPath : '')
+					.onChange(asyncValueHandler(async (value) => {
+						if (value.trim()) {
+							await this.selectFolderLocation(value.trim(), 'custom');
+						}
+					}))
+			);
+	}
+
+	private async selectFolderLocation(folderPath: string, folderType: string): Promise<void> {
+		this.plugin.syncEngine?.stop();
+		this.plugin.settings.backendType = 'folder';
+		this.plugin.settings.folderPath = folderPath;
+		this.plugin.settings.folderType = folderType;
+		this.plugin.settings.setupComplete = true;
+		await this.plugin.saveSettings();
+		await this.plugin.startSync();
+		new Notice(`Folder sync started — watching ${folderPath}`);
+		this.display();
 	}
 
 	private renderSyncSection(containerEl: HTMLElement): void {
