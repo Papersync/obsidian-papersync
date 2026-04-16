@@ -1,12 +1,12 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import type PaperSyncedPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
-import type { SyncLocation } from '@/utils/platform';
-import { STRINGS } from '@/utils/strings';
 
-type WizardStep = 'welcome' | 'backend-pick' | 'auth-or-folder' | 'template' | 'target-folder';
 
-const STEP_ORDER: WizardStep[] = ['welcome', 'backend-pick', 'auth-or-folder', 'template', 'target-folder'];
+type WizardStep = 'welcome' | 'storage' | 'folder-pick' | 'template' | 'target-folder';
+
+const STEP_ORDER: WizardStep[] = ['welcome', 'storage', 'template', 'target-folder'];
+const STEP_ORDER_FOLDER: WizardStep[] = ['welcome', 'storage', 'folder-pick', 'template', 'target-folder'];
 
 export class FirstRunModal extends Modal {
 	private plugin: PaperSyncedPlugin;
@@ -41,8 +41,12 @@ export class FirstRunModal extends Modal {
 		// Dismissal without completion does NOT set setupComplete
 	}
 
+	private get stepOrder(): WizardStep[] {
+		return this.stepState.backendChoice === 'folder' ? STEP_ORDER_FOLDER : STEP_ORDER;
+	}
+
 	private get currentStep(): WizardStep {
-		return STEP_ORDER[this.currentStepIndex] ?? 'welcome';
+		return this.stepOrder[this.currentStepIndex] ?? 'welcome';
 	}
 
 	private renderCurrentStep(): void {
@@ -50,7 +54,7 @@ export class FirstRunModal extends Modal {
 		contentEl.empty();
 
 		const stepNum = this.currentStepIndex + 1;
-		const totalSteps = STEP_ORDER.length;
+		const totalSteps = this.stepOrder.length;
 		contentEl.createEl('div', {
 			text: `Step ${stepNum} of ${totalSteps}`,
 			cls: 'papersynced-wizard-step-indicator',
@@ -58,8 +62,8 @@ export class FirstRunModal extends Modal {
 
 		switch (this.currentStep) {
 			case 'welcome': this.renderWelcome(contentEl); break;
-			case 'backend-pick': this.renderBackendPick(contentEl); break;
-			case 'auth-or-folder': this.renderAuthOrFolder(contentEl); break;
+			case 'storage': this.renderStorage(contentEl); break;
+			case 'folder-pick': this.renderFolderPick(contentEl); break;
 			case 'template': this.renderTemplate(contentEl); break;
 			case 'target-folder': this.renderTargetFolder(contentEl); break;
 		}
@@ -100,74 +104,56 @@ export class FirstRunModal extends Modal {
 		this.renderNavButtons(containerEl, true);
 	}
 
-	private renderBackendPick(containerEl: HTMLElement): void {
-		containerEl.createEl('h2', { text: 'Choose your sync source' });
+	private renderStorage(containerEl: HTMLElement): void {
+		containerEl.createEl('h2', { text: 'Choose your storage' });
 		containerEl.createEl('p', {
 			text: 'How does the PaperSynced mobile app save your scans?',
 		});
 
-		const choices: Array<{ label: string; value: 'drive' | 'folder' }> = [
-			{ label: 'Google Drive', value: 'drive' },
-			{ label: 'Folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync, or custom)', value: 'folder' },
-		];
-
-		for (const choice of choices) {
-			const isSelected = this.stepState.backendChoice === choice.value;
+		// Google Drive — "Connect" triggers OAuth directly
+		if (this.stepState.oauthComplete) {
 			new Setting(containerEl)
-				.setName(`${isSelected ? '\u2713 ' : ''}${choice.label}`)
+				.setName('\u2713 Google Drive')
+				.setDesc('Connected');
+		} else {
+			new Setting(containerEl)
+				.setName('Google Drive')
+				.setDesc('Sign in with your Google account')
 				.addButton(btn =>
-					btn.setButtonText(isSelected ? 'Selected' : 'Select').onClick(() => {
-						this.stepState.backendChoice = choice.value;
-						this.renderCurrentStep();
+					btn.setButtonText('Connect').setCta().onClick(async () => {
+						try {
+							this.plugin.settings.backendType = 'drive';
+							await this.plugin.saveSettings();
+							await this.plugin.oauthManager?.startAuthFlow();
+							this.plugin.settings.setupComplete = true;
+							await this.plugin.saveSettings();
+							this.stepState.backendChoice = 'drive';
+							this.stepState.oauthComplete = true;
+							this.renderCurrentStep();
+						} catch (err) {
+							this.plugin.settings.backendType = 'none';
+							await this.plugin.saveSettings();
+							new Notice(`Connection failed: ${err instanceof Error ? err.message : String(err)}`);
+						}
 					})
 				);
 		}
 
-		this.renderNavButtons(containerEl, this.stepState.backendChoice !== null);
-	}
-
-	private renderAuthOrFolder(containerEl: HTMLElement): void {
-		if (this.stepState.backendChoice === 'drive') {
-			this.renderDriveAuth(containerEl);
-		} else {
-			this.renderFolderPick(containerEl);
-		}
-	}
-
-	private renderDriveAuth(containerEl: HTMLElement): void {
-		containerEl.createEl('h2', { text: 'Connect Google Drive' });
-
-		if (this.stepState.oauthComplete) {
-			containerEl.createEl('p', { text: 'Connected to Google Drive.' });
-			this.renderNavButtons(containerEl, true);
-			return;
-		}
-
-		// Unverified app warning (Story 3.2)
-		containerEl.createEl('h3', { text: STRINGS.UNVERIFIED_APP_TITLE });
-		containerEl.createEl('p', { text: STRINGS.UNVERIFIED_APP_WHY });
-		containerEl.createEl('p', { text: STRINGS.UNVERIFIED_APP_SAFE });
-		containerEl.createEl('p', { text: STRINGS.UNVERIFIED_APP_CLICK_PATH });
-
-		new Setting(containerEl).addButton(btn =>
-			btn.setButtonText(STRINGS.UNVERIFIED_APP_CONFIRM).setCta().onClick(async () => {
-				try {
-					this.plugin.settings.backendType = 'drive';
-					await this.plugin.saveSettings();
-					await this.plugin.oauthManager?.startAuthFlow();
-					this.plugin.settings.setupComplete = true;
-					await this.plugin.saveSettings();
-					this.stepState.oauthComplete = true;
+		// Folder — "Select" advances to folder pick step
+		const isFolderSelected = this.stepState.backendChoice === 'folder';
+		new Setting(containerEl)
+			.setName(`${isFolderSelected ? '\u2713 ' : ''}A folder on this device`)
+			.setDesc('iCloud, Dropbox, Syncthing, or any synced folder')
+			.addButton(btn =>
+				btn.setButtonText(isFolderSelected ? 'Selected' : 'Select').onClick(() => {
+					this.stepState.backendChoice = 'folder';
+					this.stepState.oauthComplete = false;
 					this.renderCurrentStep();
-				} catch (err) {
-					this.plugin.settings.backendType = 'none';
-					await this.plugin.saveSettings();
-					new Notice(`Connection failed: ${err instanceof Error ? err.message : String(err)}`);
-				}
-			})
-		);
+				})
+			);
 
-		this.renderNavButtons(containerEl, false);
+		const storageChosen = this.stepState.oauthComplete || isFolderSelected;
+		this.renderNavButtons(containerEl, storageChosen);
 	}
 
 	private renderFolderPick(containerEl: HTMLElement): void {
@@ -198,17 +184,22 @@ export class FirstRunModal extends Modal {
 		}
 
 		new Setting(containerEl)
-			.setName('Pick another folder...')
-			.addText(text =>
-				text
-					.setPlaceholder('/path/to/PaperSynced/scans')
-					.setValue(this.stepState.folderPath && !detected.find(d => d.path === this.stepState.folderPath) ? this.stepState.folderPath : '')
-					.onChange(value => {
-						if (value.trim()) {
-							this.stepState.folderPath = value.trim();
+			.setName('Browse for another folder...')
+			.addButton(btn =>
+				btn.setButtonText('Browse').onClick(async () => {
+					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
+					const dialog = electron?.remote?.dialog;
+					if (dialog) {
+						const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+						if (!result.canceled && result.filePaths[0]) {
+							this.stepState.folderPath = result.filePaths[0];
 							this.stepState.folderType = 'custom';
+							this.renderCurrentStep();
 						}
-					})
+					} else {
+						new Notice('Folder browser not available — use a detected location above');
+					}
+				})
 			);
 
 		this.renderNavButtons(containerEl, this.stepState.folderPath !== '');

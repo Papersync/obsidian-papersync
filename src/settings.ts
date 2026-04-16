@@ -249,19 +249,22 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				);
 		}
 
-		// "Pick another folder..." row
+		// Browse for folder
 		new Setting(containerEl)
-			.setName('Pick another folder...')
-			.setDesc('Enter a custom folder path for any sync tool.')
-			.addText((text) =>
-				text
-					.setPlaceholder('/path/to/PaperSynced/scans')
-					.setValue(currentPath && !detected.find(d => d.path === currentPath) ? currentPath : '')
-					.onChange(asyncValueHandler(async (value) => {
-						if (value.trim()) {
-							await this.selectFolderLocation(value.trim(), 'custom');
+			.setName('Browse for another folder...')
+			.addButton((button) =>
+				button.setButtonText('Browse').onClick(asyncHandler(async () => {
+					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
+					const dialog = electron?.remote?.dialog;
+					if (dialog) {
+						const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+						if (!result.canceled && result.filePaths[0]) {
+							await this.selectFolderLocation(result.filePaths[0], 'custom');
 						}
-					}))
+					} else {
+						new Notice('Folder browser not available');
+					}
+				}))
 			);
 	}
 

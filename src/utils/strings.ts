@@ -27,10 +27,4 @@ export const STRINGS = {
 	SETTINGS_OAUTH_WARNING:
 		'Google may show an "unverified app" warning. Click "Advanced" then "Continue" to proceed safely.',
 
-	UNVERIFIED_APP_TITLE: 'A quick heads-up before you connect Google Drive',
-	UNVERIFIED_APP_WHY: 'Google shows an "unverified app" warning for PaperSynced because the plugin is new and hasn\'t completed Google\'s brand-verification review yet. This is normal for all new apps.',
-	UNVERIFIED_APP_SAFE: 'This is safe because PaperSynced uses the narrow drive.file scope and only reads files that PaperSynced itself created. No other Drive files are accessed.',
-	UNVERIFIED_APP_CLICK_PATH: 'On the consent screen, click "Advanced" then "Go to PaperSynced (unsafe)" — the "unsafe" wording is Google\'s default for all unverified apps, not specific to this plugin.',
-	UNVERIFIED_APP_CONFIRM: 'Got it — Connect Google Drive',
-	UNVERIFIED_APP_CANCEL: 'Cancel',
 } as const;

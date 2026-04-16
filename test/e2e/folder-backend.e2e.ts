@@ -19,11 +19,11 @@ describe('Folder backend settings', function () {
 		}
 	});
 
-	it('shows Pick another folder option', async function () {
+	it('shows Browse option', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
 		if (text.includes('Choose your sync folder')) {
-			expect(text).toContain('Pick another folder');
+			expect(text).toContain('Browse');
 		}
 	});
 
