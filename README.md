@@ -80,11 +80,7 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 ## Privacy
 
-- The plugin stores **zero LLM API keys** (all AI runs on your phone)
-- Google Drive: one OAuth token stored in your OS keychain via Obsidian's Secret Storage API
-- Folder sync: no authentication needed (local filesystem)
-- No telemetry, no analytics, no outbound requests except to Google APIs
-- MIT licensed, fully open source
+PaperSynced stores zero LLM API keys (all AI inference happens on your mobile device). On the Google Drive path, a single OAuth refresh token is stored in Obsidian's OS-backed Secret Storage. On the Folder path, no credentials are stored. The plugin makes network requests only to googleapis.com and accounts.google.com. No telemetry, no analytics.
 
 ## Requirements
 
