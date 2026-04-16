@@ -42,7 +42,7 @@ export class FirstRunModal extends Modal {
 	}
 
 	private get currentStep(): WizardStep {
-		return STEP_ORDER[this.currentStepIndex];
+		return STEP_ORDER[this.currentStepIndex] ?? 'welcome';
 	}
 
 	private renderCurrentStep(): void {
