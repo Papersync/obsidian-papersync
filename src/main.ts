@@ -125,10 +125,9 @@ export default class PaperSyncedPlugin extends Plugin {
 		}
 
 		if (!this.settings.setupComplete) {
-			logger.info('First run detected — opening wizard');
+			logger.info('First run detected, opening settings');
 			this.syncState.setStatus('idle');
-			const { FirstRunModal } = await import('@/ui/first-run-modal');
-			setTimeout(() => new FirstRunModal(this.app, this).open(), 500);
+			setTimeout(() => this.openSettings(), 500);
 			return;
 		}
 

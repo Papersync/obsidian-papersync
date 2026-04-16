@@ -53,3 +53,12 @@
 	color: var(--text-accent);
 	white-space: nowrap;
 }
+
+.papersynced-storage-active .setting-item-name {
+	color: var(--text-success);
+}
+
+.papersynced-storage-active {
+	border-left: 3px solid var(--text-success);
+	padding-left: 12px;
+}

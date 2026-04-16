@@ -137,8 +137,9 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 
 		if (isGoogleConnected) {
 			new Setting(containerEl)
-				.setName('Google Drive')
+				.setName('\u2713 Google Drive')
 				.setDesc(STRINGS.SETTINGS_CONNECTED)
+				.setClass('papersynced-storage-active')
 				.addButton((button) =>
 					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
 						this.plugin.oauthManager?.disconnect();
@@ -156,8 +157,9 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		if (isFolderConnected) {
 			const displayName = this.getFolderDisplayName();
 			new Setting(containerEl)
-				.setName(displayName)
+				.setName(`\u2713 ${displayName}`)
 				.setDesc(`Watching ${this.plugin.settings.folderPath} for new scans`)
+				.setClass('papersynced-storage-active')
 				.addButton((button) =>
 					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
 						this.plugin.syncEngine?.stop();
