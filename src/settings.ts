@@ -1,5 +1,5 @@
 import type PaperSyncedPlugin from '@/main';
-import { detectICloudScansPath } from '@/utils/platform';
+import { detectSyncLocations } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 
@@ -163,7 +163,9 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				}))
 			);
 
-		const detectedPath = detectICloudScansPath();
+		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
+		const detected = detectSyncLocations(vaultPath);
+		const detectedPath = detected[0]?.path ?? null;
 
 		new Setting(containerEl)
 			.setName('Connect iCloud')

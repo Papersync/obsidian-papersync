@@ -3,38 +3,81 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
 
-const ICLOUD_MACOS_BASE = path.join(
-	os.homedir(),
-	'Library',
-	'Mobile Documents',
-	'com~apple~CloudDocs'
-);
+export interface SyncLocation {
+	type: string;
+	displayName: string;
+	path: string;
+	detected: boolean;
+}
 
 const PAPERSYNCED_SCANS_FOLDER = path.join('PaperSynced', 'scans');
 
-export function detectICloudScansPath(): string | null {
+function probe(candidate: string): boolean {
+	try {
+		fs.accessSync(candidate, fs.constants.R_OK);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+export function detectSyncLocations(vaultPath?: string): SyncLocation[] {
+	const locations: SyncLocation[] = [];
+	const home = os.homedir();
+
+	// iCloud Drive
 	if (Platform.isMacOS) {
-		const candidate = path.join(ICLOUD_MACOS_BASE, PAPERSYNCED_SCANS_FOLDER);
-		try {
-			fs.accessSync(candidate, fs.constants.R_OK);
-			return candidate;
-		} catch {
-			return null;
+		const icloudMacBase = path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+		const p = path.join(icloudMacBase, PAPERSYNCED_SCANS_FOLDER);
+		if (probe(p)) {
+			locations.push({ type: 'icloud', displayName: 'iCloud Drive', path: p, detected: true });
+		}
+	} else if (Platform.isWin) {
+		const p = path.join(home, 'iCloudDrive', PAPERSYNCED_SCANS_FOLDER);
+		if (probe(p)) {
+			locations.push({ type: 'icloud', displayName: 'iCloud Drive', path: p, detected: true });
 		}
 	}
 
+	// Dropbox
+	const dropboxCandidates = Platform.isWin
+		? [path.join(home, 'Dropbox', PAPERSYNCED_SCANS_FOLDER)]
+		: [path.join(home, 'Dropbox', PAPERSYNCED_SCANS_FOLDER)];
+	for (const p of dropboxCandidates) {
+		if (probe(p)) {
+			locations.push({ type: 'dropbox', displayName: 'Dropbox', path: p, detected: true });
+			break;
+		}
+	}
+
+	// OneDrive
 	if (Platform.isWin) {
-		const icloudWinBase = path.join(os.homedir(), 'iCloudDrive');
-		const candidate = path.join(icloudWinBase, PAPERSYNCED_SCANS_FOLDER);
-		try {
-			fs.accessSync(candidate, fs.constants.R_OK);
-			return candidate;
-		} catch {
-			return null;
+		const p = path.join(home, 'OneDrive', PAPERSYNCED_SCANS_FOLDER);
+		if (probe(p)) {
+			locations.push({ type: 'onedrive', displayName: 'OneDrive', path: p, detected: true });
+		}
+	} else if (Platform.isMacOS) {
+		const p = path.join(home, 'OneDrive', PAPERSYNCED_SCANS_FOLDER);
+		if (probe(p)) {
+			locations.push({ type: 'onedrive', displayName: 'OneDrive', path: p, detected: true });
 		}
 	}
 
-	return null;
+	// Syncthing
+	const syncthingPath = path.join(home, 'Sync', PAPERSYNCED_SCANS_FOLDER);
+	if (probe(syncthingPath)) {
+		locations.push({ type: 'syncthing', displayName: 'Syncthing', path: syncthingPath, detected: true });
+	}
+
+	// Obsidian Sync (vault-relative)
+	if (vaultPath) {
+		const p = path.join(vaultPath, PAPERSYNCED_SCANS_FOLDER);
+		if (probe(p)) {
+			locations.push({ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: p, detected: true });
+		}
+	}
+
+	return locations;
 }
 
 export function isOnline(): boolean {
