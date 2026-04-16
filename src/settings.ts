@@ -41,7 +41,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	folderPath: '',
 	folderType: '',
 	targetFolder: '',  // resolved on first setup from daily notes config
-	attachmentsFolder: 'attachments/papersynced',
+	attachmentsFolder: 'attachments/Papersynced',
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
 	debugLogging: false,
@@ -317,7 +317,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 				.setClass('papersynced-sub-setting')
 				.addText((text) =>
 					text
-						.setPlaceholder('attachments/papersynced')
+						.setPlaceholder('attachments/Papersynced')
 						.setValue(this.plugin.settings.attachmentsFolder)
 						.onChange(asyncValueHandler(async (value) => {
 							this.plugin.settings.attachmentsFolder = value;

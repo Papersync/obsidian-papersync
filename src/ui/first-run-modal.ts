@@ -14,6 +14,7 @@ export class FirstRunModal extends Modal {
 		folderPath: string;
 		folderType: string;
 		targetFolder: string;
+		attachmentsFolder: string;
 		oauthComplete: boolean;
 	};
 
@@ -24,7 +25,8 @@ export class FirstRunModal extends Modal {
 			backendChoice: null,
 			folderPath: '',
 			folderType: '',
-			targetFolder: plugin.settings.targetFolder || 'PaperSynced',
+			targetFolder: plugin.settings.targetFolder || 'Papersynced',
+			attachmentsFolder: plugin.settings.attachmentsFolder || 'attachments/Papersynced',
 			oauthComplete: false,
 		};
 	}
@@ -160,15 +162,25 @@ export class FirstRunModal extends Modal {
 	private renderTargetFolder(containerEl: HTMLElement): void {
 		containerEl.createEl('h2', { text: 'Notes folder' });
 		containerEl.createEl('p', {
-			text: 'Where should synced notes be created in your vault?',
+			text: 'Where should synced notes and scan images be stored in your vault?',
 		});
 
 		new Setting(containerEl)
-			.setName('Target folder')
+			.setName('Notes folder')
+			.setDesc('Synced notes will be created here')
 			.addText(text =>
 				text
 					.setValue(this.stepState.targetFolder)
 					.onChange(value => { this.stepState.targetFolder = value; })
+			);
+
+		new Setting(containerEl)
+			.setName('Attachments folder')
+			.setDesc('Scan images will be saved here')
+			.addText(text =>
+				text
+					.setValue(this.stepState.attachmentsFolder)
+					.onChange(value => { this.stepState.attachmentsFolder = value; })
 			);
 
 		this.renderNavButtons(containerEl, this.stepState.targetFolder.trim() !== '', true);
@@ -182,6 +194,7 @@ export class FirstRunModal extends Modal {
 			this.plugin.settings.folderType = this.stepState.folderType;
 		}
 		this.plugin.settings.targetFolder = this.stepState.targetFolder;
+		this.plugin.settings.attachmentsFolder = this.stepState.attachmentsFolder;
 		this.plugin.settings.setupComplete = true;
 		await this.plugin.saveSettings();
 
