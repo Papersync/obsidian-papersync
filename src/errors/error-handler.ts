@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 import type { SyncErrorType } from '@/errors/sync-error';
 import type { SyncError } from '@/errors/sync-error';
-import { createSyncError } from '@/errors/sync-error';
+import { createSyncError, parseRetryAfter } from '@/errors/sync-error';
 import { logger } from '@/utils/logger';
 import { STRINGS } from '@/utils/strings';
 
@@ -38,8 +38,10 @@ export class ErrorHandler {
 
 			if (syncError.retriable && retryCount < MAX_RETRIES) {
 				this.retryCountMap.set(scanId, retryCount + 1);
-				const delay = BACKOFF_MS[retryCount] ?? BACKOFF_MS[BACKOFF_MS.length - 1]!;
-				logger.warn(`Retry ${retryCount + 1}/${MAX_RETRIES} for ${scanId} after ${delay}ms: ${syncError.message}`);
+				const defaultDelay = BACKOFF_MS[retryCount] ?? BACKOFF_MS[BACKOFF_MS.length - 1]!;
+				const delay = syncError.retryAfterMs ?? defaultDelay;
+				const source = syncError.retryAfterMs ? 'header' : 'default';
+				logger.warn(`Retry ${retryCount + 1}/${MAX_RETRIES} for ${scanId} after ${delay}ms (source=${source}): ${syncError.message}`);
 				await sleep(delay);
 				return this.handleWithRetry(scanId, operation);
 			}
@@ -53,13 +55,20 @@ export class ErrorHandler {
 	classify(err: unknown): SyncError {
 		if (isSyncError(err)) {return err;}
 
+		// Extract Retry-After header if available (Obsidian requestUrl errors may have headers)
+		const retryAfterHeader = extractHeader(err, 'retry-after');
+		const retryAfterMs = parseRetryAfter(retryAfterHeader);
+
 		if (err instanceof Error) {
 			const msg = err.message.toLowerCase();
 			if (msg.includes('timeout') || msg.includes('timed out')) {
 				return createSyncError('network_timeout', err.message);
 			}
 			if (msg.includes('429') || msg.includes('rate limit')) {
-				return createSyncError('rate_limit', err.message);
+				if (retryAfterMs) {
+					logger.info(`429 retry-after ${retryAfterMs}ms (source=header)`);
+				}
+				return createSyncError('rate_limit', err.message, undefined, retryAfterMs);
 			}
 			if (msg.includes('403') || msg.includes('permission')) {
 				return createSyncError('permission_denied', err.message);
@@ -95,6 +104,17 @@ function isSyncError(err: unknown): err is SyncError {
 		'message' in err &&
 		'retriable' in err
 	);
+}
+
+function extractHeader(err: unknown, headerName: string): string | undefined {
+	if (typeof err !== 'object' || err === null) return undefined;
+	const e = err as Record<string, unknown>;
+	// Obsidian requestUrl errors may include headers as a Record
+	const headers = e.headers as Record<string, string> | undefined;
+	if (!headers) return undefined;
+	// Case-insensitive header lookup
+	const key = Object.keys(headers).find(k => k.toLowerCase() === headerName.toLowerCase());
+	return key ? headers[key] : undefined;
 }
 
 function sleep(ms: number): Promise<void> {

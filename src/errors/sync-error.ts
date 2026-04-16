@@ -13,12 +13,33 @@ export interface SyncError {
 	type: SyncErrorType;
 	message: string;
 	retriable: boolean;
+	retryAfterMs?: number;
+}
+
+export function parseRetryAfter(headerValue: string | undefined | null): number | undefined {
+	if (!headerValue) return undefined;
+
+	// Try seconds format first
+	const seconds = Number(headerValue);
+	if (!isNaN(seconds) && seconds > 0) {
+		return Math.ceil(seconds * 1000);
+	}
+
+	// Try HTTP-date format (RFC 7231)
+	const date = new Date(headerValue);
+	if (!isNaN(date.getTime())) {
+		const ms = date.getTime() - Date.now();
+		return ms > 0 ? ms : undefined;
+	}
+
+	return undefined;
 }
 
 export function createSyncError(
 	type: SyncErrorType,
 	message: string,
-	retriable?: boolean
+	retriable?: boolean,
+	retryAfterMs?: number
 ): SyncError {
 	const defaultRetriable: Record<SyncErrorType, boolean> = {
 		network_timeout: true,
@@ -36,5 +57,6 @@ export function createSyncError(
 		type,
 		message,
 		retriable: retriable ?? defaultRetriable[type],
+		retryAfterMs,
 	};
 }

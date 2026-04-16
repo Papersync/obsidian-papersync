@@ -1,4 +1,4 @@
-import { createSyncError } from '@/errors/sync-error';
+import { createSyncError, parseRetryAfter } from '@/errors/sync-error';
 
 describe('createSyncError', () => {
 	it('creates a retriable network_timeout error by default', () => {
@@ -33,5 +33,47 @@ describe('createSyncError', () => {
 		for (const type of nonRetriableTypes) {
 			expect(createSyncError(type, 'test').retriable).toBe(false);
 		}
+	});
+
+	it('includes retryAfterMs when provided', () => {
+		const error = createSyncError('rate_limit', '429', undefined, 10000);
+		expect(error.retryAfterMs).toBe(10000);
+	});
+});
+
+describe('parseRetryAfter', () => {
+	it('parses seconds-based Retry-After header', () => {
+		expect(parseRetryAfter('10')).toBe(10000);
+	});
+
+	it('parses decimal seconds', () => {
+		expect(parseRetryAfter('1.5')).toBe(1500);
+	});
+
+	it('returns undefined for missing header', () => {
+		expect(parseRetryAfter(undefined)).toBeUndefined();
+		expect(parseRetryAfter(null)).toBeUndefined();
+		expect(parseRetryAfter('')).toBeUndefined();
+	});
+
+	it('returns undefined for zero or negative seconds', () => {
+		expect(parseRetryAfter('0')).toBeUndefined();
+		expect(parseRetryAfter('-5')).toBeUndefined();
+	});
+
+	it('returns undefined for unparseable value', () => {
+		expect(parseRetryAfter('not-a-number')).toBeUndefined();
+	});
+
+	it('parses HTTP-date format Retry-After header', () => {
+		const future = new Date(Date.now() + 60000).toUTCString();
+		const result = parseRetryAfter(future);
+		expect(result).toBeGreaterThan(50000);
+		expect(result).toBeLessThanOrEqual(60000);
+	});
+
+	it('returns undefined for past HTTP-date', () => {
+		const past = new Date(Date.now() - 60000).toUTCString();
+		expect(parseRetryAfter(past)).toBeUndefined();
 	});
 });
