@@ -4,6 +4,7 @@ import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
 import { createSyncError } from '@/errors/sync-error';
+import { isICloudPath, triggerICloudDownload } from '@/sync/icloud-offload';
 import { logger } from '@/utils/logger';
 
 const DEBOUNCE_MS = 500;
@@ -103,6 +104,24 @@ export class FolderBackend implements SyncBackend {
 	}
 
 	async fetchScan(ref: ScanReference): Promise<ScanFile> {
+		// Check for iCloud offloaded files before reading
+		if (isICloudPath(ref.jsonPath)) {
+			try {
+				const stat = await fs.promises.stat(ref.jsonPath);
+				if (stat.size === 0) {
+					const downloaded = await triggerICloudDownload(ref.jsonPath);
+					if (!downloaded) {
+						throw createSyncError('icloud_offloaded', `File not yet downloaded: ${ref.id}`);
+					}
+				}
+			} catch (err) {
+				if (err && typeof err === 'object' && 'type' in err && (err as { type: string }).type === 'icloud_offloaded') {
+					throw err;
+				}
+				// stat error — file may be inaccessible, continue to read attempt
+			}
+		}
+
 		const content = await fs.promises.readFile(ref.jsonPath, 'utf-8');
 		const raw = JSON.parse(content);
 
