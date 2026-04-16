@@ -146,7 +146,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Sign in with Google')
-			.setDesc('Syncs scans from Google Drive. ' + STRINGS.SETTINGS_OAUTH_WARNING)
+			.setDesc('Syncs scans from Google Drive.')
 			.addButton((button) =>
 				button.setButtonText('Connect Google').setCta().onClick(asyncHandler(async () => {
 					try {
