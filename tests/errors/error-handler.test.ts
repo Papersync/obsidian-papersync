@@ -48,7 +48,7 @@ describe('ErrorHandler', () => {
 		it('classifies unknown 403 with generic guidance', () => {
 			const classified = handler.classify(new Error('403 something unknown'));
 			expect(classified.type).toBe('permission_denied');
-			expect(classified.guidance).toContain('verify the PaperSynced folder');
+			expect(classified.guidance).toContain('verify the PaperSync folder');
 		});
 
 		it('classifies 401 unauthorized errors', () => {

@@ -1,5 +1,5 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
-import type PaperSyncedPlugin from '@/main';
+import type PaperSyncPlugin from '@/main';
 
 
 type WizardStep = 'welcome' | 'storage' | 'target-folder';
@@ -7,7 +7,7 @@ type WizardStep = 'welcome' | 'storage' | 'target-folder';
 const STEP_ORDER: WizardStep[] = ['welcome', 'storage', 'target-folder'];
 
 export class FirstRunModal extends Modal {
-	private plugin: PaperSyncedPlugin;
+	private plugin: PaperSyncPlugin;
 	private currentStepIndex = 0;
 	private stepState: {
 		backendChoice: 'drive' | 'folder' | null;
@@ -18,15 +18,15 @@ export class FirstRunModal extends Modal {
 		oauthComplete: boolean;
 	};
 
-	constructor(app: App, plugin: PaperSyncedPlugin) {
+	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app);
 		this.plugin = plugin;
 		this.stepState = {
 			backendChoice: null,
 			folderPath: '',
 			folderType: '',
-			targetFolder: plugin.settings.targetFolder || 'Papersynced',
-			attachmentsFolder: plugin.settings.attachmentsFolder || 'attachments/Papersynced',
+			targetFolder: plugin.settings.targetFolder || 'Papersync',
+			attachmentsFolder: plugin.settings.attachmentsFolder || 'attachments/Papersync',
 			oauthComplete: false,
 		};
 	}
@@ -51,7 +51,7 @@ export class FirstRunModal extends Modal {
 		const totalSteps = STEP_ORDER.length;
 		contentEl.createEl('div', {
 			text: `Step ${stepNum} of ${totalSteps}`,
-			cls: 'papersynced-wizard-step-indicator',
+			cls: 'papersync-wizard-step-indicator',
 		});
 
 		switch (this.currentStep) {
@@ -62,7 +62,7 @@ export class FirstRunModal extends Modal {
 	}
 
 	private renderNavButtons(containerEl: HTMLElement, nextEnabled: boolean, isDone = false): void {
-		const nav = new Setting(containerEl).setClass('papersynced-wizard-nav');
+		const nav = new Setting(containerEl).setClass('papersync-wizard-nav');
 
 		if (this.currentStepIndex > 0) {
 			nav.addButton(btn =>
@@ -89,9 +89,9 @@ export class FirstRunModal extends Modal {
 	}
 
 	private renderWelcome(containerEl: HTMLElement): void {
-		containerEl.createEl('h2', { text: 'Welcome to PaperSynced' });
+		containerEl.createEl('h2', { text: 'Welcome to PaperSync' });
 		containerEl.createEl('p', {
-			text: 'PaperSynced syncs handwritten scans from your phone into your Obsidian vault as markdown notes. Let\'s set it up.',
+			text: 'PaperSync syncs handwritten scans from your phone into your Obsidian vault as markdown notes. Let\'s set it up.',
 		});
 		this.renderNavButtons(containerEl, true);
 	}
@@ -99,7 +99,7 @@ export class FirstRunModal extends Modal {
 	private renderStorage(containerEl: HTMLElement): void {
 		containerEl.createEl('h2', { text: 'Choose your storage' });
 		containerEl.createEl('p', {
-			text: 'How does the PaperSynced mobile app save your scans?',
+			text: 'How does the PaperSync mobile app save your scans?',
 		});
 
 		// Google Drive — "Connect" triggers OAuth directly
@@ -200,6 +200,6 @@ export class FirstRunModal extends Modal {
 
 		this.close();
 		await this.plugin.startSync();
-		new Notice('PaperSynced is syncing now');
+		new Notice('PaperSync is syncing now');
 	}
 }

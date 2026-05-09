@@ -41,7 +41,7 @@ describe('detectSyncLocations', () => {
 
 	it('detects iCloud Drive on macOS', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'PaperSynced', 'scans');
+		const expected = path.join('/Users/test', 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'PaperSync', 'scans');
 		allowPath(expected);
 
 		const result = detectSyncLocations();
@@ -52,7 +52,7 @@ describe('detectSyncLocations', () => {
 
 	it('detects iCloud Drive on Windows', () => {
 		(Platform as { isWin: boolean }).isWin = true;
-		const expected = path.join('/Users/test', 'iCloudDrive', 'PaperSynced', 'scans');
+		const expected = path.join('/Users/test', 'iCloudDrive', 'PaperSync', 'scans');
 		allowPath(expected);
 
 		const result = detectSyncLocations();
@@ -63,7 +63,7 @@ describe('detectSyncLocations', () => {
 
 	it('detects Dropbox', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'Dropbox', 'PaperSynced', 'scans');
+		const expected = path.join('/Users/test', 'Dropbox', 'PaperSync', 'scans');
 		allowPath(expected);
 
 		const result = detectSyncLocations();
@@ -74,7 +74,7 @@ describe('detectSyncLocations', () => {
 
 	it('detects OneDrive on Windows', () => {
 		(Platform as { isWin: boolean }).isWin = true;
-		const expected = path.join('/Users/test', 'OneDrive', 'PaperSynced', 'scans');
+		const expected = path.join('/Users/test', 'OneDrive', 'PaperSync', 'scans');
 		allowPath(expected);
 
 		const result = detectSyncLocations();
@@ -85,7 +85,7 @@ describe('detectSyncLocations', () => {
 
 	it('detects Syncthing', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'Sync', 'PaperSynced', 'scans');
+		const expected = path.join('/Users/test', 'Sync', 'PaperSync', 'scans');
 		allowPath(expected);
 
 		const result = detectSyncLocations();
@@ -97,7 +97,7 @@ describe('detectSyncLocations', () => {
 	it('detects Obsidian Sync when vault path provided', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
 		const vaultPath = '/Users/test/Documents/MyVault';
-		const expected = path.join(vaultPath, 'PaperSynced', 'scans');
+		const expected = path.join(vaultPath, 'PaperSync', 'scans');
 		allowPath(expected);
 
 		const result = detectSyncLocations(vaultPath);
@@ -114,8 +114,8 @@ describe('detectSyncLocations', () => {
 
 	it('returns multiple locations when several sync tools detected', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const icloudPath = path.join('/Users/test', 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'PaperSynced', 'scans');
-		const dropboxPath = path.join('/Users/test', 'Dropbox', 'PaperSynced', 'scans');
+		const icloudPath = path.join('/Users/test', 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'PaperSync', 'scans');
+		const dropboxPath = path.join('/Users/test', 'Dropbox', 'PaperSync', 'scans');
 		allowPaths([icloudPath, dropboxPath]);
 
 		const result = detectSyncLocations();

@@ -1,9 +1,9 @@
-.papersynced-template-container {
+.papersync-template-container {
 	margin-top: 8px;
 	margin-bottom: 16px;
 }
 
-.papersynced-template-editor {
+.papersync-template-editor {
 	width: 100%;
 	min-height: 280px;
 	font-family: var(--font-monospace);
@@ -21,44 +21,44 @@
 	overflow-x: auto;
 }
 
-.papersynced-template-editor:focus {
+.papersync-template-editor:focus {
 	border-color: var(--interactive-accent);
 	outline: none;
 }
 
-.papersynced-sub-setting {
+.papersync-sub-setting {
 	margin-left: 20px;
 	border-left: 2px solid var(--background-modifier-border);
 	padding-left: 12px;
 }
 
-.papersynced-template-desc {
+.papersync-template-desc {
 	margin-bottom: 8px;
 }
 
-.papersynced-var-table {
+.papersync-var-table {
 	font-size: var(--font-smaller);
 	border-collapse: collapse;
 	width: 100%;
 	margin-top: 4px;
 }
 
-.papersynced-var-table td {
+.papersync-var-table td {
 	padding: 2px 8px 2px 0;
 	vertical-align: top;
 }
 
-.papersynced-var-token {
+.papersync-var-token {
 	font-family: var(--font-monospace);
 	color: var(--text-accent);
 	white-space: nowrap;
 }
 
-.papersynced-storage-active .setting-item-name {
+.papersync-storage-active .setting-item-name {
 	color: var(--text-success);
 }
 
-.papersynced-storage-active {
+.papersync-storage-active {
 	border-left: 3px solid var(--text-success);
 	padding-left: 12px;
 }

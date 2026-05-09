@@ -2,7 +2,7 @@ describe('Template editor', function () {
 	let isConnected: boolean;
 
 	before(async function () {
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
@@ -15,7 +15,7 @@ describe('Template editor', function () {
 			this.skip();
 			return;
 		}
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
 		await browser.pause(1000);
 	});
 
@@ -25,7 +25,7 @@ describe('Template editor', function () {
 	});
 
 	it('template textarea is editable', async function () {
-		const textarea = await browser.$('.papersynced-template-editor');
+		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 
 		const original = await textarea.getValue();
@@ -41,7 +41,7 @@ describe('Template editor', function () {
 	});
 
 	it('template contains default variables', async function () {
-		const textarea = await browser.$('.papersynced-template-editor');
+		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
 
@@ -52,7 +52,7 @@ describe('Template editor', function () {
 	});
 
 	it('template has proper styling', async function () {
-		const textarea = await browser.$('.papersynced-template-editor');
+		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 
 		expect(await textarea.isDisplayed()).toBe(true);

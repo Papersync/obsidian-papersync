@@ -1,4 +1,4 @@
-import type PaperSyncedPlugin from '@/main';
+import type PaperSyncPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
 import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
@@ -41,7 +41,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	folderPath: '',
 	folderType: '',
 	targetFolder: '',  // resolved on first setup from daily notes config
-	attachmentsFolder: 'attachments/Papersynced',
+	attachmentsFolder: 'attachments/Papersync',
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
 	debugLogging: false,
@@ -75,12 +75,12 @@ function asyncValueHandler<T>(fn: (value: T) => Promise<void>): (value: T) => vo
 	return (value: T) => { fn(value).catch(console.error); };
 }
 
-export class PaperSyncedSettingTab extends PluginSettingTab {
-	plugin: PaperSyncedPlugin;
+export class PaperSyncSettingTab extends PluginSettingTab {
+	plugin: PaperSyncPlugin;
 	private syncButton: HTMLButtonElement | null = null;
 	private syncDesc: HTMLElement | null = null;
 
-	constructor(app: App, plugin: PaperSyncedPlugin) {
+	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -139,7 +139,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName('\u2713 Google Drive')
 				.setDesc(STRINGS.SETTINGS_CONNECTED)
-				.setClass('papersynced-storage-active')
+				.setClass('papersync-storage-active')
 				.addButton((button) =>
 					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
 						this.plugin.oauthManager?.disconnect();
@@ -159,7 +159,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName(`\u2713 ${displayName}`)
 				.setDesc(`Watching ${this.plugin.settings.folderPath} for new scans`)
-				.setClass('papersynced-storage-active')
+				.setClass('papersync-storage-active')
 				.addButton((button) =>
 					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
 						this.plugin.syncEngine?.stop();
@@ -177,7 +177,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 
 		// Not connected — show both options as equal-weight choices
 		containerEl.createEl('p', {
-			text: 'Choose the same storage you used in the PaperSynced mobile app.',
+			text: 'Choose the same storage you used in the PaperSync mobile app.',
 			cls: 'setting-item-description',
 		});
 
@@ -293,7 +293,7 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			.setDesc('Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).')
 			.addText((text) =>
 				text
-					.setPlaceholder('PaperSynced')
+					.setPlaceholder('PaperSync')
 					.setValue(this.plugin.settings.targetFolder)
 					.onChange(asyncValueHandler(async (value) => {
 						this.plugin.settings.targetFolder = value;
@@ -316,10 +316,10 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 			new Setting(containerEl)
 				.setName('Attachments folder')
 				.setDesc('Subfolder in this vault for embedded scan images.')
-				.setClass('papersynced-sub-setting')
+				.setClass('papersync-sub-setting')
 				.addText((text) =>
 					text
-						.setPlaceholder('attachments/Papersynced')
+						.setPlaceholder('attachments/Papersync')
 						.setValue(this.plugin.settings.attachmentsFolder)
 						.onChange(asyncValueHandler(async (value) => {
 							this.plugin.settings.attachmentsFolder = value;
@@ -350,10 +350,10 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 	private renderTemplateSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Note Template").setHeading();
 
-		const descContainer = containerEl.createDiv({ cls: 'setting-item-description papersynced-template-desc' });
+		const descContainer = containerEl.createDiv({ cls: 'setting-item-description papersync-template-desc' });
 		descContainer.createEl('p', { text: 'Template for synced notes. Available variables:' });
 
-		const varList = descContainer.createEl('table', { cls: 'papersynced-var-table' });
+		const varList = descContainer.createEl('table', { cls: 'papersync-var-table' });
 		const vars: Array<[string, string]> = [
 			['{{markdown}}', 'Converted text'],
 			['{{image_file}}', 'Image vault path, use ![[{{image_file}}]] to embed'],
@@ -366,13 +366,13 @@ export class PaperSyncedSettingTab extends PluginSettingTab {
 		];
 		for (const [token, desc] of vars) {
 			const row = varList.createEl('tr');
-			row.createEl('td', { text: token, cls: 'papersynced-var-token' });
+			row.createEl('td', { text: token, cls: 'papersync-var-token' });
 			row.createEl('td', { text: desc });
 		}
 
-		const textareaContainer = containerEl.createDiv({ cls: 'papersynced-template-container' });
+		const textareaContainer = containerEl.createDiv({ cls: 'papersync-template-container' });
 		const textarea = textareaContainer.createEl('textarea', {
-			cls: 'papersynced-template-editor',
+			cls: 'papersync-template-editor',
 			attr: {
 				spellcheck: 'false',
 				placeholder: 'Enter your note template...',

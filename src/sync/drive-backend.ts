@@ -76,7 +76,7 @@ export class DriveBackend implements SyncBackend {
 
 		const folderId = await this.findScansFolder(token);
 		if (!folderId) {
-			logger.warn('PaperSynced scans folder not found on Drive — nothing to sync');
+			logger.warn('PaperSync scans folder not found on Drive — nothing to sync');
 			return [];
 		}
 		logger.info(`Found scans folder on Drive: ${folderId}`);
@@ -201,7 +201,7 @@ export class DriveBackend implements SyncBackend {
 			const folderData = response.json as DriveListResponse;
 			const folders = folderData.files ?? [];
 			if (folders.length === 0 || !folders[0]) {
-				logger.warn(`PaperSynced scans folder not found on Drive (missing: ${part})`);
+				logger.warn(`PaperSync scans folder not found on Drive (missing: ${part})`);
 				return null;
 			}
 			parentId = folders[0].id;

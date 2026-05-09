@@ -2,7 +2,7 @@ describe('Settings tab', function () {
 	let isConnected: boolean;
 
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
@@ -47,7 +47,7 @@ describe('Settings tab', function () {
 
 	it('shows template editor textarea when connected', async function () {
 		if (!isConnected) {return;}
-		const textarea = await browser.$('.papersynced-template-editor');
+		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
 		expect(value).toContain('{{markdown}}');

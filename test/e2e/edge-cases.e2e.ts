@@ -1,20 +1,20 @@
 describe('Edge cases and error handling', function () {
 	it('survives rapid sync now clicks', async function () {
 		// Fire sync command 3 times rapidly — should not crash
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
 		await browser.pause(2000);
 
 		// Plugin should still be functional
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('PaperSynced');
+		expect(text).toContain('PaperSync');
 	});
 
 	it('survives opening and closing settings rapidly', async function () {
 		for (let i = 0; i < 5; i++) {
-			await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+			await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
 			await browser.pause(200);
 			await browser.keys('Escape');
 			await browser.pause(200);
@@ -26,7 +26,7 @@ describe('Edge cases and error handling', function () {
 	});
 
 	it('handles settings reset without crashing', async function () {
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
 		await browser.pause(1000);
 
 		// Find and click the "Reset settings" button (not full reset)
@@ -46,7 +46,7 @@ describe('Edge cases and error handling', function () {
 			// Plugin should still be functional after reset
 			const body = await browser.$('body');
 			const text = await body.getText();
-			expect(text).toContain('PaperSynced');
+			expect(text).toContain('PaperSync');
 		}
 
 		await browser.keys('Escape');
@@ -56,7 +56,7 @@ describe('Edge cases and error handling', function () {
 		const logs = await browser.getLogs('browser');
 		const pluginErrors = logs.filter(
 			(log: { level: string; message: string }) =>
-				log.level === 'SEVERE' && log.message.includes('papersynced')
+				log.level === 'SEVERE' && log.message.includes('papersync')
 		);
 		expect(pluginErrors.length).toBe(0);
 	});
@@ -71,7 +71,7 @@ describe('Edge cases and error handling', function () {
 	it('handles missing DEV commands gracefully in production', async function () {
 		// DEV_MODE is false in production builds — command won't exist
 		try {
-			await browser.executeObsidianCommand('obsidian-papersynced:papersynced-dev-fake-scan');
+			await browser.executeObsidianCommand('obsidian-papersync:papersync-dev-fake-scan');
 		} catch {
 			// Expected — command doesn't exist in production
 		}

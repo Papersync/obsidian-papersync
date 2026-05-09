@@ -18,32 +18,32 @@ describe('saveImageToVault', () => {
 		const embed = await saveImageToVault(
 			mockVault as any,
 			imageData,
-			'attachments/papersynced',
+			'attachments/papersync',
 			'scan-001'
 		);
 
-		expect(embed).toBe('attachments/papersynced/papersynced-scan-001.jpg');
+		expect(embed).toBe('attachments/papersync/papersync-scan-001.jpg');
 	});
 
 	it('creates the image file in the vault', async () => {
 		const imageData = new ArrayBuffer(100);
 
-		await saveImageToVault(mockVault as any, imageData, 'attachments/papersynced', 'scan-001');
+		await saveImageToVault(mockVault as any, imageData, 'attachments/papersync', 'scan-001');
 
 		expect(mockVault.createBinary).toHaveBeenCalledWith(
-			'attachments/papersynced/papersynced-scan-001.jpg',
+			'attachments/papersync/papersync-scan-001.jpg',
 			imageData
 		);
 	});
 
 	it('skips creation if image already exists', async () => {
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'attachments/papersynced/papersynced-scan-001.jpg') return { path };
+			if (path === 'attachments/papersync/papersync-scan-001.jpg') return { path };
 			return null;
 		});
 
 		const imageData = new ArrayBuffer(100);
-		await saveImageToVault(mockVault as any, imageData, 'attachments/papersynced', 'scan-001');
+		await saveImageToVault(mockVault as any, imageData, 'attachments/papersync', 'scan-001');
 
 		expect(mockVault.createBinary).not.toHaveBeenCalled();
 	});
@@ -51,9 +51,9 @@ describe('saveImageToVault', () => {
 	it('creates nested folder structure', async () => {
 		const imageData = new ArrayBuffer(100);
 
-		await saveImageToVault(mockVault as any, imageData, 'attachments/papersynced', 'scan-001');
+		await saveImageToVault(mockVault as any, imageData, 'attachments/papersync', 'scan-001');
 
 		expect(mockVault.createFolder).toHaveBeenCalledWith('attachments');
-		expect(mockVault.createFolder).toHaveBeenCalledWith('attachments/papersynced');
+		expect(mockVault.createFolder).toHaveBeenCalledWith('attachments/papersync');
 	});
 });

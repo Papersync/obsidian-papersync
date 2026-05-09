@@ -1,4 +1,4 @@
-# obsidian-papersynced Plugin
+# obsidian-papersync Plugin
 
 ## Testing
 

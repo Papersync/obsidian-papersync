@@ -12,7 +12,7 @@ describe('Sync state management', function () {
 		// Ensure setupComplete is true for consistent test state
 		await browser.execute(async () => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void> }> } } }).app;
-			const plugin = app.plugins.plugins['obsidian-papersynced'];
+			const plugin = app.plugins.plugins['obsidian-papersync'];
 			if (plugin) {
 				plugin.settings.setupComplete = true;
 				await plugin.saveSettings();
@@ -22,7 +22,7 @@ describe('Sync state management', function () {
 
 	it('sync now shows notice when not configured', async function () {
 		// Open settings to check if we're connected
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
 		await browser.pause(500);
 		const body = await browser.$('body');
 		const settingsText = await body.getText();
@@ -31,14 +31,14 @@ describe('Sync state management', function () {
 
 		if (!settingsText.includes('Change Storage')) {
 			// Not connected — sync now should show a notice
-			await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
+			await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
 			await browser.pause(500);
 			// The notice DOM appears briefly — just verify no crash
 		}
 	});
 
 	it('ribbon icon exists and is clickable', async function () {
-		const ribbon = await browser.$('.side-dock-ribbon-action[aria-label="PaperSynced"]');
+		const ribbon = await browser.$('.side-dock-ribbon-action[aria-label="PaperSync"]');
 		if (await ribbon.isExisting()) {
 			await ribbon.click();
 			await browser.pause(500);
@@ -50,13 +50,13 @@ describe('Sync state management', function () {
 		const bodyBefore = await browser.$('body');
 		const textBefore = await bodyBefore.getText();
 
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
 		await browser.pause(2000);
 
 		const bodyAfter = await browser.$('body');
 		const textAfter = await bodyAfter.getText();
 
-		// Status should contain PaperSynced in some state
-		expect(textAfter).toContain('PaperSynced');
+		// Status should contain PaperSync in some state
+		expect(textAfter).toContain('PaperSync');
 	});
 });

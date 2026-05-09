@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 describe('Sync pipeline E2E', function () {
-	const SCANS_FOLDER = 'PaperSynced-test-scans';
+	const SCANS_FOLDER = 'PaperSync-test-scans';
 	let scansFolderPath: string;
 	let scanId: string;
 
@@ -26,7 +26,7 @@ describe('Sync pipeline E2E', function () {
 		// Configure plugin to use iCloud backend pointing to our test folder
 		await browser.execute(async (folder: string) => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void>; startSync: () => Promise<void> }> } } }).app;
-			const plugin = app.plugins.plugins['obsidian-papersynced'];
+			const plugin = app.plugins.plugins['obsidian-papersync'];
 			if (!plugin) { throw new Error('Plugin not loaded'); }
 
 			plugin.settings.backendType = 'folder';
@@ -83,7 +83,7 @@ describe('Sync pipeline E2E', function () {
 		await browser.pause(3000);
 
 		// Trigger manual sync in case watcher didn't fire
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
 		await browser.pause(3000);
 
 		// Verify the note was created in the vault
@@ -175,7 +175,7 @@ describe('Sync pipeline E2E', function () {
 		);
 
 		await browser.pause(3000);
-		await browser.executeObsidianCommand('obsidian-papersynced:papersynced-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
 		await browser.pause(3000);
 
 		const noteContent = await browser.execute(async () => {

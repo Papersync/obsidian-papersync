@@ -1,5 +1,5 @@
 import { Notice, Plugin } from 'obsidian';
-import { DEFAULT_SETTINGS, PaperSyncedSettingTab, migrateSettings } from '@/settings';
+import { DEFAULT_SETTINGS, PaperSyncSettingTab, migrateSettings } from '@/settings';
 import type { PluginSettings } from '@/settings';
 import { setDebugLogging, logger } from '@/utils/logger';
 import { STRINGS } from '@/utils/strings';
@@ -15,14 +15,14 @@ import { GOOGLE_CLIENT_ID, DEV_MODE } from '@/config';
 import { getDailyNotesConfig } from '@/utils/daily-notes';
 import { createFakeScanOnDrive } from '@/utils/dev-tools';
 
-export default class PaperSyncedPlugin extends Plugin {
+export default class PaperSyncPlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	oauthManager: OAuthManager | null = null;
 	syncEngine: SyncEngine | null = null;
 	syncState: SyncState = new SyncState('');
 	errorHandler: ErrorHandler = new ErrorHandler();
 	private statusBarEl: HTMLElement | null = null;
-	private settingsTab: PaperSyncedSettingTab | null = null;
+	private settingsTab: PaperSyncSettingTab | null = null;
 	private unsubscribeSyncState: (() => void) | null = null;
 
 	async onload(): Promise<void> {
@@ -31,7 +31,7 @@ export default class PaperSyncedPlugin extends Plugin {
 		await this.loadSettings();
 		setDebugLogging(this.settings.debugLogging);
 
-		this.settingsTab = new PaperSyncedSettingTab(this.app, this);
+		this.settingsTab = new PaperSyncSettingTab(this.app, this);
 		this.addSettingTab(this.settingsTab);
 
 		this.statusBarEl = this.addStatusBarItem();
@@ -41,20 +41,20 @@ export default class PaperSyncedPlugin extends Plugin {
 		});
 
 		this.addCommand({
-			id: 'papersynced-sync-now',
+			id: 'papersync-sync-now',
 			name: STRINGS.CMD_SYNC_NOW,
 			callback: () => void this.forceSyncNow(),
 		});
 
 		this.addCommand({
-			id: 'papersynced-open-settings',
+			id: 'papersync-open-settings',
 			name: STRINGS.CMD_OPEN_SETTINGS,
 			callback: () => this.openSettings(),
 		});
 
 		if (DEV_MODE) {
 			this.addCommand({
-				id: 'papersynced-dev-fake-scan',
+				id: 'papersync-dev-fake-scan',
 				name: 'DEV: Add fake scan to Drive',
 				callback: () => {
 					if (!this.oauthManager?.isAuthenticated) {
@@ -142,7 +142,7 @@ export default class PaperSyncedPlugin extends Plugin {
 		if (this.settings.targetFolder) {return;}
 
 		const dailyConfig = getDailyNotesConfig(this.app);
-		this.settings.targetFolder = dailyConfig.folder || 'PaperSynced';
+		this.settings.targetFolder = dailyConfig.folder || 'PaperSync';
 		await this.saveSettings();
 		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
 	}
@@ -219,7 +219,7 @@ export default class PaperSyncedPlugin extends Plugin {
 		if (this.syncEngine) {
 			await this.syncEngine.forceSyncNow();
 		} else {
-			new Notice('PaperSynced is not configured. Open settings to set up sync');
+			new Notice('PaperSync is not configured. Open settings to set up sync');
 		}
 	}
 

@@ -32,19 +32,19 @@ export const logger = {
 		pushLog('info', message);
 		if (debugEnabled) {
 			// eslint-disable-next-line no-console
-			console.log(`[PaperSynced] info: ${message}`);
+			console.log(`[PaperSync] info: ${message}`);
 		}
 	},
 
 	warn(message: string): void {
 		pushLog('warn', message);
 		if (debugEnabled) {
-			console.warn(`[PaperSynced] warn: ${message}`);
+			console.warn(`[PaperSync] warn: ${message}`);
 		}
 	},
 
 	error(message: string): void {
 		pushLog('ERROR', message);
-		console.error(`[PaperSynced] error: ${message}`);
+		console.error(`[PaperSync] error: ${message}`);
 	},
 };

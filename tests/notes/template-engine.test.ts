@@ -8,7 +8,7 @@ const defaultContext: TemplateContext = {
 	confidence: 87,
 	provider: 'claude',
 	model: 'claude-sonnet-4',
-	image_file: 'attachments/papersynced/scan-001.jpg',
+	image_file: 'attachments/papersync/scan-001.jpg',
 	markdown: '# Meeting Notes\n\n- Discussed roadmap\n- Action items assigned',
 	separator: '',
 };
@@ -35,7 +35,7 @@ describe('renderTemplate', () => {
 		const result = renderTemplate(template, defaultContext);
 		expect(result).toContain('## 2:30 PM');
 		expect(result).toContain('# Meeting Notes');
-		expect(result).toContain('> ![[attachments/papersynced/scan-001.jpg]]');
+		expect(result).toContain('> ![[attachments/papersync/scan-001.jpg]]');
 	});
 
 	it('preserves unknown variables as-is', () => {

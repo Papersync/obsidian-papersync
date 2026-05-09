@@ -1,12 +1,12 @@
-# PaperSynced for Obsidian
+# PaperSync for Obsidian
 
-Syncs handwritten scans from [PaperSynced](https://github.com/papersynced) mobile app into your Obsidian vault as markdown notes.
+Syncs handwritten scans from [PaperSync](https://github.com/papersync) mobile app into your Obsidian vault as markdown notes.
 
 One tap on your phone, one note in your vault, forty-five seconds. No typing, no backend, no third party reads your notes.
 
 ## How it works
 
-1. **Capture** handwritten notes with the PaperSynced mobile app
+1. **Capture** handwritten notes with the PaperSync mobile app
 2. The app converts them to markdown using your own LLM API key (BYOK)
 3. Scans are saved to your Google Drive or sync folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync)
 4. **This plugin** picks them up and creates vault notes automatically
@@ -26,16 +26,16 @@ One tap on your phone, one note in your vault, forty-five seconds. No typing, no
 ### BRAT (recommended during registry review)
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) in Obsidian
-2. Add this repo: `Papersync/obsidian-papersynced`
-3. Enable PaperSynced in Community Plugins
+2. Add this repo: `Papersync/obsidian-papersync`
+3. Enable PaperSync in Community Plugins
 
 ### Community Plugin Registry
 
-Search "PaperSynced" in Obsidian Settings > Community Plugins > Browse (available after registry approval).
+Search "PaperSync" in Obsidian Settings > Community Plugins > Browse (available after registry approval).
 
 ### Manual
 
-Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersynced/releases/latest) into `<vault>/.obsidian/plugins/obsidian-papersynced/`.
+Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersync/releases/latest) into `<vault>/.obsidian/plugins/obsidian-papersync/`.
 
 ## Setup
 
@@ -52,7 +52,7 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 | Variable         | Description                                                 | Example                                |
 | ---------------- | ----------------------------------------------------------- | -------------------------------------- |
 | `{{markdown}}`   | Converted markdown content                                  | `# Meeting Notes\n- Action items...`   |
-| `{{image_file}}` | Vault path to the scan image                                | `attachments/papersynced/scan-001.jpg` |
+| `{{image_file}}` | Vault path to the scan image                                | `attachments/papersync/scan-001.jpg` |
 | `{{time}}`       | 12-hour time with AM/PM                                     | `2:30 PM`                              |
 | `{{time_24h}}`   | 24-hour time                                                | `14:30`                                |
 | `{{separator}}`  | `---` when appending to an existing note, empty on new file | `---` or ``                            |
@@ -80,12 +80,12 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 ## Privacy
 
-PaperSynced stores zero LLM API keys (all AI inference happens on your mobile device). On the Google Drive path, a single OAuth refresh token is stored in Obsidian's OS-backed Secret Storage. On the Folder path, no credentials are stored. The plugin makes network requests only to googleapis.com and accounts.google.com. No telemetry, no analytics.
+PaperSync stores zero LLM API keys (all AI inference happens on your mobile device). On the Google Drive path, a single OAuth refresh token is stored in Obsidian's OS-backed Secret Storage. On the Folder path, no credentials are stored. The plugin makes network requests only to googleapis.com and accounts.google.com. No telemetry, no analytics.
 
 ## Requirements
 
 - Obsidian v1.11.4 or later (for Secret Storage API)
-- PaperSynced mobile app installed and configured
+- PaperSync mobile app installed and configured
 - Google Drive or a sync folder matching your mobile app setup
 
 ## Development

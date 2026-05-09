@@ -8,7 +8,7 @@ export async function saveImageToVault(
 	scanId: string
 ): Promise<string> {
 	const folderPath = attachmentsFolder;
-	const fileName = `papersynced-${scanId}.jpg`;
+	const fileName = `papersync-${scanId}.jpg`;
 	const filePath = `${folderPath}/${fileName}`;
 
 	await ensureFolderExists(vault, folderPath);

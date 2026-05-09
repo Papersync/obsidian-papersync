@@ -28,8 +28,8 @@ const defaultConfig = {
 > [!abstract]- Original scan
 > ![[{{image_file}}]]
 `,
-	targetFolder: 'PaperSynced',
-	attachmentsFolder: 'attachments/papersynced',
+	targetFolder: 'PaperSync',
+	attachmentsFolder: 'attachments/papersync',
 	downloadImages: true,
 };
 
@@ -61,7 +61,7 @@ describe('NoteCreator', () => {
 		await creator.createOrAppend(scan, imageData, 'scan-001');
 
 		expect(mockVault.create).toHaveBeenCalledWith(
-			'PaperSynced/2026-04-12.md',
+			'PaperSync/2026-04-12.md',
 			expect.stringContaining('# Test Notes')
 		);
 	});
@@ -85,12 +85,12 @@ describe('NoteCreator', () => {
 		await creator.createOrAppend(scan, imageData, 'scan-001');
 
 		const content = mockVault.create.mock.calls[0]?.[1] as string;
-		expect(content).toContain('> ![[attachments/papersynced/papersynced-scan-001.jpg]]');
+		expect(content).toContain('> ![[attachments/papersync/papersync-scan-001.jpg]]');
 	});
 
 	it('appends to existing file with delimiter when note already exists', async () => {
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'PaperSynced/2026-04-12.md') return { path };
+			if (path === 'PaperSync/2026-04-12.md') return { path };
 			return null;
 		});
 		mockVault.adapter.read.mockResolvedValue('# Existing content\n\nPrevious notes.');
@@ -109,7 +109,7 @@ describe('NoteCreator', () => {
 	it('preserves existing content when appending', async () => {
 		const existingContent = '# Morning scan\n\nFirst notes of the day.\n\nEdited by user.';
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'PaperSynced/2026-04-12.md') return { path };
+			if (path === 'PaperSync/2026-04-12.md') return { path };
 			return null;
 		});
 		mockVault.adapter.read.mockResolvedValue(existingContent);
@@ -129,7 +129,7 @@ describe('NoteCreator', () => {
 
 		await creator.createOrAppend(scan, imageData, 'scan-004');
 
-		expect(mockVault.createFolder).toHaveBeenCalledWith('PaperSynced');
+		expect(mockVault.createFolder).toHaveBeenCalledWith('PaperSync');
 	});
 
 	it('derives note filename from date_short', async () => {
@@ -139,7 +139,7 @@ describe('NoteCreator', () => {
 		await creator.createOrAppend(scan, imageData, 'scan-005');
 
 		expect(mockVault.create).toHaveBeenCalledWith(
-			'PaperSynced/2026-01-15.md',
+			'PaperSync/2026-01-15.md',
 			expect.any(String)
 		);
 	});

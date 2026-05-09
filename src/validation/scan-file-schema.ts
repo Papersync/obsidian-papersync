@@ -23,7 +23,7 @@ export function validateScanFile(raw: unknown): ScanFile | { error: string } {
 
 	if (!SUPPORTED_SCHEMA_VERSIONS.includes(result.data.version as (typeof SUPPORTED_SCHEMA_VERSIONS)[number])) {
 		return {
-			error: `Unsupported schema version "${result.data.version}" — update the PaperSynced plugin`,
+			error: `Unsupported schema version "${result.data.version}" — update the PaperSync plugin`,
 		};
 	}
 

@@ -5,7 +5,7 @@ describe('migrateSettings', () => {
 		const input: Record<string, unknown> = {
 			settingsVersion: 1,
 			backendType: 'icloud',
-			icloudFolderPath: '/Users/me/Library/Mobile Documents/iCloud~papersynced',
+			icloudFolderPath: '/Users/me/Library/Mobile Documents/iCloud~papersync',
 			setupComplete: true,
 		};
 
@@ -13,7 +13,7 @@ describe('migrateSettings', () => {
 
 		expect(result.settingsVersion).toBe(2);
 		expect(result.backendType).toBe('folder');
-		expect(result.folderPath).toBe('/Users/me/Library/Mobile Documents/iCloud~papersynced');
+		expect(result.folderPath).toBe('/Users/me/Library/Mobile Documents/iCloud~papersync');
 		expect(result).not.toHaveProperty('icloudFolderPath');
 	});
 

@@ -1,5 +1,5 @@
 {
-	"name": "obsidian-papersynced",
+	"name": "obsidian-papersync",
 	"version": "0.1.0",
 	"description": "Syncs handwritten scans from Google Drive or any folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync) into your Obsidian vault.",
 	"main": "main.js",
@@ -16,7 +16,7 @@
 	},
 	"keywords": [
 		"obsidian",
-		"papersynced",
+		"papersync",
 		"handwriting",
 		"sync",
 		"google-drive",

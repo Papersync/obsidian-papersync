@@ -57,8 +57,8 @@ const mockVault = {
 
 const noteConfig = {
 	templateString: '{{separator}}\n\n## {{time}}\n\n{{markdown}}\n\n> [!abstract]- Original scan\n> ![[{{image_file}}]]',
-	targetFolder: 'PaperSynced',
-	attachmentsFolder: 'attachments/papersynced',
+	targetFolder: 'PaperSync',
+	attachmentsFolder: 'attachments/papersync',
 	downloadImages: true,
 };
 
@@ -101,7 +101,7 @@ describe('SyncEngine integration', () => {
 		const createdContent = mockVault.create.mock.calls[0]?.[1] as string;
 		expect(createdContent).toMatch(/## \d{1,2}:\d{2}\s*(AM|PM)/);
 		expect(mockVault.create).toHaveBeenCalledWith(
-			'PaperSynced/2026-04-12.md',
+			'PaperSync/2026-04-12.md',
 			expect.stringContaining('# Integration Test')
 		);
 	});
@@ -110,7 +110,7 @@ describe('SyncEngine integration', () => {
 		await engine.forceSyncNow();
 
 		expect(mockVault.createBinary).toHaveBeenCalledWith(
-			'attachments/papersynced/papersynced-2026-04-12-143000.jpg',
+			'attachments/papersync/papersync-2026-04-12-143000.jpg',
 			expect.any(ArrayBuffer)
 		);
 	});

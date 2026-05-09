@@ -9,12 +9,12 @@ beforeEach(() => {
 describe('isICloudPath', () => {
 	it('returns true for macOS iCloud container paths', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		expect(isICloudPath('/Users/test/Library/Mobile Documents/com~apple~CloudDocs/PaperSynced/scans/scan.json')).toBe(true);
+		expect(isICloudPath('/Users/test/Library/Mobile Documents/com~apple~CloudDocs/PaperSync/scans/scan.json')).toBe(true);
 	});
 
 	it('returns false for non-iCloud paths on macOS', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		expect(isICloudPath('/Users/test/Dropbox/PaperSynced/scans/scan.json')).toBe(false);
+		expect(isICloudPath('/Users/test/Dropbox/PaperSync/scans/scan.json')).toBe(false);
 	});
 
 	it('returns false on Windows even for iCloud-like paths', () => {

@@ -1,10 +1,10 @@
 {
-	"id": "obsidian-papersynced",
-	"name": "PaperSynced",
+	"id": "obsidian-papersync",
+	"name": "PaperSync",
 	"version": "0.1.0",
 	"minAppVersion": "1.11.4",
 	"description": "Syncs handwritten scans from Google Drive or any folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync) into your vault as markdown notes.",
-	"author": "Papersynced",
-	"authorUrl": "https://github.com/papersynced",
+	"author": "Papersync",
+	"authorUrl": "https://github.com/papersync",
 	"isDesktopOnly": true
 }
