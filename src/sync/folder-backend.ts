@@ -68,6 +68,7 @@ export class FolderBackend implements SyncBackend {
 
 	async discoverUnsynced(): Promise<ScanReference[]> {
 		const entries = await fs.promises.readdir(this.folderPath);
+		const entrySet = new Set(entries);
 		const jsonFiles = entries.filter((e) => e.endsWith('.json'));
 		const refs: ScanReference[] = [];
 
@@ -76,22 +77,36 @@ export class FolderBackend implements SyncBackend {
 
 			try {
 				const content = await fs.promises.readFile(jsonPath, 'utf-8');
-				const parsed = JSON.parse(content) as { synced?: boolean };
+				const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
 
 				if (parsed.synced === true) {continue;}
 
-				const imageFileName = jsonFile.replace('.json', '.jpg');
-				const imagePath = path.join(this.folderPath, imageFileName);
+				// Trust the JSON's imageFileName field first (the app writes `.jpg`
+				// for new captures and `.png` for legacy archives). Fall back to
+				// extension probing in case the field is missing or stale.
+				const baseName = jsonFile.replace(/\.json$/, '');
+				const candidate =
+					(parsed.imageFileName && entrySet.has(parsed.imageFileName) ? parsed.imageFileName : null)
+					?? (entrySet.has(`${baseName}.jpg`) ? `${baseName}.jpg` : null)
+					?? (entrySet.has(`${baseName}.jpeg`) ? `${baseName}.jpeg` : null)
+					?? (entrySet.has(`${baseName}.png`) ? `${baseName}.png` : null);
 
-				try {
-					await fs.promises.access(imagePath, fs.constants.R_OK);
-				} catch {
+				if (!candidate) {
 					logger.info(`Skipping ${jsonFile} — companion image not yet available`);
 					continue;
 				}
 
+				const imagePath = path.join(this.folderPath, candidate);
+
+				try {
+					await fs.promises.access(imagePath, fs.constants.R_OK);
+				} catch {
+					logger.info(`Skipping ${jsonFile} — companion image not readable`);
+					continue;
+				}
+
 				refs.push({
-					id: jsonFile.replace('.json', ''),
+					id: baseName,
 					jsonPath,
 					imagePath,
 				});

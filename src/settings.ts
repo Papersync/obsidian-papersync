@@ -112,15 +112,22 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		}
 	}
 
+	private getConnectionState(): { isGoogleConnected: boolean; isFolderConnected: boolean } {
+		const { backendType } = this.plugin.settings;
+		const isGoogleConnected = backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
+		const isFolderConnected = backendType === 'folder' && this.plugin.settings.setupComplete;
+		return { isGoogleConnected, isFolderConnected };
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
-		;
+		const { isGoogleConnected, isFolderConnected } = this.getConnectionState();
 
-		this.renderAccountSection(containerEl);
+		this.renderAccountSection(containerEl, isGoogleConnected, isFolderConnected);
 
-		if (this.plugin.settings.backendType !== 'none') {
+		if (isGoogleConnected || isFolderConnected) {
 			this.renderSyncSection(containerEl);
 			this.renderTemplateSection(containerEl);
 		}
@@ -128,11 +135,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.renderAdvancedSection(containerEl);
 	}
 
-	private renderAccountSection(containerEl: HTMLElement): void {
-		const { backendType } = this.plugin.settings;
-		const isGoogleConnected = backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
-		const isFolderConnected = backendType === 'folder' && this.plugin.settings.setupComplete;
-
+	private renderAccountSection(containerEl: HTMLElement, isGoogleConnected: boolean, isFolderConnected: boolean): void {
 		new Setting(containerEl).setName("Storage").setHeading();
 
 		if (isGoogleConnected) {

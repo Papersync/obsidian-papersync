@@ -23,3 +23,6 @@ data.json
 
 # WDIO Obsidian E2E cache
 .obsidian-cache
+
+# Jest coverage report
+coverage

@@ -82,6 +82,41 @@ describe('Settings tab', function () {
 		expect(text).not.toContain('Sync now');
 	});
 
+	it('hides sync sections in the drive-intent-without-auth half-state', async function () {
+		// Regression test for settings.ts display-gate fix.
+		// Pre-fix, the gate was `backendType !== 'none'` — so a user mid-flow
+		// (backendType set to 'drive' but auth never completed) would see the
+		// Notes folder / Sync now / Note Template sections rendered even though
+		// no sync engine actually existed. Post-fix the gate requires either
+		// Google auth or Folder setupComplete.
+		await browser.execute(async () => {
+			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void> }> } } }).app;
+			const plugin = app.plugins.plugins['obsidian-papersync'];
+			if (!plugin) { throw new Error('Plugin not loaded'); }
+
+			// Set the half-state: drive intent without authentication.
+			plugin.settings.backendType = 'drive';
+			plugin.settings.setupComplete = false;
+			plugin.settings.oauthRefreshToken = '';
+			plugin.settings.oauthExpiresAt = 0;
+			await plugin.saveSettings();
+		});
+
+		// Re-open settings so display() re-runs with the half-state.
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+		await browser.pause(800);
+
+		const body = await browser.$('body');
+		const text = await body.getText();
+
+		// Storage section MUST still render — it's where the user fixes the half-state.
+		expect(text).toContain('Storage');
+		// But the sync/template sections MUST NOT render — there is no working sync.
+		expect(text).not.toContain('Notes folder');
+		expect(text).not.toContain('Note Template');
+		expect(text).not.toContain('Sync now');
+	});
+
 	it('shows poll interval only when Drive connected', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();

@@ -22,9 +22,9 @@ export const Platform = {
 	isDesktop: true,
 };
 
-export function requestUrl() {
-	return Promise.resolve({ json: {}, arrayBuffer: new ArrayBuffer(0), status: 200 });
-}
+export const requestUrl = jest.fn(() =>
+	Promise.resolve({ json: {}, arrayBuffer: new ArrayBuffer(0), status: 200 })
+);
 
 export class Vault {
 	getAbstractFileByPath() { return null; }

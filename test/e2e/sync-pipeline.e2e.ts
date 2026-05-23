@@ -147,6 +147,62 @@ describe('Sync pipeline E2E', function () {
 		}
 	});
 
+	it('syncs a PNG-format scan (legacy archive companion image)', async function () {
+		// Regression test for folder-backend.ts image-extension fallback fix.
+		// Pre-fix, discoverUnsynced hardcoded `.jpg` lookup and silently skipped
+		// any scan whose companion image was `.png` (legacy capture format).
+		const pngId = `${scanId}-png`;
+		const scanFile = {
+			version: 1,
+			createdAt: new Date().toISOString(),
+			markdown: '# PNG Companion Scan\n\nLegacy archive uses .png extension.',
+			confidence: 87,
+			provider: 'e2e-test',
+			model: 'mock-model',
+			imageFileName: `${pngId}.png`,
+		};
+
+		fs.writeFileSync(
+			path.join(scansFolderPath, `${pngId}.json`),
+			JSON.stringify(scanFile, null, 2)
+		);
+
+		// Minimal valid PNG: signature + IHDR + IDAT + IEND
+		const placeholderPng = Buffer.from([
+			0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+			0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+			0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+			0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+			0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+			0x54, 0x08, 0x99, 0x63, 0x60, 0x60, 0x60, 0x00,
+			0x00, 0x00, 0x04, 0x00, 0x01, 0x5C, 0xCD, 0xFF,
+			0x69, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+			0x44, 0xAE, 0x42, 0x60, 0x82,
+		]);
+		fs.writeFileSync(path.join(scansFolderPath, `${pngId}.png`), placeholderPng);
+
+		await browser.pause(3000);
+		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.pause(3000);
+
+		const noteContent = await browser.execute(async () => {
+			const app = (window as unknown as { app: { vault: { getMarkdownFiles: () => Array<{ path: string }>; adapter: { read: (p: string) => Promise<string> } } } }).app;
+			const files = app.vault.getMarkdownFiles();
+			const syncFile = files.find((f) => f.path.includes('SyncTest'));
+			if (!syncFile) { return ''; }
+			return app.vault.adapter.read(syncFile.path);
+		});
+
+		// The PNG scan must have been picked up and its markdown surfaced in the note.
+		expect(noteContent).toContain('PNG Companion Scan');
+
+		// And the JSON must have been marked synced (round-trip contract).
+		const updatedJson = JSON.parse(
+			fs.readFileSync(path.join(scansFolderPath, `${pngId}.json`), 'utf-8')
+		);
+		expect(updatedJson.synced).toBe(true);
+	});
+
 	it('appends second scan to same day file with separator', async function () {
 		// Create a second scan with a slightly different timestamp
 		const secondId = `${scanId}-second`;
