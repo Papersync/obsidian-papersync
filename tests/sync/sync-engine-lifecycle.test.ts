@@ -144,6 +144,18 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 		expect(state.status).toBe('error');
 	});
 
+	it('forceSyncNow stringifies non-Error rejections in its error log path', async () => {
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockRejectedValue('boom-string');
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+		expect(state.status).toBe('error');
+	});
+
 	it('online event restarts backend, offline event stops it', () => {
 		const backend = makeBackend();
 		const state = new SyncState('');
@@ -160,5 +172,144 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 		expect(backend.startCalls).toBeGreaterThanOrEqual(2);
 
 		engine.stop();
+	});
+});
+
+const validScan = {
+	version: '1' as const,
+	createdAt: '2026-04-12T14:30:00.000Z',
+	markdown: '# scan',
+	confidence: 95,
+	provider: 'claude',
+	model: 'claude-sonnet-4',
+	imageFileName: 'scan.jpg',
+	synced: false,
+};
+
+describe('SyncEngine.processBatch', () => {
+	let onLineDescriptor: PropertyDescriptor | undefined;
+
+	beforeEach(() => {
+		onLineDescriptor = Object.getOwnPropertyDescriptor(window.navigator, 'onLine');
+		Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true });
+	});
+
+	afterEach(() => {
+		if (onLineDescriptor) {
+			Object.defineProperty(window.navigator, 'onLine', onLineDescriptor);
+		}
+	});
+
+	it('skips a ref whose fetched scanFile is already marked synced (no markSynced call)', async () => {
+		const backend = makeBackend();
+		const ref = { id: 'r1', jsonPath: 'j1', imagePath: 'i1', createdTime: '2026-04-12T14:30:00Z' };
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([ref]);
+		backend.fetchScan = jest.fn().mockResolvedValue({ ...validScan, synced: true });
+		backend.markSynced = jest.fn();
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(backend.fetchScan).toHaveBeenCalledTimes(1);
+		expect(backend.markSynced).not.toHaveBeenCalled();
+		expect(state.lastSyncTimestamp).toBe('2026-04-12T14:30:00Z');
+	});
+
+	it('advances state timestamp and calls backend.updateLastSyncTimestamp after a successful sync', async () => {
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & {
+			updateLastSyncTimestamp: jest.Mock;
+		};
+		backend.updateLastSyncTimestamp = jest.fn();
+		const ref = { id: 'r2', jsonPath: 'j2', imagePath: 'i2', createdTime: '2026-05-01T10:00:00Z' };
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([ref]);
+		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(backend.markSynced).toHaveBeenCalledTimes(1);
+		expect(backend.updateLastSyncTimestamp).toHaveBeenCalledWith('2026-05-01T10:00:00Z');
+		expect(state.lastSyncTimestamp).toBe('2026-05-01T10:00:00Z');
+	});
+
+	it('processes batches larger than BATCH_SIZE by yielding to the event loop between chunks', async () => {
+		// 12 refs > BATCH_SIZE (10) → must yield once between the two chunks.
+		const refs = Array.from({ length: 12 }, (_, i) => ({
+			id: `r${String(i).padStart(2, '0')}`,
+			jsonPath: `j${i}`,
+			imagePath: `i${i}`,
+			createdTime: `2026-04-12T14:30:${String(i).padStart(2, '0')}Z`,
+		}));
+
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue(refs);
+		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		// All 12 refs must be marked synced, proving both chunks ran.
+		expect(backend.markSynced).toHaveBeenCalledTimes(12);
+	});
+
+	it('drops refs with empty imagePath before processing', async () => {
+		const refs = [
+			{ id: 'with', jsonPath: 'j1', imagePath: 'i1' },
+			{ id: 'without', jsonPath: 'j2', imagePath: '' },
+		];
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue(refs);
+		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(backend.markSynced).toHaveBeenCalledTimes(1);
+		expect(backend.markSynced).toHaveBeenCalledWith(
+			expect.objectContaining({ id: 'with' }),
+			expect.anything()
+		);
+	});
+
+	it('tracks refs that exhausted retries (errorHandler returned null) in pendingNetwork', async () => {
+		const backend = makeBackend();
+		const ref = { id: 'fails', jsonPath: 'j', imagePath: 'i', createdTime: '2026-04-12T14:30:00Z' };
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([ref]);
+		// Always reject so ErrorHandler exhausts retries and returns null
+		backend.fetchScan = jest.fn().mockRejectedValue({
+			type: 'icloud_offloaded',
+			message: 'still offloaded',
+			retriable: false,
+		});
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		// State should show one pending-network item (waiting for download).
+		expect(state.status).toBe('synced');
+		expect(state.pendingCount).toBe(1);
 	});
 });

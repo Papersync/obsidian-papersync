@@ -56,4 +56,17 @@ describe('saveImageToVault', () => {
 		expect(mockVault.createFolder).toHaveBeenCalledWith('attachments');
 		expect(mockVault.createFolder).toHaveBeenCalledWith('attachments/papersync');
 	});
+
+	it('tolerates createFolder rejecting (folder already created by a parallel write)', async () => {
+		// Race condition: another concurrent operation created the same folder
+		// between the getAbstractFileByPath check and our createFolder call.
+		// The image-handler swallows the error and proceeds to createBinary.
+		mockVault.createFolder.mockRejectedValueOnce(new Error('EEXIST'));
+		const imageData = new ArrayBuffer(100);
+
+		await expect(
+			saveImageToVault(mockVault as any, imageData, 'attachments/papersync', 'scan-race')
+		).resolves.toBe('attachments/papersync/papersync-scan-race.jpg');
+		expect(mockVault.createBinary).toHaveBeenCalled();
+	});
 });

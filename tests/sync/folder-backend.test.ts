@@ -237,3 +237,28 @@ describe('FolderBackend lifecycle', () => {
 		expect(() => backend.stop()).not.toThrow();
 	});
 });
+
+describe('FolderBackend.discoverUnsynced — unreadable companion image', () => {
+	let tmp: string;
+	let backend: FolderBackend;
+
+	beforeEach(() => {
+		tmp = makeTempDir();
+		backend = new FolderBackend(tmp);
+	});
+
+	afterEach(() => {
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
+
+	it('skips a scan whose declared companion image is a broken symlink', async () => {
+		const base = '2026-08-08-180000';
+		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.jpg` });
+		// Symlink target does not exist → fs.promises.access(R_OK) throws ENOENT
+		fs.symlinkSync('/does/not/exist/anywhere.jpg', path.join(tmp, `${base}.jpg`));
+
+		const refs = await backend.discoverUnsynced();
+		expect(refs).toHaveLength(0);
+	});
+});
+

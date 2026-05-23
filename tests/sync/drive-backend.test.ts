@@ -200,4 +200,126 @@ describe('DriveBackend', () => {
 			expect(() => backend.setOnScanDiscovered(jest.fn())).not.toThrow();
 		});
 	});
+
+	describe('poll callback wiring', () => {
+		afterEach(() => {
+			jest.useRealTimers();
+		});
+
+		it('invokes onScanDiscovered with the discovered refs on poll success', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({
+					json: {
+						files: [
+							{ id: 'json-1', name: 'a.json', createdTime: '2026-04-12T14:30:00Z' },
+							{ id: 'img-1', name: 'a.jpg' },
+						],
+					},
+				} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			const onDiscovered = jest.fn();
+			backend.setOnScanDiscovered(onDiscovered);
+
+			// Drive's poll() is private but exposed via start(). Invoke it directly
+			// via reflection so we don't have to manage setInterval timers.
+			await (backend as unknown as { poll: () => Promise<void> }).poll();
+
+			expect(onDiscovered).toHaveBeenCalledTimes(1);
+			const refs = onDiscovered.mock.calls[0][0];
+			expect(refs).toHaveLength(1);
+			expect(refs[0].id).toBe('a');
+			expect(refs[0].imagePath).toBe('img-1');
+		});
+
+		it('does not invoke onScanDiscovered when no unsynced refs are found', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			const onDiscovered = jest.fn();
+			backend.setOnScanDiscovered(onDiscovered);
+
+			await (backend as unknown as { poll: () => Promise<void> }).poll();
+			expect(onDiscovered).not.toHaveBeenCalled();
+		});
+
+		it('swallows discoverUnsynced errors in poll() so the interval keeps running', async () => {
+			mockedRequestUrl.mockRejectedValueOnce(new Error('network is down'));
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			const onDiscovered = jest.fn();
+			backend.setOnScanDiscovered(onDiscovered);
+
+			await expect(
+				(backend as unknown as { poll: () => Promise<void> }).poll()
+			).resolves.toBeUndefined();
+			expect(onDiscovered).not.toHaveBeenCalled();
+		});
+
+		it('swallows non-Error rejections in poll() (formats via String())', async () => {
+			mockedRequestUrl.mockRejectedValueOnce('string error, not an Error');
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(
+				(backend as unknown as { poll: () => Promise<void> }).poll()
+			).resolves.toBeUndefined();
+		});
+
+		it('does not throw when poll() finds refs but no callback is registered', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({
+					json: {
+						files: [{ id: 'json-1', name: 'a.json', createdTime: '2026-04-12T14:30:00Z' }],
+					},
+				} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			// No setOnScanDiscovered call — the `?.` optional chain must short-circuit safely.
+			await expect(
+				(backend as unknown as { poll: () => Promise<void> }).poll()
+			).resolves.toBeUndefined();
+		});
+	});
+
+	describe('findScansFolder caching', () => {
+		it('caches the folder id across discoverUnsynced calls (no re-search)', async () => {
+			// First discover: 2 folder searches + 1 list
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await backend.discoverUnsynced();
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(3);
+
+			// Second discover: cached folder id → ONLY the list call
+			mockedRequestUrl.mockResolvedValueOnce({ json: { files: [] } } as never);
+			await backend.discoverUnsynced();
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(4);
+		});
+
+		it('defaults lastSyncTimestamp to empty string when constructor arg is undefined', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, undefined);
+			await backend.discoverUnsynced();
+
+			// The list-query `q` param should NOT include a `createdTime >` filter
+			// when the timestamp defaulted to empty. (The URL still references
+			// createdTime in `fields=` and `orderBy=` — that's structural.)
+			const listCall = mockedRequestUrl.mock.calls[2][0];
+			expect(listCall.url).not.toContain('createdTime%20%3E');
+		});
+	});
 });

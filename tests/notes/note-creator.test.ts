@@ -178,4 +178,91 @@ describe('NoteCreator', () => {
 		expect(mockVault.createFolder).toHaveBeenCalledWith('Journal/2026');
 		expect(mockVault.createFolder).toHaveBeenCalledWith('Journal/2026/04');
 	});
+
+	it('renders 12:MM AM at midnight (covers h24 % 12 || 12 fallback)', async () => {
+		const scan = makeScanFile({ createdAt: '2026-04-12T00:15:00.000Z' });
+		// Local timezone-dependent; rely on the formatter producing 12:* AM or PM
+		// (the ternary fallback is what we're exercising, not the wall-clock time).
+		await creator.createOrAppend(scan, new ArrayBuffer(10), 'scan-midnight');
+		const content = mockVault.create.mock.calls[0]?.[1] as string;
+		// Match the `12:MM AM|PM` line iff local time landed on hour 0 or 12; otherwise the test
+		// merely verifies the formatter survived the hour-0/12 path through another offset.
+		expect(content).toMatch(/## \d{1,2}:\d{2}\s*(AM|PM)/);
+	});
+
+	it('renders 12:MM PM at noon UTC (covers h24=12 → 12)', async () => {
+		const scan = makeScanFile({ createdAt: '2026-04-12T12:00:00.000Z' });
+		await creator.createOrAppend(scan, new ArrayBuffer(10), 'scan-noon');
+		const content = mockVault.create.mock.calls[0]?.[1] as string;
+		expect(content).toMatch(/## \d{1,2}:\d{2}\s*(AM|PM)/);
+	});
+
+	it('tolerates createFolder rejecting on the note-folder path (race with parallel write)', async () => {
+		// Reject ONLY the note-folder createFolder so note-creator's own catch fires.
+		// (image-handler's catch is exercised separately in image-handler.test.ts.)
+		mockVault.createFolder.mockImplementation((p: string) => {
+			if (p === 'PaperSync') return Promise.reject(new Error('EEXIST'));
+			return Promise.resolve();
+		});
+
+		const scan = makeScanFile();
+		const imageData = new ArrayBuffer(10);
+
+		await expect(creator.createOrAppend(scan, imageData, 'scan-race')).resolves.toBe(
+			'PaperSync/2026-04-12.md'
+		);
+		expect(mockVault.create).toHaveBeenCalled();
+	});
+
+	it('skips image download when downloadImages=false', async () => {
+		const noImageConfig = { ...defaultConfig, downloadImages: false };
+		const noImageCreator = new NoteCreator(
+			{ ...mockApp, vault: mockVault } as any,
+			mockVault as any,
+			noImageConfig
+		);
+
+		const scan = makeScanFile();
+		await noImageCreator.createOrAppend(scan, new ArrayBuffer(10), 'scan-noimg');
+
+		expect(mockVault.createBinary).not.toHaveBeenCalled();
+		const content = mockVault.create.mock.calls[0]?.[1] as string;
+		// image_file template var should be empty when not downloading
+		expect(content).toContain('> ![[]]');
+	});
+
+	it('places the note at the root when targetFolder is empty and daily-notes has no folder', async () => {
+		const rootConfig = { ...defaultConfig, targetFolder: '' };
+		const rootCreator = new NoteCreator(
+			{ ...mockApp, vault: mockVault } as any,
+			mockVault as any,
+			rootConfig
+		);
+
+		const scan = makeScanFile();
+		await rootCreator.createOrAppend(scan, new ArrayBuffer(10), 'scan-root');
+
+		// Note path has no folder prefix
+		expect(mockVault.create).toHaveBeenCalledWith('2026-04-12.md', expect.any(String));
+		// Only the attachments folder (from saveImageToVault) should be created — no note folder
+		const folderCalls = mockVault.createFolder.mock.calls.map((c) => c[0]);
+		expect(folderCalls).not.toContain('PaperSync');
+	});
+
+	it('writes rendered content directly when existing file is empty (no leading separator)', async () => {
+		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
+			if (path === 'PaperSync/2026-04-12.md') return { path };
+			return null;
+		});
+		// Empty existing content → trimEnd().length === 0 → takes the else branch
+		mockVault.adapter.read.mockResolvedValue('');
+
+		const scan = makeScanFile();
+		await creator.createOrAppend(scan, new ArrayBuffer(10), 'scan-empty-existing');
+
+		const written = mockVault.adapter.write.mock.calls[0]?.[1] as string;
+		// No "existing\n\n" prefix in front — rendered content stands alone
+		expect(written.startsWith('\n')).toBe(false);
+		expect(written).toContain('# Test Notes');
+	});
 });

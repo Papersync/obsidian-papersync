@@ -84,4 +84,19 @@ describe('FolderBackend.start error path', () => {
 		expect(() => backend.start()).not.toThrow();
 		backend.stop();
 	});
+
+	it('catches discoverUnsynced rejection inside the debounced timer (folder deleted between start and fire)', async () => {
+		const tmp = makeTempDir();
+		const backend = new FolderBackend(tmp);
+		try {
+			backend.start();
+			// Pull the rug — delete the folder before the debounce fires (~500ms).
+			fs.rmSync(tmp, { recursive: true, force: true });
+			// Wait past the debounce so discoverUnsynced runs and rejects internally.
+			await new Promise((r) => setTimeout(r, 700));
+			// No throw escaping into the test runner means the internal catch did its job.
+		} finally {
+			backend.stop();
+		}
+	}, 15000);
 });

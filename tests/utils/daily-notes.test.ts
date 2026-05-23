@@ -102,4 +102,39 @@ describe('getDailyNotesConfig', () => {
 		const config = getDailyNotesConfig(mockApp as any);
 		expect(config.folder).toBe('');
 	});
+
+	it('returns defaults when reading internalPlugins throws', () => {
+		const mockApp = {
+			internalPlugins: {
+				getPluginById: () => {
+					throw new Error('Obsidian internals exploded');
+				},
+			},
+		};
+		const config = getDailyNotesConfig(mockApp as any);
+		expect(config).toEqual({ folder: '', format: 'YYYY-MM-DD' });
+	});
+
+	it('returns defaults when options.instance is missing', () => {
+		const mockApp = {
+			internalPlugins: {
+				getPluginById: () => ({ enabled: true }), // no instance
+			},
+		};
+		const config = getDailyNotesConfig(mockApp as any);
+		expect(config).toEqual({ folder: '', format: 'YYYY-MM-DD' });
+	});
+
+	it('falls back to default folder when options.folder is not a string', () => {
+		const mockApp = {
+			internalPlugins: {
+				getPluginById: () => ({
+					enabled: true,
+					instance: { options: { folder: 42, format: 'YYYY-MM-DD' } },
+				}),
+			},
+		};
+		const config = getDailyNotesConfig(mockApp as any);
+		expect(config.folder).toBe('');
+	});
 });

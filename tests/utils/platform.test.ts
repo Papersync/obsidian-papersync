@@ -83,6 +83,17 @@ describe('detectSyncLocations', () => {
 		]);
 	});
 
+	it('detects OneDrive on macOS', () => {
+		(Platform as { isMacOS: boolean }).isMacOS = true;
+		const expected = path.join('/Users/test', 'OneDrive', 'PaperSync', 'scans');
+		allowPath(expected);
+
+		const result = detectSyncLocations();
+		expect(result).toEqual([
+			{ type: 'onedrive', displayName: 'OneDrive', path: expected, detected: true },
+		]);
+	});
+
 	it('detects Syncthing', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
 		const expected = path.join('/Users/test', 'Sync', 'PaperSync', 'scans');
