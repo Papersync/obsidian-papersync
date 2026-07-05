@@ -280,8 +280,10 @@ describe('NoteCreator', () => {
 
 		expect(mockVault.createBinary).not.toHaveBeenCalled();
 		const content = mockVault.create.mock.calls[0]?.[1] as string;
-		// image_file template var should be empty when not downloading
-		expect(content).toContain('> ![[]]');
+		// The broken empty-embed line is stripped, not shipped into the note.
+		expect(content).not.toContain('![[]]');
+		// The callout header still renders (only the empty embed line was dropped).
+		expect(content).toContain('[!abstract]- Original scan');
 	});
 
 	it('places the note at the root when targetFolder is empty and daily-notes has no folder', async () => {

@@ -87,7 +87,14 @@ export class NoteCreator {
 			ps_separator: isAppend ? '***' : '',
 		};
 
-		const rendered = renderTemplate(this.config.templateString, context);
+		let rendered = renderTemplate(this.config.templateString, context);
+
+		if (imagePath === '') {
+			// No image was saved (saving off, or none attached), so {{ps_image_file}}
+			// expanded to '' and the embed line is a broken `![[]]`. Drop that whole line
+			// (with any callout/list marker) rather than shipping an empty embed.
+			rendered = rendered.replace(/^[ \t]*(?:>[ \t]*)?(?:[-*][ \t]*)?!\[\[\]\][ \t]*(?:\r?\n|$)/gm, '');
+		}
 
 		if (isAppend) {
 			const existingContent = await this.vault.adapter.read(notePath);

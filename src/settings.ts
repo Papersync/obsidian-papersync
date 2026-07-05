@@ -53,6 +53,11 @@ const SCAN_PLACEHOLDER = ((width: number): string => {
 	].join('\n');
 })(36);
 
+// True when a template embeds the scan image (canonical ps_image_file or its alias).
+function templateEmbedsImage(template: string): boolean {
+	return /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(template);
+}
+
 export type BackendType = 'drive' | 'folder' | 'none';
 
 export interface PluginSettings {
@@ -424,6 +429,13 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				}))
 			);
 
+		// Warn right at the toggle (not only on the Template tab) when saving is off but
+		// the template still references the scan image, so its embed is silently dropped.
+		if (!this.plugin.settings.downloadImages && templateEmbedsImage(this.plugin.settings.templateString)) {
+			const warn = containerEl.createDiv({ cls: 'papersync-image-warning is-visible' });
+			warn.setText('Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template tab to make it explicit.');
+		}
+
 		if (this.plugin.settings.downloadImages) {
 			new Setting(containerEl)
 				.setName('Attachments folder')
@@ -485,7 +497,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		previewCol.createDiv({ cls: 'papersync-col-label', text: 'Preview' });
 		const previewEl = previewCol.createDiv({ cls: 'papersync-template-preview markdown-rendered' });
 
-		const embedsImage = (): boolean => /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(textarea.value);
+		const embedsImage = (): boolean => templateEmbedsImage(textarea.value);
 		const embedsSeparator = (): boolean => /\{\{\s*(ps_separator|separator)\s*\}\}/.test(textarea.value);
 		const imageSavingOff = (): boolean => !this.plugin.settings.downloadImages;
 
