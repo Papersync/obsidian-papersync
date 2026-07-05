@@ -25,7 +25,7 @@ describe('Template editor', function () {
 		}
 		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(1000);
-		await clickTab('Note template');
+		await clickTab('PaperSync template');
 	});
 
 	afterEach(async function () {

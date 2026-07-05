@@ -24,10 +24,11 @@ describe('Settings tab', function () {
 		await browser.pause(300);
 	});
 
-	it('shows storage section', async function () {
+	it('shows the storage connection or picker', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('Storage');
+		// Google Drive appears both as the connected provider row and as a picker option.
+		expect(text).toContain('Google Drive');
 	});
 
 	it('shows notes folder setting when connected', async function () {
@@ -49,10 +50,10 @@ describe('Settings tab', function () {
 
 	it('shows note template tab and variables when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Note template');
+		await clickTab('PaperSync template');
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('Note template');
+		expect(text).toContain('PaperSync template');
 		expect(text).toContain('{{markdown}}');
 		expect(text).toContain('{{image_file}}');
 		expect(text).toContain('{{time}}');
@@ -60,7 +61,7 @@ describe('Settings tab', function () {
 
 	it('shows template editor textarea when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Note template');
+		await clickTab('PaperSync template');
 		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
@@ -125,8 +126,8 @@ describe('Settings tab', function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
 
-		// Storage section MUST still render — it's where the user fixes the half-state.
-		expect(text).toContain('Storage');
+		// The storage picker MUST still render — it's where the user fixes the half-state.
+		expect(text).toContain('Google Drive');
 		// But the sync/template sections MUST NOT render — there is no working sync.
 		expect(text).not.toContain('Notes folder');
 		expect(text).not.toContain('Note Template');

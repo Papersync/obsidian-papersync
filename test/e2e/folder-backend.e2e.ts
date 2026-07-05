@@ -13,7 +13,6 @@ describe('Folder backend settings', function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
 		if (!text.includes('Change Storage')) {
-			expect(text).toContain('Storage');
 			expect(text).toContain('Google Drive');
 			expect(text).toContain('Select your PaperSync folder');
 		}

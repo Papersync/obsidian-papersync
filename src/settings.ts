@@ -138,7 +138,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private renderTabs(containerEl: HTMLElement): void {
 		const tabs: Array<{ id: 'sync' | 'template' | 'advanced'; label: string; render: (el: HTMLElement) => void }> = [
 			{ id: 'sync', label: 'Sync', render: (el) => this.renderSyncSection(el) },
-			{ id: 'template', label: 'Note template', render: (el) => this.renderTemplateSection(el) },
+			{ id: 'template', label: 'PaperSync template', render: (el) => this.renderTemplateSection(el) },
 			{ id: 'advanced', label: 'Advanced', render: (el) => this.renderAdvancedSection(el) },
 		];
 
@@ -167,8 +167,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderAccountSection(containerEl: HTMLElement, isGoogleConnected: boolean, isFolderConnected: boolean): void {
-		new Setting(containerEl).setName("Storage").setHeading();
-
 		if (isGoogleConnected) {
 			new Setting(containerEl)
 				.setName('\u2713 Google Drive')
@@ -185,6 +183,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						this.display();
 					}))
 				);
+			this.renderSyncNowRow(containerEl);
 			return;
 		}
 
@@ -206,6 +205,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						this.display();
 					}))
 				);
+			this.renderSyncNowRow(containerEl);
 			return;
 		}
 
@@ -304,7 +304,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.display();
 	}
 
-	private renderSyncSection(containerEl: HTMLElement): void {
+	// The primary Sync now action + live status live in the pinned header (always
+	// visible when connected), not inside the Sync tab.
+	private renderSyncNowRow(containerEl: HTMLElement): void {
 		const syncSetting = new Setting(containerEl)
 			.setName('Sync now')
 			.setDesc('')
@@ -323,7 +325,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		this.syncDesc = syncSetting.descEl;
 		this.updateSyncState();
+	}
 
+	private renderSyncSection(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName('Notes folder')
 			.setDesc('Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).')
