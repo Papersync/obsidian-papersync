@@ -25,7 +25,7 @@ describe('Template editor', function () {
 		}
 		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(1000);
-		await clickTab('PaperSync template');
+		await clickTab('Template');
 	});
 
 	afterEach(async function () {
@@ -41,7 +41,7 @@ describe('Template editor', function () {
 		expect(original.length).toBeGreaterThan(0);
 
 		await textarea.clearValue();
-		await textarea.setValue('## Test\n\n{{markdown}}');
+		await textarea.setValue('## Test\n\n{{ps_markdown}}');
 		const newValue = await textarea.getValue();
 		expect(newValue).toContain('## Test');
 
@@ -54,10 +54,10 @@ describe('Template editor', function () {
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
 
-		expect(value).toContain('{{time}}');
-		expect(value).toContain('{{markdown}}');
-		expect(value).toContain('{{image_file}}');
-		expect(value).toContain('{{separator}}');
+		expect(value).toContain('{{ps_scan_time}}');
+		expect(value).toContain('{{ps_markdown}}');
+		expect(value).toContain('{{ps_image_file}}');
+		expect(value).toContain('{{ps_separator}}');
 	});
 
 	it('template has proper styling', async function () {

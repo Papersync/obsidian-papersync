@@ -5,7 +5,53 @@ import { detectSyncLocations } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
-import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { renderTemplate } from '@/notes/template-engine';
+import type { TemplateContext } from '@/notes/template-engine';
+import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
+
+// A fixed sample scan used to render the note-template live preview. Deterministic
+// so the preview is stable and never depends on real vault state.
+const PREVIEW_CONTEXT: TemplateContext = {
+	ps_scan_date: '2026-07-05T14:30:00.000Z',
+	ps_scan_date_short: '2026-07-05',
+	ps_scan_time: '2:30 PM',
+	ps_scan_time_24h: '14:30',
+	ps_confidence: 92,
+	ps_provider: 'claude',
+	ps_model: 'claude-sonnet-4',
+	ps_image_file: 'attachments/Papersync/papersync-scan.jpg',
+	ps_markdown: 'Small steps still move you forward. Start with one, and let momentum carry the rest.\n\n- [x] Grocery run before it rains\n- [ ] Read 20 pages before bed\n- [ ] 30-min walk after lunch\n- [ ] Call mom back',
+	// '---' (the append case) so the live preview can show the divider in context.
+	ps_separator: '---',
+};
+
+// A faint placeholder standing in for whatever is already in today's daily note, so
+// the {{ps_separator}} divider is shown doing its real job: splitting this capture
+// from earlier content on the same day.
+const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
+
+// Shown where the scan image would embed. The embed IS the original handwritten page
+// that was translated into the markdown above, so the placeholder MIRRORS that note's
+// structure (two prose lines and the same four checkboxes with one done) but masks
+// the text as illegible handwriting. (The sample file is not a real vault
+// note, so a live embed would otherwise render as an unresolved "not found" box.)
+const SCAN_PLACEHOLDER = ((width: number): string => {
+	const line = (s: string): string => `|${s.padEnd(width)}|`;
+	const rule = `+${'-'.repeat(width)}+`;
+	return [
+		rule,
+		line(''),
+		line('  ~~~~ ~~~~~ ~~~ ~~~~. ~~~~~~ ~~~~'),
+		line('  ~~~~~ ~~~ ~~~~~~~~ ~~~~ ~ ~~~~~.'),
+		line(''),
+		line('  [x] ~~~~~~~ ~~~ ~~~~~~ ~~ ~~~~~'),
+		line('  [ ] ~~~~ ~~ ~~~~~ ~~~~~~ ~~~'),
+		line('  [ ] ~~~~~~ ~~~~ ~~~~~ ~~~~~'),
+		line('  [ ] ~~~~ ~~~ ~~~~'),
+		line(''),
+		rule,
+	].join('\n');
+})(36);
 
 export type BackendType = 'drive' | 'folder' | 'none';
 
@@ -26,14 +72,14 @@ export interface PluginSettings {
 	lastSyncAt: number;
 }
 
-const DEFAULT_TEMPLATE = `{{separator}}
+const DEFAULT_TEMPLATE = `{{ps_separator}}
 
-## {{time}}
+## {{ps_scan_time}}
 
-{{markdown}}
+{{ps_markdown}}
 
 > [!abstract]- Source
-> ![[{{image_file}}]]
+> ![[{{ps_image_file}}]]
 `;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
@@ -83,6 +129,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private syncButton: HTMLButtonElement | null = null;
 	private syncDesc: HTMLElement | null = null;
 	private activeTab: 'sync' | 'template' | 'advanced' = 'sync';
+	private previewComponent: Component | null = null;
 
 	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app, plugin);
@@ -137,9 +184,12 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.renderTabs(containerEl);
 	}
 
-	// Reopen the settings on the Sync tab each time (the storage/connection anchor).
+	// Reopen the settings on the Sync tab each time (the storage/connection anchor)
+	// and tear down the template preview's render component.
 	hide(): void {
 		this.activeTab = 'sync';
+		this.previewComponent?.unload();
+		this.previewComponent = null;
 	}
 
 	private renderLogoHeader(containerEl: HTMLElement): void {
@@ -166,7 +216,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private renderTabs(containerEl: HTMLElement): void {
 		const tabs: Array<{ id: 'sync' | 'template' | 'advanced'; label: string; render: (el: HTMLElement) => void }> = [
 			{ id: 'sync', label: 'Sync', render: (el) => this.renderSyncTab(el) },
-			{ id: 'template', label: 'PaperSync template', render: (el) => this.renderTemplateSection(el) },
+			{ id: 'template', label: 'Template', render: (el) => this.renderTemplateSection(el) },
 			{ id: 'advanced', label: 'Advanced', render: (el) => this.renderAdvancedSection(el) },
 		];
 
@@ -365,7 +415,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Save scan images')
-			.setDesc('Download the original scan image into your vault. If off, remove {{image_file}} from your template.')
+			.setDesc('Download the original scan image into your vault. If off, remove {{ps_image_file}} from your template.')
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.downloadImages).onChange(asyncValueHandler(async (value) => {
 					this.plugin.settings.downloadImages = value;
@@ -398,14 +448,14 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		const varList = descContainer.createEl('table', { cls: 'papersync-var-table' });
 		const vars: Array<[string, string]> = [
-			['{{markdown}}', 'Converted text'],
-			['{{image_file}}', 'Image vault path, use ![[{{image_file}}]] to embed'],
-			['{{time}}', '12h time (2:30 PM)'],
-			['{{time_24h}}', '24h time (14:30)'],
-			['{{separator}}', '--- on append, empty on new file'],
-			['{{date_short}}', 'Date per Daily Notes format'],
-			['{{date}}', 'Full ISO timestamp'],
-			['{{confidence}}', 'AI score (0-100)'],
+			['{{ps_markdown}}', 'Converted text'],
+			['{{ps_image_file}}', 'Image vault path, use ![[{{ps_image_file}}]] to embed'],
+			['{{ps_scan_time}}', '12h scan time (2:30 PM)'],
+			['{{ps_scan_time_24h}}', '24h scan time (14:30)'],
+			['{{ps_separator}}', '--- on append, empty on new note'],
+			['{{ps_scan_date_short}}', 'Scan date per Daily Notes format'],
+			['{{ps_scan_date}}', 'Full scan ISO timestamp'],
+			['{{ps_confidence}}', 'AI score (0-100)'],
 		];
 		for (const [token, desc] of vars) {
 			const row = varList.createEl('tr');
@@ -413,8 +463,16 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			row.createEl('td', { text: desc });
 		}
 
-		const textareaContainer = containerEl.createDiv({ cls: 'papersync-template-container' });
-		const textarea = textareaContainer.createEl('textarea', {
+		// Warns when the template embeds a scan image but image saving is off (the
+		// embed would render as an empty ![[]] in real notes).
+		const imageWarning = containerEl.createDiv({ cls: 'papersync-image-warning' });
+
+		// Editor on the left, live preview of a sample scan on the right.
+		const split = containerEl.createDiv({ cls: 'papersync-template-split' });
+
+		const editorCol = split.createDiv({ cls: 'papersync-template-col' });
+		editorCol.createDiv({ cls: 'papersync-col-label', text: 'Template' });
+		const textarea = editorCol.createEl('textarea', {
 			cls: 'papersync-template-editor',
 			attr: {
 				spellcheck: 'false',
@@ -422,10 +480,67 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			},
 		});
 		textarea.value = this.plugin.settings.templateString;
-		textarea.addEventListener('change', () => {
+
+		const previewCol = split.createDiv({ cls: 'papersync-template-col' });
+		previewCol.createDiv({ cls: 'papersync-col-label', text: 'Preview' });
+		const previewEl = previewCol.createDiv({ cls: 'papersync-template-preview markdown-rendered' });
+
+		const embedsImage = (): boolean => /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(textarea.value);
+		const embedsSeparator = (): boolean => /\{\{\s*(ps_separator|separator)\s*\}\}/.test(textarea.value);
+		const imageSavingOff = (): boolean => !this.plugin.settings.downloadImages;
+
+		const updateImageWarning = (): void => {
+			const show = embedsImage() && imageSavingOff();
+			imageWarning.toggleClass('is-visible', show);
+			imageWarning.setText(show
+				? 'Save scan images is off, so the image embed will render empty. Remove the image line from your template, or turn Save scan images back on in the Sync tab.'
+				: '');
+		};
+
+		const renderPreview = (): void => {
+			this.previewComponent?.unload();
+			const component = new Component();
+			this.previewComponent = component;
+			component.load();
+			previewEl.empty();
+			updateImageWarning();
+
+			// The faint prior entry only makes sense when the template uses {{ps_separator}}
+			// (it shows the divider splitting this capture from earlier content). Without the
+			// token, render the entry standalone so the heading isn't crowded.
+			if (embedsSeparator()) {
+				const prior = previewEl.createDiv({ cls: 'papersync-preview-prior markdown-rendered' });
+				void MarkdownRenderer.render(this.app, PRIOR_ENTRY_MD, prior, '', component);
+			}
+
+			const md = renderTemplate(textarea.value, PREVIEW_CONTEXT);
+			void MarkdownRenderer.render(this.app, md, previewEl, '', component).then(() => {
+				// The sample scan is not a real vault file, so its embed renders as an
+				// unresolved box. Swap it for the handwritten-page placeholder, or an
+				// "empty embed" warning when image saving is off.
+				previewEl.querySelectorAll('.internal-embed').forEach((embed) => {
+					const box = embed as HTMLElement;
+					box.empty();
+					if (imageSavingOff()) {
+						box.createDiv({ cls: 'papersync-preview-scan-off', text: 'Image saving is off, so this embed will be empty.' });
+					} else {
+						box.createEl('pre', { cls: 'papersync-preview-scan', text: SCAN_PLACEHOLDER });
+					}
+				});
+			});
+		};
+
+		let debounce: number | null = null;
+		textarea.addEventListener('input', () => {
 			this.plugin.settings.templateString = textarea.value;
-			this.plugin.saveSettings().catch(console.error);
+			if (debounce !== null) {window.clearTimeout(debounce);}
+			debounce = window.setTimeout(() => {
+				this.plugin.saveSettings().catch(console.error);
+				renderPreview();
+			}, 250);
 		});
+
+		renderPreview();
 	}
 
 	private renderAdvancedSection(containerEl: HTMLElement): void {

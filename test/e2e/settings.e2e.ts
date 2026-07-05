@@ -24,11 +24,12 @@ describe('Settings tab', function () {
 		await browser.pause(300);
 	});
 
-	it('shows the storage connection or picker', async function () {
+	it('shows the storage connection or picker in the Sync tab', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		// Google Drive appears both as the connected provider row and as a picker option.
-		expect(text).toContain('Google Drive');
+		// Storage lives in the Sync tab: a Change Storage button when connected (Drive
+		// OR a local folder), or a Browse option in the picker when not connected.
+		expect(text.includes('Change Storage') || text.includes('Browse')).toBe(true);
 	});
 
 	it('shows notes folder setting when connected', async function () {
@@ -48,24 +49,53 @@ describe('Settings tab', function () {
 		expect(text).toContain('Save scan images');
 	});
 
-	it('shows note template tab and variables when connected', async function () {
+	it('shows the template tab variables when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('PaperSync template');
+		await clickTab('Template');
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('PaperSync template');
-		expect(text).toContain('{{markdown}}');
-		expect(text).toContain('{{image_file}}');
-		expect(text).toContain('{{time}}');
+		expect(text).toContain('{{ps_markdown}}');
+		expect(text).toContain('{{ps_image_file}}');
+		expect(text).toContain('{{ps_scan_time}}');
 	});
 
 	it('shows template editor textarea when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('PaperSync template');
+		await clickTab('Template');
 		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
-		expect(value).toContain('{{markdown}}');
+		expect(value).toContain('{{ps_markdown}}');
+	});
+
+	it('renders a live preview of the template with sample values', async function () {
+		await clickTab('Template');
+		const editor = await browser.$('.papersync-template-editor');
+		await editor.waitForExist({ timeout: 3000 });
+		const original = await editor.getValue();
+
+		// Type a template that uses two tokens; the preview should substitute a sample
+		// scan and render the result as markdown.
+		await editor.clearValue();
+		await editor.setValue('## {{ps_scan_time}}\n\n{{ps_markdown}}');
+		await browser.pause(700); // debounce (250ms) + async markdown render
+
+		const preview = await browser.$('.papersync-template-preview');
+		await preview.waitForExist({ timeout: 3000 });
+		const rendered = await preview.getText();
+		expect(rendered).toContain('2:30 PM'); // {{ps_scan_time}} sample value
+		expect(rendered).toContain('Grocery'); // {{ps_markdown}} body, rendered
+
+		// An image embed is swapped for the ASCII handwriting placeholder.
+		await editor.clearValue();
+		await editor.setValue('![[{{ps_image_file}}]]');
+		await browser.pause(700);
+		const placeholder = await browser.$('.papersync-preview-scan');
+		expect(await placeholder.isExisting()).toBe(true);
+
+		await editor.clearValue();
+		await editor.setValue(original);
+		await browser.pause(400);
 	});
 
 	it('shows sync now button when connected', async function () {

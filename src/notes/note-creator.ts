@@ -62,16 +62,16 @@ export class NoteCreator {
 		const isAppend = !!existingFile;
 
 		const context: TemplateContext = {
-			date: scanFile.createdAt,
-			date_short: dateShort,
-			time: time12,
-			time_24h: time24,
-			confidence: scanFile.confidence,
-			provider: scanFile.provider,
-			model: scanFile.model,
-			image_file: imagePath,
-			markdown: scanFile.markdown,
-			separator: isAppend ? '---' : '',
+			ps_scan_date: scanFile.createdAt,
+			ps_scan_date_short: dateShort,
+			ps_scan_time: time12,
+			ps_scan_time_24h: time24,
+			ps_confidence: scanFile.confidence,
+			ps_provider: scanFile.provider,
+			ps_model: scanFile.model,
+			ps_image_file: imagePath,
+			ps_markdown: scanFile.markdown,
+			ps_separator: isAppend ? '---' : '',
 		};
 
 		const rendered = renderTemplate(this.config.templateString, context);

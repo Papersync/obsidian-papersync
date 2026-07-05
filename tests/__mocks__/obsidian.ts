@@ -26,6 +26,15 @@ export const requestUrl = jest.fn(() =>
 	Promise.resolve({ json: {}, arrayBuffer: new ArrayBuffer(0), status: 200 })
 );
 
+export class Component {
+	load() { /* no-op */ }
+	unload() { /* no-op */ }
+}
+
+export const MarkdownRenderer = {
+	render: jest.fn(() => Promise.resolve()),
+};
+
 export class Vault {
 	getAbstractFileByPath() { return null; }
 	create() { return Promise.resolve(); }
