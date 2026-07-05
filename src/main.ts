@@ -208,19 +208,31 @@ export default class PaperSyncPlugin extends Plugin {
 			}
 		}
 
-		// Surface a single calm Notice when sync first enters the error state, so a
-		// background poll failure is never silent. Gated on the transition, not per poll.
-		if (snap.status === 'error' && this.lastStatus !== 'error') {
-			new Notice(STRINGS.NOTICE_SYNC_ERROR);
-		}
+		const enteringError = snap.status === 'error' && this.lastStatus !== 'error';
+		const justSynced = snap.status === 'synced' && this.lastStatus !== 'synced';
 		this.lastStatus = snap.status;
 
-		// Update settings tab
+		// Surface a single calm Notice when sync first enters the error state, so a
+		// background poll failure is never silent. Gated on the transition, not per poll.
+		if (enteringError) {
+			new Notice(STRINGS.NOTICE_SYNC_ERROR);
+		}
+		// Record the wall-clock time a sync cycle last completed (distinct from the
+		// sync cursor, which is the newest scan's timestamp).
+		if (justSynced) {
+			this.settings.lastSyncAt = Date.now();
+		}
+
+		// Update settings tab after lastSyncAt so the connection row shows the fresh time.
 		this.settingsTab?.updateSyncState();
 
-		// Persist sync cursor
+		// Persist sync cursor + last-sync time.
+		let needsSave = justSynced;
 		if (snap.lastSyncTimestamp !== this.settings.lastSyncTimestamp) {
 			this.settings.lastSyncTimestamp = snap.lastSyncTimestamp;
+			needsSave = true;
+		}
+		if (needsSave) {
 			void this.saveSettings();
 		}
 	}

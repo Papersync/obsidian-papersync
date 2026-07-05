@@ -22,6 +22,7 @@ export interface PluginSettings {
 	oauthExpiresAt: number;
 	oauthRefreshToken: string;
 	lastSyncTimestamp: string;
+	lastSyncAt: number;
 }
 
 const DEFAULT_TEMPLATE = `{{separator}}
@@ -48,6 +49,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	oauthExpiresAt: 0,
 	oauthRefreshToken: '',
 	lastSyncTimestamp: '',
+	lastSyncAt: 0,
 };
 
 export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
@@ -93,11 +95,15 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		this.setSyncBusy(isBusy);
 
+		const lastSyncAt = this.plugin.settings.lastSyncAt;
+		const syncedText = lastSyncAt
+			? `Synced. Last sync ${new Date(lastSyncAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+			: 'Synced';
 		const statusText = isBusy
 			? `Syncing (${pendingCount} pending)...`
 			: status === 'error' ? 'Error, check logs'
 			: status === 'offline' ? 'Offline'
-			: this.plugin.syncEngine ? 'Synced' : 'Not connected';
+			: this.plugin.syncEngine ? syncedText : 'Not connected';
 		this.syncDesc.textContent = statusText;
 	}
 
@@ -168,44 +174,42 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private renderAccountSection(containerEl: HTMLElement, isGoogleConnected: boolean, isFolderConnected: boolean): void {
 		if (isGoogleConnected) {
-			new Setting(containerEl)
+			const gSetting = new Setting(containerEl)
 				.setName('\u2713 Google Drive')
-				.setDesc(STRINGS.SETTINGS_CONNECTED)
-				.setClass('papersync-storage-active')
-				.addButton((button) =>
-					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
-						this.plugin.oauthManager?.disconnect();
-						this.plugin.syncEngine?.stop();
-						this.plugin.settings.backendType = 'none';
-						this.plugin.settings.setupComplete = false;
-						await this.plugin.saveSettings();
-						new Notice('Disconnected from Google Drive');
-						this.display();
-					}))
-				);
-			this.renderSyncNowRow(containerEl);
+				.setClass('papersync-storage-active');
+			this.addSyncNowButton(gSetting);
+			gSetting.addButton((button) =>
+				button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
+					this.plugin.oauthManager?.disconnect();
+					this.plugin.syncEngine?.stop();
+					this.plugin.settings.backendType = 'none';
+					this.plugin.settings.setupComplete = false;
+					await this.plugin.saveSettings();
+					new Notice('Disconnected from Google Drive');
+					this.display();
+				}))
+			);
 			return;
 		}
 
 		if (isFolderConnected) {
 			const displayName = this.getFolderDisplayName();
-			new Setting(containerEl)
+			const fSetting = new Setting(containerEl)
 				.setName(`\u2713 ${displayName}`)
-				.setDesc(`Watching ${this.plugin.settings.folderPath} for new scans`)
-				.setClass('papersync-storage-active')
-				.addButton((button) =>
-					button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
-						this.plugin.syncEngine?.stop();
-						this.plugin.settings.backendType = 'none';
-						this.plugin.settings.folderPath = '';
-						this.plugin.settings.folderType = '';
-						this.plugin.settings.setupComplete = false;
-						await this.plugin.saveSettings();
-						new Notice(`Disconnected from ${displayName}`);
-						this.display();
-					}))
-				);
-			this.renderSyncNowRow(containerEl);
+				.setClass('papersync-storage-active');
+			this.addSyncNowButton(fSetting);
+			fSetting.addButton((button) =>
+				button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
+					this.plugin.syncEngine?.stop();
+					this.plugin.settings.backendType = 'none';
+					this.plugin.settings.folderPath = '';
+					this.plugin.settings.folderType = '';
+					this.plugin.settings.setupComplete = false;
+					await this.plugin.saveSettings();
+					new Notice(`Disconnected from ${displayName}`);
+					this.display();
+				}))
+			);
 			return;
 		}
 
@@ -304,26 +308,22 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.display();
 	}
 
-	// The primary Sync now action + live status live in the pinned header (always
-	// visible when connected), not inside the Sync tab.
-	private renderSyncNowRow(containerEl: HTMLElement): void {
-		const syncSetting = new Setting(containerEl)
-			.setName('Sync now')
-			.setDesc('')
-			.addButton((button) => {
-				button
-					.setCta()
-					.onClick(asyncHandler(async () => {
-						if (!this.plugin.syncEngine || this.plugin.syncState.isSyncing) {return;}
-						this.setSyncBusy(true);
-						await new Promise((r) => window.setTimeout(r, 50));
-						await this.plugin.syncEngine.forceSyncNow();
-						this.setSyncBusy(false);
-					}));
-				this.syncButton = button.buttonEl;
-			});
-
-		this.syncDesc = syncSetting.descEl;
+	// Sync now is the primary action, so it sits on the connected provider row
+	// itself (next to Change Storage); that row's description carries live status.
+	private addSyncNowButton(setting: Setting): void {
+		setting.addButton((button) => {
+			button
+				.setCta()
+				.onClick(asyncHandler(async () => {
+					if (!this.plugin.syncEngine || this.plugin.syncState.isSyncing) {return;}
+					this.setSyncBusy(true);
+					await new Promise((r) => window.setTimeout(r, 50));
+					await this.plugin.syncEngine.forceSyncNow();
+					this.setSyncBusy(false);
+				}));
+			this.syncButton = button.buttonEl;
+		});
+		this.syncDesc = setting.descEl;
 		this.updateSyncState();
 	}
 

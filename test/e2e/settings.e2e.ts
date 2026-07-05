@@ -141,7 +141,7 @@ describe('Settings tab', function () {
 		const text = await body.getText();
 		// Poll interval is Drive-only; folder backends watch the filesystem, so only
 		// assert its presence when the connected backend is Google Drive.
-		if (text.includes('Connected to Google Drive')) {
+		if (text.includes('Google Drive')) {
 			expect(text).toContain('Poll interval');
 		}
 	});
