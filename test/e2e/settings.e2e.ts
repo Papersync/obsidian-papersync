@@ -84,11 +84,16 @@ describe('Settings tab', function () {
 		// no sync engine actually existed. Post-fix the gate requires either
 		// Google auth or Folder setupComplete.
 		await browser.execute(async () => {
-			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void> }> } } }).app;
+			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void>; oauthManager?: { disconnect: () => void } }> } } }).app;
 			const plugin = app.plugins.plugins['obsidian-papersync'];
 			if (!plugin) { throw new Error('Plugin not loaded'); }
 
 			// Set the half-state: drive intent without authentication.
+			// disconnect() clears the LIVE oauthManager (isGoogleConnected reads it, not
+			// settings). Without this the test is at the mercy of a persisted refresh
+			// token restored at load (e.g. a dogfood data.json), which leaves the plugin
+			// authenticated and the half-state unreachable.
+			plugin.oauthManager?.disconnect();
 			plugin.settings.backendType = 'drive';
 			plugin.settings.setupComplete = false;
 			plugin.settings.oauthRefreshToken = '';

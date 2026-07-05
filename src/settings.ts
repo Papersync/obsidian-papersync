@@ -335,23 +335,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				);
 		}
 
-		if (this.plugin.settings.backendType === 'drive') {
-			new Setting(containerEl)
-				.setName('Poll interval (seconds)')
-				.setDesc('How often to check Google Drive for new scans.')
-				.addText((text) =>
-					text
-						.setPlaceholder('30')
-						.setValue(String(this.plugin.settings.drivePollInterval))
-						.onChange(asyncValueHandler(async (value) => {
-							const parsed = parseInt(value, 10);
-							if (!isNaN(parsed) && parsed >= 5) {
-								this.plugin.settings.drivePollInterval = parsed;
-								await this.plugin.saveSettings();
-							}
-						}))
-				);
-		}
 	}
 
 	private renderTemplateSection(containerEl: HTMLElement): void {
@@ -394,6 +377,25 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private renderAdvancedSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Advanced").setHeading();
+
+		const { isGoogleConnected } = this.getConnectionState();
+		if (isGoogleConnected) {
+			new Setting(containerEl)
+				.setName('Poll interval (seconds)')
+				.setDesc('How often to check Google Drive for new scans.')
+				.addText((text) =>
+					text
+						.setPlaceholder('30')
+						.setValue(String(this.plugin.settings.drivePollInterval))
+						.onChange(asyncValueHandler(async (value) => {
+							const parsed = parseInt(value, 10);
+							if (!isNaN(parsed) && parsed >= 5) {
+								this.plugin.settings.drivePollInterval = parsed;
+								await this.plugin.saveSettings();
+							}
+						}))
+				);
+		}
 
 		new Setting(containerEl)
 			.setName('Reset settings')
