@@ -1,6 +1,6 @@
 export const GOOGLE_CLIENT_ID =
-	'401509475922-sji8f91u5otogpbma4f3nul69kgbnaoj.apps.googleusercontent.com';
-export const GOOGLE_CLIENT_SECRET = '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'; // Not actually secret for Desktop apps — shipped in binary
+	'401509475922-fev7sp7c5t4og4di9htk3av4kri08clv.apps.googleusercontent.com';
+export const GOOGLE_CLIENT_SECRET = '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';
 export const GOOGLE_SCANS_FOLDER = 'PaperSync/scans';
 export const DEFAULT_POLL_INTERVAL_S = 30;
 export const MAX_RETRIES = 2;
