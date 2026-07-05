@@ -31,7 +31,8 @@ export default class PaperSyncPlugin extends Plugin {
 		if (!this.checkMinObsidianVersion()) {return;}
 
 		await this.loadSettings();
-		setDebugLogging(this.settings.debugLogging);
+		// Console logging is a development-phase aid, gated to dev builds (no user toggle).
+		setDebugLogging(DEV_MODE);
 
 		this.settingsTab = new PaperSyncSettingTab(this.app, this);
 		this.addSettingTab(this.settingsTab);
@@ -112,7 +113,6 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	async saveSettings(): Promise<void> {
-		setDebugLogging(this.settings.debugLogging);
 		await this.saveData(this.settings);
 	}
 

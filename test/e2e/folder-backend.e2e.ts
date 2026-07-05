@@ -15,7 +15,7 @@ describe('Folder backend settings', function () {
 		if (!text.includes('Change Storage')) {
 			expect(text).toContain('Storage');
 			expect(text).toContain('Google Drive');
-			expect(text).toContain('Another folder on this device');
+			expect(text).toContain('Select your PaperSync folder');
 		}
 	});
 

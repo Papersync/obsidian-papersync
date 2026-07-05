@@ -60,12 +60,6 @@ describe('Settings tab', function () {
 		expect(text).toContain('Sync now');
 	});
 
-	it('shows debug logging toggle always', async function () {
-		const body = await browser.$('body');
-		const text = await body.getText();
-		expect(text).toContain('Debug logging');
-	});
-
 	it('shows reset buttons always', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();

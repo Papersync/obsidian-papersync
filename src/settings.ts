@@ -1,3 +1,5 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import type PaperSyncPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
@@ -17,7 +19,6 @@ export interface PluginSettings {
 	attachmentsFolder: string;
 	templateString: string;
 	downloadImages: boolean;
-	debugLogging: boolean;
 	oauthExpiresAt: number;
 	oauthRefreshToken: string;
 	lastSyncTimestamp: string;
@@ -44,7 +45,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	attachmentsFolder: 'attachments/Papersync',
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
-	debugLogging: false,
 	oauthExpiresAt: 0,
 	oauthRefreshToken: '',
 	lastSyncTimestamp: '',
@@ -206,12 +206,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				}))
 			);
 
-		// Reassure before the "unverified app" consent screen the PKCE flow triggers.
-		containerEl.createEl('p', {
-			text: STRINGS.SETTINGS_OAUTH_WARNING,
-			cls: 'setting-item-description papersync-oauth-hint',
-		});
-
 		// Folder — show detected locations inline + browse
 		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
 		const detected = detectSyncLocations(vaultPath);
@@ -230,10 +224,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		}
 
 		new Setting(containerEl)
-			.setName('Another folder on this device')
-			.setDesc(detected.length === 0
-				? 'No sync tools detected. Browse to pick a folder'
-				: 'Pick any folder on your filesystem')
+			.setName('Select your PaperSync folder')
+			.setDesc('Browse to the PaperSync folder your app saves scans to. Select the PaperSync folder itself, not the scans folder inside it.')
 			.addButton((button) =>
 				button.setButtonText('Browse').onClick(asyncHandler(async () => {
 					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
@@ -241,7 +233,13 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					if (dialog) {
 						const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
 						if (!result.canceled && result.filePaths[0]) {
-							await this.selectFolderLocation(result.filePaths[0], 'custom');
+							// Scans live under <PaperSync>/scans. If the user picked the PaperSync
+							// folder (as the copy asks), watch its scans subfolder; tolerate a
+							// direct scans selection too.
+							const picked = result.filePaths[0];
+							const scansSubdir = path.join(picked, 'scans');
+							const resolved = fs.existsSync(scansSubdir) ? scansSubdir : picked;
+							await this.selectFolderLocation(resolved, 'custom');
 						}
 					} else {
 						new Notice('Folder browser not available');
@@ -396,16 +394,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private renderAdvancedSection(containerEl: HTMLElement): void {
 		new Setting(containerEl).setName("Advanced").setHeading();
-
-		new Setting(containerEl)
-			.setName('Debug logging')
-			.setDesc('Enable detailed logging in the developer console.')
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.debugLogging).onChange(asyncValueHandler(async (value) => {
-					this.plugin.settings.debugLogging = value;
-					await this.plugin.saveSettings();
-				}))
-			);
 
 		new Setting(containerEl)
 			.setName('Reset settings')
