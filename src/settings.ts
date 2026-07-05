@@ -4,6 +4,7 @@ import type PaperSyncPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
+import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 
 export type BackendType = 'drive' | 'folder' | 'none';
@@ -130,20 +131,41 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		const { containerEl } = this;
 		containerEl.empty();
 
+		// The clickable wordmark anchors the top; everything else lives under tabs,
+		// with the storage connection (or picker) owned by the Sync tab.
+		this.renderLogoHeader(containerEl);
+		this.renderTabs(containerEl);
+	}
+
+	// Reopen the settings on the Sync tab each time (the storage/connection anchor).
+	hide(): void {
+		this.activeTab = 'sync';
+	}
+
+	private renderLogoHeader(containerEl: HTMLElement): void {
+		const header = containerEl.createDiv({ cls: 'papersync-logo-header' });
+		const link = header.createEl('a', {
+			cls: 'papersync-logo',
+			href: PAPERSYNC_WEBSITE,
+			attr: { 'aria-label': 'Open the PaperSync website', target: '_blank', rel: 'noopener' },
+		});
+		// Trusted static asset from our own press kit (no user input); parse into a
+		// node rather than assigning innerHTML so the DOM-safety lint stays happy.
+		const parsed = new DOMParser().parseFromString(WORDMARK_SVG, 'image/svg+xml');
+		link.appendChild(document.importNode(parsed.documentElement, true));
+	}
+
+	private renderSyncTab(containerEl: HTMLElement): void {
 		const { isGoogleConnected, isFolderConnected } = this.getConnectionState();
-
-		// Storage stays pinned on top as the connection anchor. When connected, the
-		// rest of the settings live under tabs; when not, only the storage picker shows.
 		this.renderAccountSection(containerEl, isGoogleConnected, isFolderConnected);
-
 		if (isGoogleConnected || isFolderConnected) {
-			this.renderTabs(containerEl);
+			this.renderSyncSection(containerEl);
 		}
 	}
 
 	private renderTabs(containerEl: HTMLElement): void {
 		const tabs: Array<{ id: 'sync' | 'template' | 'advanced'; label: string; render: (el: HTMLElement) => void }> = [
-			{ id: 'sync', label: 'Sync', render: (el) => this.renderSyncSection(el) },
+			{ id: 'sync', label: 'Sync', render: (el) => this.renderSyncTab(el) },
 			{ id: 'template', label: 'PaperSync template', render: (el) => this.renderTemplateSection(el) },
 			{ id: 'advanced', label: 'Advanced', render: (el) => this.renderAdvancedSection(el) },
 		];
