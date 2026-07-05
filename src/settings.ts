@@ -79,6 +79,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	plugin: PaperSyncPlugin;
 	private syncButton: HTMLButtonElement | null = null;
 	private syncDesc: HTMLElement | null = null;
+	private activeTab: 'sync' | 'template' | 'advanced' = 'sync';
 
 	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app, plugin);
@@ -125,14 +126,44 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		const { isGoogleConnected, isFolderConnected } = this.getConnectionState();
 
+		// Storage stays pinned on top as the connection anchor. When connected, the
+		// rest of the settings live under tabs; when not, only the storage picker shows.
 		this.renderAccountSection(containerEl, isGoogleConnected, isFolderConnected);
 
 		if (isGoogleConnected || isFolderConnected) {
-			this.renderSyncSection(containerEl);
-			this.renderTemplateSection(containerEl);
+			this.renderTabs(containerEl);
+		}
+	}
+
+	private renderTabs(containerEl: HTMLElement): void {
+		const tabs: Array<{ id: 'sync' | 'template' | 'advanced'; label: string; render: (el: HTMLElement) => void }> = [
+			{ id: 'sync', label: 'Sync', render: (el) => this.renderSyncSection(el) },
+			{ id: 'template', label: 'Note template', render: (el) => this.renderTemplateSection(el) },
+			{ id: 'advanced', label: 'Advanced', render: (el) => this.renderAdvancedSection(el) },
+		];
+
+		const bar = containerEl.createDiv({ cls: 'papersync-tab-bar' });
+		const content = containerEl.createDiv({ cls: 'papersync-tab-content' });
+
+		const paint = (): void => {
+			content.empty();
+			const active = tabs.find((t) => t.id === this.activeTab) ?? tabs[0];
+			active?.render(content);
+		};
+
+		for (const tab of tabs) {
+			const btn = bar.createEl('button', { cls: 'papersync-tab', text: tab.label });
+			btn.setAttribute('type', 'button');
+			if (this.activeTab === tab.id) {btn.addClass('is-active');}
+			btn.addEventListener('click', () => {
+				this.activeTab = tab.id;
+				for (const child of Array.from(bar.children)) {child.removeClass('is-active');}
+				btn.addClass('is-active');
+				paint();
+			});
 		}
 
-		this.renderAdvancedSection(containerEl);
+		paint();
 	}
 
 	private renderAccountSection(containerEl: HTMLElement, isGoogleConnected: boolean, isFolderConnected: boolean): void {
@@ -274,8 +305,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderSyncSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Sync").setHeading();
-
 		const syncSetting = new Setting(containerEl)
 			.setName('Sync now')
 			.setDesc('')
@@ -338,8 +367,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderTemplateSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Note Template").setHeading();
-
 		const descContainer = containerEl.createDiv({ cls: 'setting-item-description papersync-template-desc' });
 		descContainer.createEl('p', { text: 'Template for synced notes. Available variables:' });
 
@@ -376,8 +403,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderAdvancedSection(containerEl: HTMLElement): void {
-		new Setting(containerEl).setName("Advanced").setHeading();
-
 		const { isGoogleConnected } = this.getConnectionState();
 		if (isGoogleConnected) {
 			new Setting(containerEl)

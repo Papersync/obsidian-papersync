@@ -62,3 +62,41 @@
 	border-left: 3px solid var(--text-success);
 	padding-left: 12px;
 }
+
+.papersync-tab-bar {
+	display: flex;
+	gap: 4px;
+	margin: 12px 0 4px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	overflow-x: auto;
+	scrollbar-width: none; /* Firefox */
+}
+
+.papersync-tab-bar::-webkit-scrollbar {
+	display: none; /* Chromium (Obsidian/Electron): hide the tab-bar scrollbar */
+}
+
+.papersync-tab {
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	border-bottom: 2px solid transparent;
+	border-radius: 6px 6px 0 0;
+	margin-bottom: -1px;
+	padding: 8px 12px;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.papersync-tab:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.papersync-tab.is-active {
+	color: var(--text-normal);
+	border-bottom-color: var(--interactive-accent);
+	font-weight: var(--font-semibold);
+}

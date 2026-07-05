@@ -29,6 +29,13 @@ describe('Edge cases and error handling', function () {
 		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(1000);
 
+		// Reset lives under the Advanced tab now; activate it (no-op if not connected).
+		await browser.execute(() => {
+			const t = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === 'Advanced');
+			if (t) { (t as HTMLElement).click(); }
+		});
+		await browser.pause(300);
+
 		// Find and click the "Reset settings" button (not full reset)
 		const buttons = await browser.$$('button');
 		let resetClicked = false;

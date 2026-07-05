@@ -1,3 +1,11 @@
+async function clickTab(label: string): Promise<void> {
+	await browser.execute((l: string) => {
+		const btn = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === l);
+		if (btn) { (btn as HTMLElement).click(); }
+	}, label);
+	await browser.pause(200);
+}
+
 describe('Template editor', function () {
 	let isConnected: boolean;
 
@@ -17,6 +25,7 @@ describe('Template editor', function () {
 		}
 		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(1000);
+		await clickTab('Note template');
 	});
 
 	afterEach(async function () {

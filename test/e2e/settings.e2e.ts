@@ -1,3 +1,13 @@
+// The connected settings live under tabs (Sync | Note template | Advanced); only the
+// active tab's content is in the DOM, so activate a tab before asserting its content.
+async function clickTab(label: string): Promise<void> {
+	await browser.execute((l: string) => {
+		const btn = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === l);
+		if (btn) { (btn as HTMLElement).click(); }
+	}, label);
+	await browser.pause(200);
+}
+
 describe('Settings tab', function () {
 	let isConnected: boolean;
 
@@ -22,6 +32,7 @@ describe('Settings tab', function () {
 
 	it('shows notes folder setting when connected', async function () {
 		if (!isConnected) {return;}
+		await clickTab('Sync');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Notes folder');
@@ -30,16 +41,18 @@ describe('Settings tab', function () {
 
 	it('shows save scan images toggle when connected', async function () {
 		if (!isConnected) {return;}
+		await clickTab('Sync');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Save scan images');
 	});
 
-	it('shows note template section when connected', async function () {
+	it('shows note template tab and variables when connected', async function () {
 		if (!isConnected) {return;}
+		await clickTab('Note template');
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('Note Template');
+		expect(text).toContain('Note template');
 		expect(text).toContain('{{markdown}}');
 		expect(text).toContain('{{image_file}}');
 		expect(text).toContain('{{time}}');
@@ -47,6 +60,7 @@ describe('Settings tab', function () {
 
 	it('shows template editor textarea when connected', async function () {
 		if (!isConnected) {return;}
+		await clickTab('Note template');
 		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
@@ -55,12 +69,15 @@ describe('Settings tab', function () {
 
 	it('shows sync now button when connected', async function () {
 		if (!isConnected) {return;}
+		await clickTab('Sync');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Sync now');
 	});
 
-	it('shows reset buttons always', async function () {
+	it('shows reset buttons in the Advanced tab when connected', async function () {
+		if (!isConnected) {return;}
+		await clickTab('Advanced');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Reset settings');
@@ -116,12 +133,15 @@ describe('Settings tab', function () {
 		expect(text).not.toContain('Sync now');
 	});
 
-	it('shows poll interval only when Drive connected', async function () {
+	it('shows poll interval in the Advanced tab when Drive connected', async function () {
+		if (!isConnected) {return;}
+		await clickTab('Advanced');
 		const body = await browser.$('body');
 		const text = await body.getText();
-		if (text.includes('Disconnect') && text.includes('Poll interval')) {
+		// Poll interval is Drive-only; folder backends watch the filesystem, so only
+		// assert its presence when the connected backend is Google Drive.
+		if (text.includes('Connected to Google Drive')) {
 			expect(text).toContain('Poll interval');
 		}
-		// If not Drive-connected, poll interval should not appear — verified by absence
 	});
 });
