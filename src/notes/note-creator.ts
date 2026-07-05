@@ -1,4 +1,4 @@
-import { App, Vault } from 'obsidian';
+import { App, Vault, moment, normalizePath } from 'obsidian';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { saveImageToVault } from '@/notes/image-handler';
@@ -42,20 +42,30 @@ export class NoteCreator {
 		const createdDate = new Date(scanFile.createdAt);
 		const dailyConfig = getDailyNotesConfig(this.app);
 
-		const dateShort = formatDateWithPattern(createdDate, dailyConfig.format);
+		// The daily-note filename must match Obsidian's own, which is moment-formatted
+		// (arbitrary format string incl. month names, time tokens, escaped literals, '/').
+		// A hand-rolled Y/M/D replacer diverges (e.g. `MMMM D, YYYY` -> "0707 5, 2026")
+		// and writes a garbage parallel note instead of appending to the real one.
+		const dateShort = moment(createdDate).format(dailyConfig.format);
 		const h24 = createdDate.getHours();
 		const minutes = String(createdDate.getMinutes()).padStart(2, '0');
 		const time24 = `${String(h24).padStart(2, '0')}:${minutes}`;
 		const h12 = h24 % 12 || 12;
 		const ampm = h24 < 12 ? 'AM' : 'PM';
 		const time12 = `${h12}:${minutes} ${ampm}`;
-		const rawFolder = this.config.targetFolder || dailyConfig.folder;
+		// The folder pattern keeps the Y/M/D replacer: it can contain literal folder names
+		// (e.g. "Journal") that moment would mangle. Strip a trailing slash so it never
+		// produces a "//" path. normalizePath keeps the existence check and create in sync.
+		const rawFolder = (this.config.targetFolder || dailyConfig.folder).replace(/\/+$/, '');
 		const noteFolder = rawFolder ? formatDateWithPattern(createdDate, rawFolder) : '';
 
-		const notePath = noteFolder ? `${noteFolder}/${dateShort}.md` : `${dateShort}.md`;
+		const notePath = normalizePath(noteFolder ? `${noteFolder}/${dateShort}.md` : `${dateShort}.md`);
 
-		if (noteFolder) {
-			await this.ensureFolderExists(noteFolder);
+		// Ensure the FULL parent path — dateShort itself can contain '/' (e.g. a
+		// `YYYY/MM/DD` daily format), and vault.create does not create missing parents.
+		const parentFolder = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '';
+		if (parentFolder) {
+			await this.ensureFolderExists(parentFolder);
 		}
 
 		const existingFile = this.vault.getAbstractFileByPath(notePath);

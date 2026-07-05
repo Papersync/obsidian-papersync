@@ -45,6 +45,17 @@ const makeScanFile = (overrides?: Partial<ScanFile>): ScanFile => ({
 	...overrides,
 });
 
+// Build a creator whose app reports a specific Core Daily Notes format/folder.
+const creatorWithDailyFormat = (format: string, folder = '', config = defaultConfig): NoteCreator => {
+	const app = {
+		internalPlugins: {
+			getPluginById: (id: string) =>
+				id === 'daily-notes' ? { enabled: true, instance: { options: { format, folder } } } : null,
+		},
+	};
+	return new NoteCreator({ ...app, vault: mockVault } as any, mockVault as any, config);
+};
+
 describe('NoteCreator', () => {
 	let creator: NoteCreator;
 
@@ -177,6 +188,48 @@ describe('NoteCreator', () => {
 		expect(mockVault.createFolder).toHaveBeenCalledWith('Journal');
 		expect(mockVault.createFolder).toHaveBeenCalledWith('Journal/2026');
 		expect(mockVault.createFolder).toHaveBeenCalledWith('Journal/2026/04');
+	});
+
+	it('names the daily note with Obsidian moment format, not a Y/M/D replacer (#1)', async () => {
+		// Format `MMMM D, YYYY` must produce "July 5, 2026", matching Obsidian's real
+		// daily note. The old replacer produced "0707 5, 2026" (a garbage parallel note).
+		const c = creatorWithDailyFormat('MMMM D, YYYY', '', { ...defaultConfig, targetFolder: '' });
+		const scan = makeScanFile({ createdAt: '2026-07-05T14:30:00.000Z' });
+
+		await c.createOrAppend(scan, new ArrayBuffer(10), 'scan-fmt');
+
+		expect(mockVault.create).toHaveBeenCalledWith('July 5, 2026.md', expect.any(String));
+	});
+
+	it('creates every parent folder when the daily format itself nests (#2: YYYY/MM/DD)', async () => {
+		const c = creatorWithDailyFormat('YYYY/MM/DD', '', { ...defaultConfig, targetFolder: '' });
+		const scan = makeScanFile({ createdAt: '2026-07-05T14:30:00.000Z' });
+
+		await c.createOrAppend(scan, new ArrayBuffer(10), 'scan-nest');
+
+		expect(mockVault.create).toHaveBeenCalledWith('2026/07/05.md', expect.any(String));
+		expect(mockVault.createFolder).toHaveBeenCalledWith('2026');
+		expect(mockVault.createFolder).toHaveBeenCalledWith('2026/07');
+	});
+
+	it('appends across a trailing-slash Notes folder without a // path mismatch (#3)', async () => {
+		const c = new NoteCreator(
+			{ ...mockApp, vault: mockVault } as any,
+			mockVault as any,
+			{ ...defaultConfig, targetFolder: 'PaperSync/' }
+		);
+		mockVault.getAbstractFileByPath.mockImplementation((p: string) =>
+			p === 'PaperSync/2026-04-12.md' ? { path: p } : null
+		);
+		mockVault.adapter.read.mockResolvedValue('# Prior');
+
+		const scan = makeScanFile();
+		await c.createOrAppend(scan, new ArrayBuffer(10), 'scan-slash');
+
+		// Existence check runs on the normalized path (no double slash) → append, not create.
+		expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith('PaperSync/2026-04-12.md');
+		expect(mockVault.adapter.write).toHaveBeenCalled();
+		expect(mockVault.create).not.toHaveBeenCalled();
 	});
 
 	it('renders 12:MM AM at midnight (covers h24 % 12 || 12 fallback)', async () => {
