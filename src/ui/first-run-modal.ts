@@ -1,5 +1,6 @@
 import { App, Modal, Notice, Setting } from 'obsidian';
 import type PaperSyncPlugin from '@/main';
+import { errorMessage } from '@/utils/error-message';
 
 
 type WizardStep = 'welcome' | 'storage' | 'target-folder';
@@ -49,7 +50,7 @@ export class FirstRunModal extends Modal {
 
 		const stepNum = this.currentStepIndex + 1;
 		const totalSteps = STEP_ORDER.length;
-		contentEl.createEl('div', {
+		contentEl.createDiv({
 			text: `Step ${stepNum} of ${totalSteps}`,
 			cls: 'papersync-wizard-step-indicator',
 		});
@@ -125,7 +126,7 @@ export class FirstRunModal extends Modal {
 						} catch (err) {
 							this.plugin.settings.backendType = 'none';
 							await this.plugin.saveSettings();
-							new Notice(`Connection failed: ${err instanceof Error ? err.message : String(err)}`);
+							new Notice(`Connection failed: ${errorMessage(err)}`);
 						}
 					})
 				);

@@ -1,3 +1,8 @@
+// Pin the timezone so Date-derived assertions (note timestamps, daily-note
+// filenames) are deterministic across dev machines and CI. Set at config-load
+// time so forked workers inherit UTC before their first Date call.
+process.env.TZ = 'UTC';
+
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
 	preset: 'ts-jest',
@@ -17,10 +22,10 @@ module.exports = {
 	],
 	coverageThreshold: {
 		global: {
-			statements: 95,
-			branches: 90,
+			statements: 100,
+			branches: 100,
 			functions: 100,
-			lines: 95,
+			lines: 100,
 		},
 	},
 	moduleNameMapper: {

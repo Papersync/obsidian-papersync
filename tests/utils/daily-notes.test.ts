@@ -53,6 +53,13 @@ describe('getDailyNotesConfig', () => {
 		expect(config.format).toBe('YYYY-MM-DD');
 	});
 
+	it('returns defaults when internalPlugins is present but null (optional-chain short-circuit)', () => {
+		// `'internalPlugins' in app` is true, but the value is null, so
+		// `internalPlugins?.getPluginById(...)` must short-circuit to defaults.
+		const config = getDailyNotesConfig({ internalPlugins: null } as any);
+		expect(config).toEqual({ folder: '', format: 'YYYY-MM-DD' });
+	});
+
 	it('reads folder and format from daily notes plugin', () => {
 		const mockApp = {
 			internalPlugins: {

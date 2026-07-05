@@ -18,7 +18,7 @@ export interface SyncError {
 }
 
 export function parseRetryAfter(headerValue: string | undefined | null): number | undefined {
-	if (!headerValue) return undefined;
+	if (!headerValue) {return undefined;}
 
 	// Try seconds format first
 	const seconds = Number(headerValue);

@@ -29,7 +29,7 @@ export function probeOffloadState(filePath: string): { offloaded: boolean } {
 
 		// State value 3 = fully downloaded, anything else may be offloaded
 		// If xattr is empty or absent, assume not offloaded (local file)
-		if (!result) return { offloaded: false };
+		if (!result) {return { offloaded: false };}
 
 		// The raw xattr output is a binary plist; a non-empty result with the xattr present
 		// means iCloud is managing this file. We check if the file is readable to determine state.
@@ -45,9 +45,9 @@ export function probeOffloadState(filePath: string): { offloaded: boolean } {
  * Returns true if the file appears materialized after the attempt, false otherwise.
  */
 export async function triggerICloudDownload(filePath: string, timeoutMs = 30000): Promise<boolean> {
-	if (!Platform.isMacOS) return false;
+	if (!Platform.isMacOS) {return false;}
 
-	const filename = filePath.split('/').pop() ?? filePath;
+	const filename = filePath.slice(filePath.lastIndexOf('/') + 1);
 	logger.info(`File offloaded — triggering iCloud download: ${filename}`);
 
 	try {
@@ -65,12 +65,12 @@ export async function triggerICloudDownload(filePath: string, timeoutMs = 30000)
 			const stat = await fsp.stat(filePath);
 			if (stat.size > 0) {
 				const content = await fsp.readFile(filePath, 'utf-8');
-				if (content.length > 0) return true;
+				if (content.length > 0) {return true;}
 			}
 		} catch {
 			// File not yet materialized
 		}
-		await new Promise(resolve => setTimeout(resolve, 2000));
+		await new Promise(resolve => window.setTimeout(resolve, 2000));
 	}
 
 	return false;

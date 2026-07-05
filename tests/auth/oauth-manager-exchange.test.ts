@@ -81,6 +81,33 @@ describe('OAuthManager.exchangeCodeForTokens (private)', () => {
 		).rejects.toMatchObject({ type: 'token_revoked' });
 	});
 
+	it('stringifies a non-Error rejection from requestUrl (String(err) branch)', async () => {
+		// A plain string has no `type` field, so it flows past the typed-error rethrow
+		// guard and hits the `err instanceof Error ? err.message : String(err)` else.
+		mockedRequestUrl.mockRejectedValueOnce('socket hang up');
+
+		const mgr = new OAuthManager({} as Plugin, 'client-id');
+		await expect(
+			asInternal(mgr).exchangeCodeForTokens('code', 'verifier', 'http://localhost/callback')
+		).rejects.toMatchObject({ type: 'token_revoked' });
+	});
+
+	it('defaults expiresAt to a one-hour window when expires_in is absent', async () => {
+		mockedRequestUrl.mockResolvedValueOnce({
+			status: 200,
+			json: { access_token: 'a', refresh_token: 'r' },
+		} as never);
+
+		const mgr = new OAuthManager({} as Plugin, 'client-id');
+		const tokens = (await asInternal(mgr).exchangeCodeForTokens(
+			'code',
+			'verifier',
+			'http://localhost/callback'
+		)) as { expiresAt: number };
+
+		expect(tokens.expiresAt).toBeGreaterThan(Date.now());
+	});
+
 	it('re-throws a typed SyncError from inside the try block without re-wrapping', async () => {
 		// requestUrl returns 400 → exchange throws a typed sync error → caught by try/catch which
 		// must rethrow it as-is (not re-wrap). Verified by the consistent type field.

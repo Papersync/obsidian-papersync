@@ -31,8 +31,7 @@ export const logger = {
 	info(message: string): void {
 		pushLog('info', message);
 		if (debugEnabled) {
-			// eslint-disable-next-line no-console
-			console.log(`[PaperSync] info: ${message}`);
+			console.debug(`[PaperSync] info: ${message}`);
 		}
 	},
 

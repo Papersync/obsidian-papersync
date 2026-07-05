@@ -99,4 +99,54 @@ describe('FolderBackend.start error path', () => {
 			backend.stop();
 		}
 	}, 15000);
+
+	it('stringifies a non-Error rejection from discovery inside the debounced timer (String(err) branch)', async () => {
+		jest.useFakeTimers();
+		const tmp = makeTempDir();
+		const backend = new FolderBackend(tmp);
+		const spy = jest
+			.spyOn(backend as unknown as { discoverUnsynced: () => Promise<unknown> }, 'discoverUnsynced')
+			.mockRejectedValue('discovery-blew-up'); // non-Error → String(err) branch
+		try {
+			backend.start(); // schedules the 500ms debounced discovery
+			await jest.advanceTimersByTimeAsync(600); // fire it deterministically
+		} finally {
+			spy.mockRestore();
+			backend.stop();
+			jest.useRealTimers();
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+});
+
+describe('FolderBackend.start — discovery with no callback registered', () => {
+	const scanBody = {
+		version: '1',
+		createdAt: '2026-04-12T14:30:00.000Z',
+		markdown: '# Hi',
+		confidence: 90,
+		provider: 'claude',
+		model: 'claude-sonnet-4',
+	};
+
+	it('does not throw when discovery finds refs but onScanDiscovered is unset (nullish optional chain)', async () => {
+		const tmp = makeTempDir();
+		const base = '2026-11-11-210000';
+		fs.writeFileSync(
+			path.join(tmp, `${base}.json`),
+			JSON.stringify({ ...scanBody, imageFileName: `${base}.jpg` })
+		);
+		fs.writeFileSync(path.join(tmp, `${base}.jpg`), 'image-bytes');
+
+		const backend = new FolderBackend(tmp);
+		try {
+			// No setOnScanDiscovered — the debounced discovery finds 1 ref and must
+			// short-circuit `this.onScanDiscovered?.(refs)` without throwing.
+			backend.start();
+			await new Promise((r) => setTimeout(r, 900));
+		} finally {
+			backend.stop();
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	}, 15000);
 });

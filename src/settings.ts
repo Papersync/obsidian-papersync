@@ -1,7 +1,7 @@
 import type PaperSyncPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
-import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
+import { errorMessage } from '@/utils/error-message';
 import { App, Notice, PluginSettingTab, Setting } from 'obsidian';
 
 export type BackendType = 'drive' | 'folder' | 'none';
@@ -200,7 +200,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					} catch (err) {
 						this.plugin.settings.backendType = 'none';
 						await this.plugin.saveSettings();
-						new Notice(`Connection failed: ${err instanceof Error ? err.message : String(err)}`);
+						new Notice(`Connection failed: ${errorMessage(err)}`);
 					}
 					this.display();
 				}))
@@ -281,7 +281,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					.onClick(asyncHandler(async () => {
 						if (!this.plugin.syncEngine || this.plugin.syncState.isSyncing) {return;}
 						this.setSyncBusy(true);
-						await new Promise((r) => setTimeout(r, 50));
+						await new Promise((r) => window.setTimeout(r, 50));
 						await this.plugin.syncEngine.forceSyncNow();
 						this.setSyncBusy(false);
 					}));

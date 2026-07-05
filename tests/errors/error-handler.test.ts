@@ -153,5 +153,32 @@ describe('ErrorHandler', () => {
 			expect(result).toBeNull();
 			expect(attempts).toBe(1);
 		});
+
+		it('uses the Retry-After header value as the retry delay (source=header)', async () => {
+			jest.useFakeTimers();
+			try {
+				let attempts = 0;
+				const op = jest.fn(async () => {
+					attempts++;
+					if (attempts < 2) {
+						// Obsidian requestUrl-style error: not a plain Error, headers attached.
+						throw Object.assign(new Error('HTTP 429 Too Many Requests'), {
+							headers: { 'Retry-After': '1' },
+						});
+					}
+					return 'ok';
+				});
+
+				const promise = handler.handleWithRetry('scan-retry-after', op);
+				// parseRetryAfter('1') → 1000ms; the retry is scheduled off that header value.
+				await jest.advanceTimersByTimeAsync(1000);
+				const result = await promise;
+
+				expect(result).toBe('ok');
+				expect(attempts).toBe(2);
+			} finally {
+				jest.useRealTimers();
+			}
+		});
 	});
 });

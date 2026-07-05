@@ -9,7 +9,7 @@ describe('logger', () => {
 	beforeEach(() => {
 		clearLogBuffer();
 		setDebugLogging(false);
-		jest.spyOn(console, 'log').mockImplementation(() => undefined);
+		jest.spyOn(console, 'debug').mockImplementation(() => undefined);
 		jest.spyOn(console, 'warn').mockImplementation(() => undefined);
 		jest.spyOn(console, 'error').mockImplementation(() => undefined);
 	});
@@ -25,15 +25,15 @@ describe('logger', () => {
 		expect(buf[0]).toMatch(/^\d{2}:\d{2}:\d{2} \[info\] hello$/);
 	});
 
-	it('does not console.log info when debugLogging is off', () => {
+	it('does not console.debug info when debugLogging is off', () => {
 		logger.info('quiet');
-		expect(console.log).not.toHaveBeenCalled();
+		expect(console.debug).not.toHaveBeenCalled();
 	});
 
-	it('console.logs info when debugLogging is on', () => {
+	it('console.debugs info when debugLogging is on', () => {
 		setDebugLogging(true);
 		logger.info('loud');
-		expect(console.log).toHaveBeenCalledWith('[PaperSync] info: loud');
+		expect(console.debug).toHaveBeenCalledWith('[PaperSync] info: loud');
 	});
 
 	it('logs warn quietly when debug is off, noisily when on', () => {

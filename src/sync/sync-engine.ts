@@ -6,6 +6,7 @@ import { ErrorHandler } from '@/errors/error-handler';
 import { SyncState } from '@/sync/sync-state';
 import { isOnline } from '@/utils/platform';
 import { logger } from '@/utils/logger';
+import { errorMessage } from '@/utils/error-message';
 import { STRINGS } from '@/utils/strings';
 
 const BATCH_SIZE = 10;
@@ -74,7 +75,7 @@ export class SyncEngine {
 				new Notice('All synced, nothing new');
 			}
 		} catch (err) {
-			logger.error(`Force sync failed: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Force sync failed: ${errorMessage(err)}`);
 			this.state.setStatus('error');
 		}
 	}
@@ -135,7 +136,7 @@ export class SyncEngine {
 			}
 
 			if (i + BATCH_SIZE < unsyncedRefs.length) {
-				await new Promise((resolve) => setTimeout(resolve, 0));
+				await new Promise((resolve) => window.setTimeout(resolve, 0));
 			}
 		}
 

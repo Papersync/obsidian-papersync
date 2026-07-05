@@ -2,6 +2,7 @@ import { Notice, Plugin } from 'obsidian';
 import { DEFAULT_SETTINGS, PaperSyncSettingTab, migrateSettings } from '@/settings';
 import type { PluginSettings } from '@/settings';
 import { setDebugLogging, logger } from '@/utils/logger';
+import { errorMessage } from '@/utils/error-message';
 import { STRINGS } from '@/utils/strings';
 import { OAuthManager } from '@/auth/oauth-manager';
 import { DriveBackend } from '@/sync/drive-backend';
@@ -26,7 +27,7 @@ export default class PaperSyncPlugin extends Plugin {
 	private unsubscribeSyncState: (() => void) | null = null;
 
 	async onload(): Promise<void> {
-		if (!this.checkMinObsidianVersion()) return;
+		if (!this.checkMinObsidianVersion()) {return;}
 
 		await this.loadSettings();
 		setDebugLogging(this.settings.debugLogging);
@@ -64,7 +65,7 @@ export default class PaperSyncPlugin extends Plugin {
 					void createFakeScanOnDrive(this.oauthManager).then(() => {
 						new Notice('Fake scan uploaded, will sync on next poll');
 					}).catch((err: unknown) => {
-						new Notice(`Failed: ${err instanceof Error ? err.message : String(err)}`);
+						new Notice(`Failed: ${errorMessage(err)}`);
 					});
 				},
 			});
@@ -84,7 +85,7 @@ export default class PaperSyncPlugin extends Plugin {
 	private checkMinObsidianVersion(): boolean {
 		const MIN_VERSION = '1.11.4';
 		// requireApiVersion is an Obsidian global that checks minAppVersion
-		const requireApiVersion = (globalThis as unknown as { requireApiVersion?: (version: string) => boolean }).requireApiVersion;
+		const requireApiVersion = (window as unknown as { requireApiVersion?: (version: string) => boolean }).requireApiVersion;
 		if (requireApiVersion && !requireApiVersion(MIN_VERSION)) {
 			new Notice(STRINGS.NOTICE_OBSIDIAN_VERSION, 0);
 			logger.error(`Obsidian version too old — requires ${MIN_VERSION}+`);
@@ -127,7 +128,7 @@ export default class PaperSyncPlugin extends Plugin {
 		if (!this.settings.setupComplete) {
 			logger.info('First run detected, opening settings');
 			this.syncState.setStatus('idle');
-			setTimeout(() => this.openSettings(), 500);
+			window.setTimeout(() => this.openSettings(), 500);
 			return;
 		}
 

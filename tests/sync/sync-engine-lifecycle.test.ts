@@ -312,4 +312,22 @@ describe('SyncEngine.processBatch', () => {
 		expect(state.status).toBe('synced');
 		expect(state.pendingCount).toBe(1);
 	});
+
+	it('returns immediately when a sync is already in flight (tryStartSync guard)', async () => {
+		const backend = makeBackend();
+		backend.fetchScan = jest.fn();
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		// Occupy the sync lock so processBatch's `!tryStartSync()` guard trips.
+		expect(state.tryStartSync()).toBe(true);
+
+		await (
+			engine as unknown as { processBatch(refs: unknown[]): Promise<void> }
+		).processBatch([{ id: 'r', jsonPath: 'j', imagePath: 'i' }]);
+
+		expect(backend.fetchScan).not.toHaveBeenCalled();
+	});
 });

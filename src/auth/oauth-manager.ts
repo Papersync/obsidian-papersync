@@ -1,6 +1,7 @@
 import { requestUrl, Plugin } from 'obsidian';
 import { generateCodeVerifier, computeCodeChallenge } from '@/auth/pkce';
 import { logger } from '@/utils/logger';
+import { errorMessage } from '@/utils/error-message';
 import { createSyncError } from '@/errors/sync-error';
 import * as http from 'http';
 
@@ -88,13 +89,13 @@ export class OAuthManager {
 		logger.info(`OAuth browser opened on port ${port}`);
 
 		return new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => {
+			const timeout = window.setTimeout(() => {
 				this.stopCallbackServer();
 				reject(createSyncError('token_expired', 'OAuth flow timed out after 3 minutes'));
 			}, OAUTH_TIMEOUT_MS);
 
 			this.onAuthCallback = async (code: string) => {
-				clearTimeout(timeout);
+				window.clearTimeout(timeout);
 				try {
 					const tokens = await this.exchangeCodeForTokens(code, verifier, redirectUri);
 					this.storeTokens(tokens);
@@ -129,7 +130,7 @@ export class OAuthManager {
 
 				res.writeHead(200, { 'Content-Type': 'text/html' });
 				if (error) {
-					const safeError = escapeHtml(error ?? 'Unknown');
+					const safeError = escapeHtml(error);
 					const safeDesc = escapeHtml(errorDescription ?? 'Unknown error');
 					res.end(`<html><body><h1>Authorization failed</h1><p>${safeError}: ${safeDesc}</p><p>You can close this window.</p></body></html>`);
 					logger.error(`OAuth callback error: ${error} — ${errorDescription ?? 'no description'}`);
@@ -210,7 +211,7 @@ export class OAuthManager {
 			tokenData = response.json as GoogleTokenResponse;
 		} catch (err) {
 			if (err && typeof err === 'object' && 'type' in err) {throw err;}
-			const msg = err instanceof Error ? err.message : String(err);
+			const msg = errorMessage(err);
 			logger.error(`Token exchange request failed: ${msg}`);
 			logger.error(`Sent client_id: ${this.clientId}`);
 			logger.error(`Sent redirect_uri: ${redirectUri}`);

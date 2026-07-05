@@ -89,6 +89,18 @@ describe('OAuthManager', () => {
 			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'token_revoked' });
 			expect(mgr.isAuthenticated).toBe(false);
 		});
+
+		it('defaults the token lifetime when a refresh response omits expires_in', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({
+				json: { access_token: 'refreshed-no-expiry' },
+			} as never);
+
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.restoreFromToken('refresh-abc');
+
+			const token = await mgr.getValidAccessToken();
+			expect(token).toBe('refreshed-no-expiry');
+		});
 	});
 
 	describe('disconnect', () => {
@@ -103,6 +115,15 @@ describe('OAuthManager', () => {
 			expect(mgr.isAuthenticated).toBe(false);
 			expect(mgr.currentAccessToken).toBeNull();
 			expect(tokenChange).toHaveBeenLastCalledWith('');
+		});
+
+		it('does not throw when disconnecting with no token-change listener registered', () => {
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.restoreFromToken('refresh-abc');
+
+			// onTokenChange is null → the `this.onTokenChange?.('')` optional chain must no-op.
+			expect(() => mgr.disconnect()).not.toThrow();
+			expect(mgr.isAuthenticated).toBe(false);
 		});
 	});
 

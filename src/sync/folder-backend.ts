@@ -6,13 +6,16 @@ import { validateScanFile } from '@/validation/scan-file-schema';
 import { createSyncError } from '@/errors/sync-error';
 import { isICloudPath, triggerICloudDownload } from '@/sync/icloud-offload';
 import { logger } from '@/utils/logger';
+import { errorMessage } from '@/utils/error-message';
 
 const DEBOUNCE_MS = 500;
 
 export class FolderBackend implements SyncBackend {
 	private folderPath: string;
 	private watcher: fs.FSWatcher | null = null;
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	// window.setTimeout returns a DOM number (obsidianmd/prefer-window-timers);
+	// keep the field type in the DOM domain to match.
+	private debounceTimer: number | null = null;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 
 	constructor(folderPath: string) {
@@ -34,7 +37,7 @@ export class FolderBackend implements SyncBackend {
 			logger.info(`Folder watcher started on ${this.folderPath}`);
 			this.debouncedDiscovery();
 		} catch (err) {
-			logger.error(`Failed to start Folder watcher: ${err instanceof Error ? err.message : String(err)}`);
+			logger.error(`Failed to start Folder watcher: ${errorMessage(err)}`);
 		}
 	}
 
@@ -44,7 +47,7 @@ export class FolderBackend implements SyncBackend {
 			this.watcher = null;
 		}
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
 		logger.info('Folder watcher stopped');
@@ -52,16 +55,16 @@ export class FolderBackend implements SyncBackend {
 
 	private debouncedDiscovery(): void {
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 		}
-		this.debounceTimer = setTimeout(async () => {
+		this.debounceTimer = window.setTimeout(async () => {
 			try {
 				const refs = await this.discoverUnsynced();
 				if (refs.length > 0) {
 					this.onScanDiscovered?.(refs);
 				}
 			} catch (err) {
-				logger.warn(`Folder discovery failed: ${err instanceof Error ? err.message : String(err)}`);
+				logger.warn(`Folder discovery failed: ${errorMessage(err)}`);
 			}
 		}, DEBOUNCE_MS);
 	}

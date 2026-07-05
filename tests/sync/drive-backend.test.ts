@@ -82,6 +82,39 @@ describe('DriveBackend', () => {
 			expect(refs).toEqual([]);
 		});
 
+		it('returns empty when a folder-search response omits the files array (files ?? [])', async () => {
+			// findScansFolder's first hop returns `{}` with no `files` key.
+			mockedRequestUrl.mockResolvedValueOnce({ json: {} } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			const refs = await backend.discoverUnsynced();
+			expect(refs).toEqual([]);
+		});
+
+		it('treats a file-listing response with no files array as empty (files ?? [])', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: {} } as never); // list call: no `files` key
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			const refs = await backend.discoverUnsynced();
+			expect(refs).toEqual([]);
+		});
+
+		it('applies an explicit constructor lastSyncTimestamp to the query (?? provided side)', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-02-02T00:00:00Z');
+			await backend.discoverUnsynced();
+
+			const listCall = mockedRequestUrl.mock.calls[2][0];
+			expect(decodeURIComponent(listCall.url)).toContain("createdTime > '2026-02-02T00:00:00Z'");
+		});
+
 		it('paginates through Drive listings when nextPageToken is present', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)

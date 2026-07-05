@@ -38,7 +38,7 @@ export class ErrorHandler {
 
 			if (syncError.retriable && retryCount < MAX_RETRIES) {
 				this.retryCountMap.set(scanId, retryCount + 1);
-				const defaultDelay = BACKOFF_MS[retryCount] ?? BACKOFF_MS[BACKOFF_MS.length - 1]!;
+				const defaultDelay = BACKOFF_MS[Math.min(retryCount, BACKOFF_MS.length - 1)]!;
 				const delay = syncError.retryAfterMs ?? defaultDelay;
 				const source = syncError.retryAfterMs ? 'header' : 'default';
 				logger.warn(`Retry ${retryCount + 1}/${MAX_RETRIES} for ${scanId} after ${delay}ms (source=${source}): ${syncError.message}`);
@@ -120,16 +120,16 @@ function isSyncError(err: unknown): err is SyncError {
 }
 
 function extractHeader(err: unknown, headerName: string): string | undefined {
-	if (typeof err !== 'object' || err === null) return undefined;
+	if (typeof err !== 'object' || err === null) {return undefined;}
 	const e = err as Record<string, unknown>;
 	// Obsidian requestUrl errors may include headers as a Record
 	const headers = e.headers as Record<string, string> | undefined;
-	if (!headers) return undefined;
+	if (!headers) {return undefined;}
 	// Case-insensitive header lookup
 	const key = Object.keys(headers).find(k => k.toLowerCase() === headerName.toLowerCase());
 	return key ? headers[key] : undefined;
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }

@@ -79,6 +79,26 @@ describe('FolderBackend.discoverUnsynced', () => {
 		expect(refs[0].imagePath).toBe(path.join(tmp, `${base}.png`));
 	});
 
+	it('probes for a .jpg companion by extension when imageFileName is absent', async () => {
+		const base = '2026-09-09-190000';
+		writeScanJson(tmp, base, { ...baseScan }); // no imageFileName field
+		writeBlob(tmp, `${base}.jpg`);
+
+		const refs = await backend.discoverUnsynced();
+		expect(refs).toHaveLength(1);
+		expect(refs[0].imagePath).toBe(path.join(tmp, `${base}.jpg`));
+	});
+
+	it('probes for a .jpeg companion by extension when imageFileName is absent and no .jpg exists', async () => {
+		const base = '2026-10-10-200000';
+		writeScanJson(tmp, base, { ...baseScan }); // no imageFileName field
+		writeBlob(tmp, `${base}.jpeg`);
+
+		const refs = await backend.discoverUnsynced();
+		expect(refs).toHaveLength(1);
+		expect(refs[0].imagePath).toBe(path.join(tmp, `${base}.jpeg`));
+	});
+
 	it('prefers the JSON-declared imageFileName even when other extensions exist on disk', async () => {
 		const base = '2026-03-03-130000';
 		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.png` });

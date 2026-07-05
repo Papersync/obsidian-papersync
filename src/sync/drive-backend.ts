@@ -5,6 +5,7 @@ import { validateScanFile } from '@/validation/scan-file-schema';
 import { createSyncError } from '@/errors/sync-error';
 import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
+import { errorMessage } from '@/utils/error-message';
 
 import { GOOGLE_SCANS_FOLDER } from '@/config';
 
@@ -66,7 +67,7 @@ export class DriveBackend implements SyncBackend {
 				this.onScanDiscovered?.(refs);
 			}
 		} catch (err) {
-			logger.warn(`Drive poll failed: ${err instanceof Error ? err.message : String(err)}`);
+			logger.warn(`Drive poll failed: ${errorMessage(err)}`);
 		}
 	}
 

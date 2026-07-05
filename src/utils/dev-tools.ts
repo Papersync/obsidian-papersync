@@ -134,7 +134,10 @@ async function createDriveFile(
 			Authorization: `Bearer ${token}`,
 			'Content-Type': mimeType,
 		},
-		body: typeof content === 'string' ? content : content.buffer,
+		// TS 5.9 / @types/node 24 type `Uint8Array.buffer` as ArrayBufferLike
+		// (ArrayBuffer | SharedArrayBuffer). Dev placeholder content is always a
+		// plain ArrayBuffer-backed array, so narrow it for requestUrl's body type.
+		body: typeof content === 'string' ? content : (content.buffer as ArrayBuffer),
 	});
 
 	logger.info(`Dev: uploaded content for "${name}"`);
