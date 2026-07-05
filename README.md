@@ -19,7 +19,7 @@ One tap on your phone, one note in your vault, forty-five seconds. No typing, no
 - Embedded scan images in your vault
 - Append-only: multiple scans on the same day go into the same note
 - Status bar indicator + ribbon icon for force-sync
-- OAuth PKCE for Google Drive (no client secret needed)
+- Google Drive OAuth via PKCE (desktop-app flow); scoped to its own files, and your tokens stay on your device
 
 ## Installation
 
