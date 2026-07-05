@@ -5,11 +5,11 @@ describe('PaperSync plugin', function () {
 	});
 
 	it('registers the sync now command', async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 	});
 
 	it('registers the open settings command', async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(500);
 		await browser.keys('Escape');
 	});

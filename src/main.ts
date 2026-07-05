@@ -25,6 +25,7 @@ export default class PaperSyncPlugin extends Plugin {
 	private statusBarEl: HTMLElement | null = null;
 	private settingsTab: PaperSyncSettingTab | null = null;
 	private unsubscribeSyncState: (() => void) | null = null;
+	private lastStatus: SyncStateSnapshot['status'] | null = null;
 
 	async onload(): Promise<void> {
 		if (!this.checkMinObsidianVersion()) {return;}
@@ -37,18 +38,19 @@ export default class PaperSyncPlugin extends Plugin {
 
 		this.statusBarEl = this.addStatusBarItem();
 
-		this.addRibbonIcon('refresh-cw', STRINGS.PLUGIN_NAME, () => {
+		this.addRibbonIcon('refresh-cw', STRINGS.RIBBON_TOOLTIP, () => {
 			void this.forceSyncNow();
 		});
 
+		// Command IDs are namespaced by Obsidian as `<plugin-id>:<id>`, so no papersync- prefix here.
 		this.addCommand({
-			id: 'papersync-sync-now',
+			id: 'sync-now',
 			name: STRINGS.CMD_SYNC_NOW,
 			callback: () => void this.forceSyncNow(),
 		});
 
 		this.addCommand({
-			id: 'papersync-open-settings',
+			id: 'open-settings',
 			name: STRINGS.CMD_OPEN_SETTINGS,
 			callback: () => this.openSettings(),
 		});
@@ -205,6 +207,13 @@ export default class PaperSyncPlugin extends Plugin {
 					break;
 			}
 		}
+
+		// Surface a single calm Notice when sync first enters the error state, so a
+		// background poll failure is never silent. Gated on the transition, not per poll.
+		if (snap.status === 'error' && this.lastStatus !== 'error') {
+			new Notice(STRINGS.NOTICE_SYNC_ERROR);
+		}
+		this.lastStatus = snap.status;
 
 		// Update settings tab
 		this.settingsTab?.updateSyncState();

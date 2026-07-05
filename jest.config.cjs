@@ -14,7 +14,6 @@ module.exports = {
 		'!src/main.ts',
 		'!src/config.ts',
 		'!src/sync/sync-backend.ts',
-		'!src/ui/first-run-modal.ts',
 		'!src/utils/dev-tools.ts',
 		// settings.ts is the Obsidian Setting-tab renderer; covered by E2E (test/e2e/settings.e2e.ts)
 		// rather than unit tests, which would require mocking the entire Obsidian Setting API surface.

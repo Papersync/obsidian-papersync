@@ -57,7 +57,7 @@ export class SyncEngine {
 
 	async forceSyncNow(): Promise<void> {
 		if (!isOnline()) {
-			new Notice(STRINGS.STATUS_OFFLINE);
+			new Notice(STRINGS.NOTICE_OFFLINE);
 			return;
 		}
 

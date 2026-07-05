@@ -1,9 +1,9 @@
 describe('Edge cases and error handling', function () {
 	it('survives rapid sync now clicks', async function () {
 		// Fire sync command 3 times rapidly — should not crash
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 		await browser.pause(2000);
 
 		// Plugin should still be functional
@@ -14,7 +14,7 @@ describe('Edge cases and error handling', function () {
 
 	it('survives opening and closing settings rapidly', async function () {
 		for (let i = 0; i < 5; i++) {
-			await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+			await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 			await browser.pause(200);
 			await browser.keys('Escape');
 			await browser.pause(200);
@@ -26,7 +26,7 @@ describe('Edge cases and error handling', function () {
 	});
 
 	it('handles settings reset without crashing', async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(1000);
 
 		// Find and click the "Reset settings" button (not full reset)

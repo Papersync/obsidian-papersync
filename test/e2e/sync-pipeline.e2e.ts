@@ -83,7 +83,7 @@ describe('Sync pipeline E2E', function () {
 		await browser.pause(3000);
 
 		// Trigger manual sync in case watcher didn't fire
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 		await browser.pause(3000);
 
 		// Verify the note was created in the vault
@@ -182,7 +182,7 @@ describe('Sync pipeline E2E', function () {
 		fs.writeFileSync(path.join(scansFolderPath, `${pngId}.png`), placeholderPng);
 
 		await browser.pause(3000);
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 		await browser.pause(3000);
 
 		const noteContent = await browser.execute(async () => {
@@ -231,7 +231,7 @@ describe('Sync pipeline E2E', function () {
 		);
 
 		await browser.pause(3000);
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 		await browser.pause(3000);
 
 		const noteContent = await browser.execute(async () => {

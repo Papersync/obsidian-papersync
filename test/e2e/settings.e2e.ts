@@ -2,7 +2,7 @@ describe('Settings tab', function () {
 	let isConnected: boolean;
 
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
@@ -103,7 +103,7 @@ describe('Settings tab', function () {
 		});
 
 		// Re-open settings so display() re-runs with the half-state.
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(800);
 
 		const body = await browser.$('body');

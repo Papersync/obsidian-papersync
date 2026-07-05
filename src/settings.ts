@@ -103,7 +103,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private setSyncBusy(busy: boolean): void {
 		if (!this.syncButton) {return;}
 		const isReady = !!this.plugin.syncEngine;
-		this.syncButton.textContent = busy ? 'Syncing...' : isReady ? 'Sync now' : 'Sync now';
+		this.syncButton.textContent = busy ? 'Syncing...' : 'Sync now';
 		this.syncButton.disabled = busy || !isReady;
 		if (busy) {
 			this.syncButton.addClass('is-loading');
@@ -205,6 +205,12 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					this.display();
 				}))
 			);
+
+		// Reassure before the "unverified app" consent screen the PKCE flow triggers.
+		containerEl.createEl('p', {
+			text: STRINGS.SETTINGS_OAUTH_WARNING,
+			cls: 'setting-item-description papersync-oauth-hint',
+		});
 
 		// Folder — show detected locations inline + browse
 		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();

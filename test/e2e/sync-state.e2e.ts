@@ -22,7 +22,7 @@ describe('Sync state management', function () {
 
 	it('sync now shows notice when not configured', async function () {
 		// Open settings to check if we're connected
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-open-settings');
+		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
 		await browser.pause(500);
 		const body = await browser.$('body');
 		const settingsText = await body.getText();
@@ -31,7 +31,7 @@ describe('Sync state management', function () {
 
 		if (!settingsText.includes('Change Storage')) {
 			// Not connected — sync now should show a notice
-			await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+			await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 			await browser.pause(500);
 			// The notice DOM appears briefly — just verify no crash
 		}
@@ -50,7 +50,7 @@ describe('Sync state management', function () {
 		const bodyBefore = await browser.$('body');
 		const textBefore = await bodyBefore.getText();
 
-		await browser.executeObsidianCommand('obsidian-papersync:papersync-sync-now');
+		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
 		await browser.pause(2000);
 
 		const bodyAfter = await browser.$('body');
