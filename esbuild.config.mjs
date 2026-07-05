@@ -39,7 +39,7 @@ const context = await esbuild.context({
 		'__DEV_MODE__': JSON.stringify(!prod),
 	},
 	format: "cjs",
-	target: "es2018",
+	target: "es2021",
 	logLevel: "info",
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
