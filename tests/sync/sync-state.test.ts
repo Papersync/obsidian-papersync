@@ -17,7 +17,43 @@ describe('SyncState', () => {
 			pendingCount: 3,
 			lastSyncTimestamp: '',
 			isSyncing: false,
+			lastError: null,
 		});
+	});
+
+	it('recordError stores the message, moves to error, and notifies', () => {
+		const s = new SyncState('');
+		const listener = jest.fn();
+		s.subscribe(listener);
+
+		s.recordError('Drive request failed (403): API disabled');
+
+		expect(s.status).toBe('error');
+		expect(s.lastError).toBe('Drive request failed (403): API disabled');
+		expect(s.snapshot.lastError).toBe('Drive request failed (403): API disabled');
+		expect(listener).toHaveBeenCalledTimes(1);
+	});
+
+	it('recordError notifies even on a repeat error so the detail refreshes', () => {
+		const s = new SyncState('');
+		const listener = jest.fn();
+		s.subscribe(listener);
+
+		s.recordError('first');
+		s.recordError('second');
+
+		expect(s.lastError).toBe('second');
+		expect(listener).toHaveBeenCalledTimes(2);
+	});
+
+	it('a non-error status clears the last error', () => {
+		const s = new SyncState('');
+		s.recordError('boom');
+		expect(s.lastError).toBe('boom');
+
+		s.setStatus('synced', 0);
+		expect(s.lastError).toBeNull();
+		expect(s.snapshot.lastError).toBeNull();
 	});
 
 	it('notifies subscribers on changes, not on no-ops', () => {

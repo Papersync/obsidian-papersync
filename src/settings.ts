@@ -101,7 +101,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			: 'Synced';
 		const statusText = isBusy
 			? `Syncing (${pendingCount} pending)...`
-			: status === 'error' ? 'Error, check logs'
+			: status === 'error' ? (this.plugin.syncState.snapshot.lastError ?? 'Sync error')
 			: status === 'offline' ? 'Offline'
 			: this.plugin.syncEngine ? syncedText : 'Not connected';
 		this.syncDesc.textContent = statusText;

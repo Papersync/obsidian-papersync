@@ -1,4 +1,5 @@
 import { requestUrl } from 'obsidian';
+import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
@@ -34,6 +35,25 @@ export class DriveBackend implements SyncBackend {
 		this.oauthManager = oauthManager;
 		this.pollIntervalMs = pollIntervalSeconds * 1000;
 		this.lastSyncTimestamp = lastSyncTimestamp ?? '';
+	}
+
+	// Wraps requestUrl so a failed Drive call surfaces Google's real error message
+	// (e.g. "Google Drive API has not been used in project ...") instead of a bare
+	// status code. The status is kept in the message so ErrorHandler can still
+	// classify it (403 -> permission, 401 -> token, 429 -> rate limit).
+	private async driveRequest(params: RequestUrlParam): Promise<RequestUrlResponse> {
+		const response = await requestUrl({ ...params, throw: false });
+		if (response.status >= 400) {
+			let detail = `status ${response.status}`;
+			try {
+				const body = response.json as { error?: { message?: string } } | null | undefined;
+				if (body?.error?.message) {detail = body.error.message;}
+			} catch {
+				// Non-JSON error body; keep the status-only detail.
+			}
+			throw new Error(`Drive request failed (${response.status}): ${detail}`);
+		}
+		return response;
 	}
 
 	updateLastSyncTimestamp(timestamp: string): void {
@@ -97,7 +117,7 @@ export class DriveBackend implements SyncBackend {
 				url += `&pageToken=${encodeURIComponent(pageToken)}`;
 			}
 
-			const response = await requestUrl({
+			const response = await this.driveRequest({
 				url,
 				headers: { Authorization: `Bearer ${token}` },
 			});
@@ -135,7 +155,7 @@ export class DriveBackend implements SyncBackend {
 	async fetchScan(ref: ScanReference): Promise<ScanFile> {
 		const token = await this.oauthManager.getValidAccessToken();
 
-		const response = await requestUrl({
+		const response = await this.driveRequest({
 			url: `${DRIVE_API_BASE}/files/${ref.jsonPath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
@@ -157,7 +177,7 @@ export class DriveBackend implements SyncBackend {
 
 		const token = await this.oauthManager.getValidAccessToken();
 
-		const response = await requestUrl({
+		const response = await this.driveRequest({
 			url: `${DRIVE_API_BASE}/files/${ref.imagePath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
@@ -171,7 +191,7 @@ export class DriveBackend implements SyncBackend {
 		const scan = scanData ?? await this.fetchScan(ref);
 		const updated = { ...scan, synced: true };
 
-		await requestUrl({
+		await this.driveRequest({
 			url: `${DRIVE_UPLOAD_BASE}/files/${ref.jsonPath}?uploadType=media`,
 			method: 'PATCH',
 			headers: {
@@ -194,7 +214,7 @@ export class DriveBackend implements SyncBackend {
 
 		for (const part of parts) {
 			const query = `name = '${part}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
-			const response = await requestUrl({
+			const response = await this.driveRequest({
 				url: `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id)`,
 				headers: { Authorization: `Bearer ${token}` },
 			});

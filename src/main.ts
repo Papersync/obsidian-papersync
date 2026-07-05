@@ -212,10 +212,10 @@ export default class PaperSyncPlugin extends Plugin {
 		const justSynced = snap.status === 'synced' && this.lastStatus !== 'synced';
 		this.lastStatus = snap.status;
 
-		// Surface a single calm Notice when sync first enters the error state, so a
-		// background poll failure is never silent. Gated on the transition, not per poll.
+		// Surface a single Notice with the real reason when sync first enters the error
+		// state, so a background failure is never silent. Gated on the transition.
 		if (enteringError) {
-			new Notice(STRINGS.NOTICE_SYNC_ERROR);
+			new Notice(snap.lastError ?? STRINGS.NOTICE_SYNC_ERROR, 10000);
 		}
 		// Record the wall-clock time a sync cycle last completed (distinct from the
 		// sync cursor, which is the newest scan's timestamp).

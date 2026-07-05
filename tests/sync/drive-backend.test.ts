@@ -355,4 +355,46 @@ describe('DriveBackend', () => {
 			expect(listCall.url).not.toContain('createdTime%20%3E');
 		});
 	});
+
+	describe('driveRequest error capture', () => {
+		it("surfaces Google's error.message on a 4xx so the real reason is preserved", async () => {
+			mockedRequestUrl.mockResolvedValueOnce({
+				status: 403,
+				json: { error: { message: 'Google Drive API has not been used in project 401509475922 before or it is disabled.' } },
+			} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toThrow(
+				/Drive request failed \(403\).*Google Drive API has not been used/
+			);
+		});
+
+		it('falls back to a status-only detail when the error body has no message', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 500, json: {} } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toThrow(
+				/Drive request failed \(500\): status 500/
+			);
+		});
+
+		it('falls back to a status-only detail when the error body is null', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 404, json: null } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toThrow(
+				/Drive request failed \(404\): status 404/
+			);
+		});
+
+		it('keeps the status detail when the error body is not JSON', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({
+				status: 502,
+				get json() { throw new Error('not json'); },
+			} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toThrow(/Drive request failed \(502\)/);
+		});
+	});
 });

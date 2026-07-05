@@ -6,7 +6,6 @@ import { ErrorHandler } from '@/errors/error-handler';
 import { SyncState } from '@/sync/sync-state';
 import { isOnline } from '@/utils/platform';
 import { logger } from '@/utils/logger';
-import { errorMessage } from '@/utils/error-message';
 import { STRINGS } from '@/utils/strings';
 
 const BATCH_SIZE = 10;
@@ -75,8 +74,11 @@ export class SyncEngine {
 				new Notice('All synced, nothing new');
 			}
 		} catch (err) {
-			logger.error(`Force sync failed: ${errorMessage(err)}`);
-			this.state.setStatus('error');
+			// Classify to surface the real reason (the Drive API body, a token issue,
+			// etc.) instead of a generic "error", both to the user and for debugging.
+			const syncError = this.errorHandler.classify(err);
+			logger.error(`Force sync failed: ${syncError.message}`);
+			this.state.recordError(syncError.message);
 		}
 	}
 

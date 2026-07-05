@@ -7,6 +7,7 @@ export interface SyncStateSnapshot {
 	pendingCount: number;
 	lastSyncTimestamp: string;
 	isSyncing: boolean;
+	lastError: string | null;
 }
 
 type SyncStateListener = (snapshot: SyncStateSnapshot) => void;
@@ -16,6 +17,7 @@ export class SyncState {
 	private _pendingCount = 0;
 	private _lastSyncTimestamp: string;
 	private _isSyncing = false;
+	private _lastError: string | null = null;
 	private listeners: SyncStateListener[] = [];
 
 	constructor(lastSyncTimestamp: string) {
@@ -27,12 +29,15 @@ export class SyncState {
 	get lastSyncTimestamp(): string { return this._lastSyncTimestamp; }
 	get isSyncing(): boolean { return this._isSyncing; }
 
+	get lastError(): string | null { return this._lastError; }
+
 	get snapshot(): SyncStateSnapshot {
 		return {
 			status: this._status,
 			pendingCount: this._pendingCount,
 			lastSyncTimestamp: this._lastSyncTimestamp,
 			isSyncing: this._isSyncing,
+			lastError: this._lastError,
 		};
 	}
 
@@ -54,10 +59,21 @@ export class SyncState {
 		const changed = status !== this._status || (pendingCount !== undefined && pendingCount !== this._pendingCount);
 		this._status = status;
 		if (pendingCount !== undefined) {this._pendingCount = pendingCount;}
+		// A recovery clears any stale error detail so the UI stops showing it.
+		if (status !== 'error') {this._lastError = null;}
 		if (changed) {
 			logger.info(`Sync state: ${status}${pendingCount !== undefined ? ` (${pendingCount} pending)` : ''}`);
 			this.notify();
 		}
+	}
+
+	// Records a sync failure with its real message and moves to the error state,
+	// always notifying so the surfaced detail refreshes even on a repeat error.
+	recordError(message: string): void {
+		this._lastError = message;
+		this._status = 'error';
+		logger.warn(`Sync error: ${message}`);
+		this.notify();
 	}
 
 	tryStartSync(): boolean {
