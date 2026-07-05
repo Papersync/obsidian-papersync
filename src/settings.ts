@@ -515,11 +515,13 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 			const md = renderTemplate(textarea.value, PREVIEW_CONTEXT);
 			void MarkdownRenderer.render(this.app, md, previewEl, '', component).then(() => {
-				// The sample scan is not a real vault file, so its embed renders as an
-				// unresolved box. Swap it for the handwritten-page placeholder, or an
-				// "empty embed" warning when image saving is off.
+				// Only the scan embed (a correctly-written {{ps_image_file}}, which resolves
+				// to the sample path) becomes the placeholder. A malformed embed such as
+				// ![[{{}}]] leaves the token literal, so its src won't match and it keeps
+				// rendering as Obsidian's own unresolved box, showing the user their mistake.
 				previewEl.querySelectorAll('.internal-embed').forEach((embed) => {
 					const box = embed as HTMLElement;
+					if (box.getAttribute('src') !== PREVIEW_CONTEXT.ps_image_file) {return;}
 					box.empty();
 					if (imageSavingOff()) {
 						box.createDiv({ cls: 'papersync-preview-scan-off', text: 'Image saving is off, so this embed will be empty.' });

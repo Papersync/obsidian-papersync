@@ -86,12 +86,17 @@ describe('Settings tab', function () {
 		expect(rendered).toContain('2:30 PM'); // {{ps_scan_time}} sample value
 		expect(rendered).toContain('Grocery'); // {{ps_markdown}} body, rendered
 
-		// An image embed is swapped for the ASCII handwriting placeholder.
+		// A correctly-written image embed is swapped for the ASCII handwriting placeholder.
 		await editor.clearValue();
 		await editor.setValue('![[{{ps_image_file}}]]');
 		await browser.pause(700);
-		const placeholder = await browser.$('.papersync-preview-scan');
-		expect(await placeholder.isExisting()).toBe(true);
+		expect(await (await browser.$('.papersync-preview-scan')).isExisting()).toBe(true);
+
+		// A malformed embed (empty {{}} token stays literal) must NOT get the placeholder.
+		await editor.clearValue();
+		await editor.setValue('![[{{}}]]');
+		await browser.pause(700);
+		expect(await (await browser.$('.papersync-preview-scan')).isExisting()).toBe(false);
 
 		await editor.clearValue();
 		await editor.setValue(original);
