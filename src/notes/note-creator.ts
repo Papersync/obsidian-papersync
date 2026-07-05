@@ -71,7 +71,10 @@ export class NoteCreator {
 			ps_model: scanFile.model,
 			ps_image_file: imagePath,
 			ps_markdown: scanFile.markdown,
-			ps_separator: isAppend ? '---' : '',
+			// '***' (not '---') as the divider: it renders as the same horizontal rule but
+			// is never parsed as a setext heading underline or YAML frontmatter fence, so it
+			// stays safe wherever the user places {{ps_separator}} in their template.
+			ps_separator: isAppend ? '***' : '',
 		};
 
 		const rendered = renderTemplate(this.config.templateString, context);

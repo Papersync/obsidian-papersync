@@ -75,7 +75,7 @@ describe('NoteCreator', () => {
 		const content = mockVault.create.mock.calls[0]?.[1] as string;
 		// Time heading should match HH:MM format (local timezone)
 		expect(content).toMatch(/## \d{1,2}:\d{2}\s*(AM|PM)/);
-		expect(content).not.toContain('---');
+		expect(content).not.toContain('***');
 	});
 
 	it('includes collapsible image embed in the created note', async () => {
@@ -102,7 +102,7 @@ describe('NoteCreator', () => {
 
 		const written = mockVault.adapter.write.mock.calls[0]?.[1] as string;
 		expect(written).toContain('# Existing content');
-		expect(written).toContain('---');
+		expect(written).toContain('***');
 		expect(written).toContain('# Test Notes');
 	});
 

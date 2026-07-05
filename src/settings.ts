@@ -21,8 +21,8 @@ const PREVIEW_CONTEXT: TemplateContext = {
 	ps_model: 'claude-sonnet-4',
 	ps_image_file: 'attachments/Papersync/papersync-scan.jpg',
 	ps_markdown: 'Small steps still move you forward. Start with one, and let momentum carry the rest.\n\n- [x] Grocery run before it rains\n- [ ] Read 20 pages before bed\n- [ ] 30-min walk after lunch\n- [ ] Call mom back',
-	// '---' (the append case) so the live preview can show the divider in context.
-	ps_separator: '---',
+	// '***' (the append case) so the live preview can show the divider in context.
+	ps_separator: '***',
 };
 
 // A faint placeholder standing in for whatever is already in today's daily note, so
@@ -452,7 +452,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			['{{ps_image_file}}', 'Image vault path, use ![[{{ps_image_file}}]] to embed'],
 			['{{ps_scan_time}}', '12h scan time (2:30 PM)'],
 			['{{ps_scan_time_24h}}', '24h scan time (14:30)'],
-			['{{ps_separator}}', '--- on append, empty on new note'],
+			['{{ps_separator}}', 'Divider (***) on append, empty on new note'],
 			['{{ps_scan_date_short}}', 'Scan date per Daily Notes format'],
 			['{{ps_scan_date}}', 'Full scan ISO timestamp'],
 			['{{ps_confidence}}', 'AI score (0-100)'],

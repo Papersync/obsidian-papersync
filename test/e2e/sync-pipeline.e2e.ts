@@ -247,7 +247,7 @@ describe('Sync pipeline E2E', function () {
 			expect(noteContent).toContain('# E2E Test Scan');
 			expect(noteContent).toContain('# Second Scan');
 			// Separator should be present between them
-			expect(noteContent).toContain('---');
+			expect(noteContent).toContain('***');
 		}
 	});
 
