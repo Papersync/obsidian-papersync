@@ -1,25 +1,43 @@
-# PaperSync for Obsidian
+<h1 align="center">PaperSync for Obsidian</h1>
 
-Syncs handwritten scans from [PaperSync](https://github.com/papersync) mobile app into your Obsidian vault as markdown notes.
+<p align="center">
+  <b>Handwritten notes on paper. Searchable Markdown in your vault.</b><br>
+  One tap on your phone, one note in Obsidian, about forty-five seconds. No typing, no backend, no third party reads your notes.
+</p>
 
-One tap on your phone, one note in your vault, forty-five seconds. No typing, no backend, no third party reads your notes.
+<p align="center">
+  <a href="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml"><img alt="CI" src="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml/badge.svg"></a>
+  <img alt="Coverage 100%" src="https://img.shields.io/badge/coverage-100%25-brightgreen">
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="Obsidian 1.11.4+" src="https://img.shields.io/badge/Obsidian-1.11.4%2B-7c3aed">
+  <img alt="Desktop" src="https://img.shields.io/badge/platform-desktop-lightgrey">
+</p>
+
+<p align="center">
+  <img alt="Bring your own key" src="https://img.shields.io/badge/API%20keys-BYOK-success">
+  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-success">
+  <img alt="Local-first" src="https://img.shields.io/badge/data-local--first-success">
+  <img alt="Least-privilege OAuth" src="https://img.shields.io/badge/OAuth-PKCE%20%C2%B7%20drive.file-success">
+</p>
 
 ## How it works
 
-1. **Capture** handwritten notes with the PaperSync mobile app
-2. The app converts them to markdown using your own LLM API key (BYOK)
-3. Scans are saved to your Google Drive or sync folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync)
-4. **This plugin** picks them up and creates vault notes automatically
+1. **Capture** handwritten notes with the [PaperSync mobile app](https://github.com/papersync)
+2. The app converts them to Markdown using **your own** LLM API key (BYOK) — inference happens on your phone
+3. Scans land in your Google Drive or a sync folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync)
+4. **This plugin** picks them up and writes vault notes automatically
+
+Your handwriting stays yours: the AI key never leaves your phone, and the plugin never sends your notes anywhere except the Google account you connect.
 
 ## Features
 
-- Google Drive polling (30s interval) or folder watching (any sync tool)
-- Auto-detects iCloud, Dropbox, OneDrive, Syncthing, and Obsidian Sync paths
-- Configurable note template with frontmatter (Dataview/Bases-ready)
-- Embedded scan images in your vault
-- Append-only: multiple scans on the same day go into the same note
-- Status bar indicator + ribbon icon for force-sync
-- Google Drive OAuth via PKCE (desktop-app flow); scoped to its own files, and your tokens stay on your device
+- **Two backends** — Google Drive polling (configurable interval) or folder watching for any sync tool
+- **Zero-config folder detection** — auto-detects iCloud, Dropbox, OneDrive, Syncthing, and Obsidian Sync paths
+- **Live template preview** — a side-by-side editor and rendered preview in Settings, so you see the note before it syncs
+- **Namespaced template variables** (`ps_*`) that won't collide with Obsidian's core `{{date}}`/`{{time}}`
+- **Append-only daily notes** — multiple scans on the same day flow into the same note, matching your Daily Notes filename exactly
+- **Embedded scan images** — saved to Obsidian's own attachment folder by default
+- **Status-bar indicator + ribbon icon** for sync state and force-sync
 
 ## Installation
 
@@ -27,11 +45,11 @@ One tap on your phone, one note in your vault, forty-five seconds. No typing, no
 
 1. Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) in Obsidian
 2. Add this repo: `Papersync/obsidian-papersync`
-3. Enable PaperSync in Community Plugins
+3. Enable **PaperSync** in Community Plugins
 
 ### Community Plugin Registry
 
-Search "PaperSync" in Obsidian Settings > Community Plugins > Browse (available after registry approval).
+Search "PaperSync" in **Settings → Community Plugins → Browse** (available after registry approval).
 
 ### Manual
 
@@ -39,64 +57,81 @@ Download `main.js`, `manifest.json`, and `styles.css` from the [latest release](
 
 ## Setup
 
-1. Enable the plugin
-2. Settings will open automatically on first run
-3. Choose your sync backend:
-   - **Google Drive**: Click "Connect" and authorize with your Google account
-   - **Folder sync**: The plugin auto-detects iCloud, Dropbox, OneDrive, Syncthing, and Obsidian Sync — or pick any folder
-4. Configure your note template and target folder
-5. Scans start syncing automatically
+1. Enable the plugin — Settings open automatically on first run
+2. Choose your sync backend:
+   - **Google Drive** — click **Connect** and authorize (PKCE desktop flow, scoped to files the app creates)
+   - **Folder sync** — pick an auto-detected sync folder, or any folder you like
+3. Tune your note template in the **Template** tab (with live preview) and pick a target folder
+4. Scans start syncing automatically
 
 ## Template Variables
 
-| Variable         | Description                                                 | Example                                |
-| ---------------- | ----------------------------------------------------------- | -------------------------------------- |
-| `{{markdown}}`   | Converted markdown content                                  | `# Meeting Notes\n- Action items...`   |
-| `{{image_file}}` | Vault path to the scan image                                | `attachments/papersync/scan-001.jpg` |
-| `{{time}}`       | 12-hour time with AM/PM                                     | `2:30 PM`                              |
-| `{{time_24h}}`   | 24-hour time                                                | `14:30`                                |
-| `{{separator}}`  | `---` when appending to an existing note, empty on new file | `---` or ``                            |
-| `{{date}}`       | Full ISO 8601 timestamp                                     | `2026-04-12T14:30:00.000Z`             |
-| `{{date_short}}` | Date formatted per Daily Notes setting                      | `2026-04-12`                           |
-| `{{confidence}}` | AI confidence score (0-100)                                 | `87`                                   |
+All variables are namespaced under `ps_` so they never clash with Obsidian's core template tokens.
 
-### Default Template
+| Variable                  | Description                                                  | Example                        |
+| ------------------------- | ----------------------------------------------------------- | ------------------------------ |
+| `{{ps_markdown}}`         | Converted Markdown content                                  | `## Meeting notes\n- ...`      |
+| `{{ps_image_file}}`       | Vault path to the scan image                                | `attachments/papersync-01.jpg` |
+| `{{ps_scan_time}}`        | 12-hour scan time with AM/PM                                | `2:30 PM`                      |
+| `{{ps_scan_time_24h}}`    | 24-hour scan time                                           | `14:30`                        |
+| `{{ps_scan_date}}`        | Full ISO 8601 timestamp                                     | `2026-04-12T14:30:00.000Z`     |
+| `{{ps_scan_date_short}}`  | Date formatted per your Daily Notes setting                 | `2026-04-12`                   |
+| `{{ps_separator}}`        | `***` when appending to an existing note, empty on a new one | `***` or ``                   |
+| `{{ps_confidence}}`       | AI confidence score (0–100)                                 | `87`                           |
+
+> Legacy un-namespaced tokens (`{{markdown}}`, `{{time}}`, `{{date}}`, …) still work as aliases, so older templates keep rendering.
+
+### Default template
 
 ```markdown
-{{separator}}
+{{ps_separator}}
 
-## {{time}}
+## {{ps_scan_time}}
 
-{{markdown}}
+{{ps_markdown}}
 
 > [!abstract]- Source
-> ![[{{image_file}}]]
+> ![[{{ps_image_file}}]]
 ```
 
-- **`{{time}}`** is 12h by default — swap with `{{time_24h}}` if you prefer 24h format
-- **`{{separator}}`** renders `---` only when appending to an existing note — keeps the first entry clean
-- **`{{image_file}}`** is a raw vault path — wrap it in `![[...]]` for an embed, or `> ![[...]]` inside a callout for collapsible
-- **Notes folder** supports date tokens (`YYYY`, `MM`, `DD`) — e.g., `Journal/YYYY/MM` creates `Journal/2026/04/`
+- **`{{ps_scan_time}}`** is 12h by default — swap for `{{ps_scan_time_24h}}` if you prefer 24h
+- **`{{ps_separator}}`** emits `***` (a divider that's safe anywhere, unlike `---`, which Markdown can read as a heading underline or frontmatter) only when appending, keeping the day's first entry clean
+- **`{{ps_image_file}}`** is a raw vault path — wrap it in `![[...]]` for an embed, or `> ![[...]]` inside a callout for a collapsible one. With image saving off, the plugin drops the embed line rather than writing a broken `![[]]`
+- **Notes folder** supports date tokens (`YYYY`, `MM`, `DD`) — e.g. `Journal/YYYY/MM` files notes under `Journal/2026/04/`
 
-## Privacy
+## Privacy & Security
 
-PaperSync stores zero LLM API keys (all AI inference happens on your mobile device). On the Google Drive path, a single OAuth refresh token is stored in Obsidian's OS-backed Secret Storage. On the Folder path, no credentials are stored. The plugin makes network requests only to googleapis.com and accounts.google.com. No telemetry, no analytics.
+- **BYOK** — the plugin stores **zero** LLM API keys; all AI inference happens on your mobile device
+- **Least-privilege Google access** — OAuth via **PKCE** (RFC 8252 desktop-app flow), scoped to `drive.file` (only files the app itself creates); a single refresh token lives in Obsidian's OS-backed **Secret Storage**
+- **Folder path stores no credentials** at all
+- **Minimal network surface** — requests go only to `googleapis.com` and `accounts.google.com`
+- **No telemetry, no analytics** — nothing about you or your notes is collected
+- **Open source (MIT)** — every line is auditable
+
+## Quality
+
+Trust comes from evidence, not promises. Every commit runs the full gate in CI:
+
+- **Lint** (ESLint + the official `eslint-plugin-obsidianmd` rules) and **strict TypeScript** (`strict` + `noUncheckedIndexedAccess`)
+- **Unit tests at 100% coverage** — statements, branches, functions, and lines are all enforced at 100%; the build fails if coverage drops
+- **End-to-end tests against a real Obsidian instance** (WebdriverIO + `wdio-obsidian-service`)
 
 ## Requirements
 
-- Obsidian v1.11.4 or later (for Secret Storage API)
-- PaperSync mobile app installed and configured
-- Google Drive or a sync folder matching your mobile app setup
+- Obsidian **v1.11.4+** (for the Secret Storage API)
+- The **PaperSync mobile app**, installed and configured
+- A Google Drive account or a sync folder matching your mobile setup
 
 ## Development
 
 ```bash
 npm install
-npm run dev      # watch mode
-npm test         # run tests
-npm run build    # production build
+npm run dev        # watch build
+npm test           # unit tests + coverage
+npm run test:e2e   # end-to-end against a real Obsidian
+npm run build      # production build
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE)
