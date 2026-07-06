@@ -4,6 +4,7 @@ import { generateCodeVerifier, computeCodeChallenge } from '@/auth/pkce';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 import { createSyncError } from '@/errors/sync-error';
+import { isSyncError } from '@/errors/error-handler';
 import * as http from 'http';
 
 import { OAUTH_TIMEOUT_MS, GOOGLE_CLIENT_SECRET } from '@/config';
@@ -38,6 +39,8 @@ export class OAuthManager {
 	private refreshToken: string | null = null;
 	private expiresAt = 0;
 	private authServer: http.Server | null = null;
+	// window.setTimeout returns a DOM number (obsidianmd/prefer-window-timers).
+	private authTimeout: number | null = null;
 	private onTokenChange: ((token: string) => void) | null = null;
 
 	constructor(plugin: Plugin, clientId: string) {
@@ -90,13 +93,16 @@ export class OAuthManager {
 		logger.info(`OAuth browser opened on port ${port}`);
 
 		return new Promise((resolve, reject) => {
-			const timeout = window.setTimeout(() => {
+			this.authTimeout = window.setTimeout(() => {
+				this.authTimeout = null;
 				this.stopCallbackServer();
 				reject(createSyncError('token_expired', 'OAuth flow timed out after 3 minutes'));
 			}, OAUTH_TIMEOUT_MS);
 
 			this.onAuthCallback = async (code: string) => {
-				window.clearTimeout(timeout);
+				// Disarm the timeout before the (network-bound) token exchange so a slow
+				// exchange can't trip the 3-minute abort mid-flight.
+				this.clearAuthTimeout();
 				try {
 					const tokens = await this.exchangeCodeForTokens(code, verifier, redirectUri);
 					this.storeTokens(tokens);
@@ -162,7 +168,15 @@ export class OAuthManager {
 		});
 	}
 
+	private clearAuthTimeout(): void {
+		if (this.authTimeout !== null) {
+			window.clearTimeout(this.authTimeout);
+			this.authTimeout = null;
+		}
+	}
+
 	private stopCallbackServer(): void {
+		this.clearAuthTimeout();
 		if (this.authServer) {
 			this.authServer.close();
 			this.authServer = null;
@@ -211,7 +225,7 @@ export class OAuthManager {
 
 			tokenData = response.json as GoogleTokenResponse;
 		} catch (err) {
-			if (err && typeof err === 'object' && 'type' in err) {throw err;}
+			if (isSyncError(err)) {throw err;}
 			const msg = errorMessage(err);
 			logger.error(`Token exchange request failed: ${msg}`);
 			logger.error(`Sent client_id: ${this.clientId}`);

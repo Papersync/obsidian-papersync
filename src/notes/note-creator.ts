@@ -4,6 +4,7 @@ import type { TemplateContext } from '@/notes/template-engine';
 import { saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { getDailyNotesConfig, formatDateWithPattern } from '@/utils/daily-notes';
+import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
 
 export interface NoteCreatorConfig {
@@ -55,7 +56,7 @@ export class NoteCreator {
 		// `YYYY/MM/DD` daily format), and vault.create does not create missing parents.
 		const parentFolder = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '';
 		if (parentFolder) {
-			await this.ensureFolderExists(parentFolder);
+			await ensureFolderExists(this.vault, parentFolder);
 		}
 
 		const existingFile = this.vault.getAbstractFileByPath(notePath);
@@ -132,22 +133,5 @@ export class NoteCreator {
 			? obsidianPath.slice(0, obsidianPath.lastIndexOf('/'))
 			: '';
 		return dir ? normalizePath(dir) : '';
-	}
-
-	private async ensureFolderExists(folderPath: string): Promise<void> {
-		const parts = folderPath.split('/');
-		let current = '';
-
-		for (const part of parts) {
-			current = current ? `${current}/${part}` : part;
-			const existing = this.vault.getAbstractFileByPath(current);
-			if (!existing) {
-				try {
-					await this.vault.createFolder(current);
-				} catch {
-					// May already exist
-				}
-			}
-		}
 	}
 }

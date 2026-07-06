@@ -4,6 +4,7 @@ import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
 import { createSyncError } from '@/errors/sync-error';
+import { isSyncError } from '@/errors/error-handler';
 import { isICloudPath, triggerICloudDownload } from '@/sync/icloud-offload';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
@@ -141,7 +142,7 @@ export class FolderBackend implements SyncBackend {
 					}
 				}
 			} catch (err) {
-				if (err && typeof err === 'object' && 'type' in err && (err as { type: string }).type === 'icloud_offloaded') {
+				if (isSyncError(err) && err.type === 'icloud_offloaded') {
 					throw err;
 				}
 				// stat error — file may be inaccessible, continue to read attempt

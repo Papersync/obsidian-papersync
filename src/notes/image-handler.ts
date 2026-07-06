@@ -1,4 +1,5 @@
 import { Vault, normalizePath } from 'obsidian';
+import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
 
 export async function saveImageToVault(
@@ -26,21 +27,4 @@ export async function saveImageToVault(
 	}
 
 	return filePath;
-}
-
-async function ensureFolderExists(vault: Vault, folderPath: string): Promise<void> {
-	const parts = folderPath.split('/');
-	let current = '';
-
-	for (const part of parts) {
-		current = current ? `${current}/${part}` : part;
-		const existing = vault.getAbstractFileByPath(current);
-		if (!existing) {
-			try {
-				await vault.createFolder(current);
-			} catch {
-				// Folder may have been created by another operation
-			}
-		}
-	}
 }

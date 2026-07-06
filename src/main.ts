@@ -26,6 +26,7 @@ export default class PaperSyncPlugin extends Plugin {
 	private settingsTab: PaperSyncSettingTab | null = null;
 	private unsubscribeSyncState: (() => void) | null = null;
 	private lastStatus: SyncStateSnapshot['status'] | null = null;
+	private firstRunTimeout: number | null = null;
 
 	async onload(): Promise<void> {
 		if (!this.checkMinObsidianVersion()) {return;}
@@ -79,6 +80,10 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		if (this.firstRunTimeout !== null) {
+			window.clearTimeout(this.firstRunTimeout);
+			this.firstRunTimeout = null;
+		}
 		this.syncEngine?.stop();
 		this.unsubscribeSyncState?.();
 		this.oauthManager?.cleanup();
@@ -130,7 +135,10 @@ export default class PaperSyncPlugin extends Plugin {
 		if (!this.settings.setupComplete) {
 			logger.info('First run detected, opening settings');
 			this.syncState.setStatus('idle');
-			window.setTimeout(() => this.openSettings(), 500);
+			this.firstRunTimeout = window.setTimeout(() => {
+				this.firstRunTimeout = null;
+				this.openSettings();
+			}, 500);
 			return;
 		}
 

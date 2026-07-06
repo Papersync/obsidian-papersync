@@ -18,6 +18,7 @@ jest.mock('@/sync/icloud-offload', () => {
 
 import { FolderBackend } from '@/sync/folder-backend';
 import { triggerICloudDownload } from '@/sync/icloud-offload';
+import { createSyncError } from '@/errors/sync-error';
 
 const baseScan = {
 	version: '1',
@@ -116,7 +117,7 @@ describe('FolderBackend.fetchScan — iCloud-offloaded JSON paths', () => {
 		fs.writeFileSync(jsonPath, ''); // size 0 so the truthy branch is entered
 
 		mockedTrigger.mockImplementationOnce(() => {
-			throw { type: 'icloud_offloaded', message: 'caller-supplied offload error' };
+			throw createSyncError('icloud_offloaded', 'caller-supplied offload error');
 		});
 
 		const backend = new FolderBackend(dir);

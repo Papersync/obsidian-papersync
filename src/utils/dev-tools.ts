@@ -6,6 +6,9 @@ import { logger } from '@/utils/logger';
 const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
 const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
 
+interface DriveListResult { files?: Array<{ id: string }> }
+interface CreateResult { id: string }
+
 const SAMPLE_MARKDOWN = `# Quick meeting notes
 
 - Discussed Q2 roadmap
@@ -74,7 +77,6 @@ async function findOrCreateFolder(token: string, folderPath: string): Promise<st
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
-		interface DriveListResult { files?: Array<{ id: string }> }
 		const data = response.json as DriveListResult;
 		const folders = data.files ?? [];
 
@@ -94,7 +96,6 @@ async function findOrCreateFolder(token: string, folderPath: string): Promise<st
 					parents: [parentId],
 				}),
 			});
-			interface CreateResult { id: string }
 			parentId = (createResponse.json as CreateResult).id;
 		}
 	}
@@ -122,7 +123,6 @@ async function createDriveFile(
 		body: JSON.stringify({ name, parents: [parentId] }),
 	});
 
-	interface CreateResult { id: string }
 	const fileId = (metaResponse.json as CreateResult).id;
 	logger.info(`Dev: created file metadata, ID: ${fileId}`);
 

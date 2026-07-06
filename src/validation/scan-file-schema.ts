@@ -24,7 +24,7 @@ export function validateScanFile(raw: unknown): ScanFile | { error: string } {
 		return { error: `Invalid ScanFile: ${result.error.issues.map((i) => i.message).join(', ')}` };
 	}
 
-	if (!SUPPORTED_SCHEMA_VERSIONS.includes(result.data.version as (typeof SUPPORTED_SCHEMA_VERSIONS)[number])) {
+	if (!(SUPPORTED_SCHEMA_VERSIONS as readonly string[]).includes(result.data.version)) {
 		return {
 			error: `Unsupported schema version "${result.data.version}" — update the PaperSync plugin`,
 		};

@@ -46,7 +46,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations();
 		expect(result).toEqual([
-			{ type: 'icloud', displayName: 'iCloud Drive', path: expected, detected: true },
+			{ type: 'icloud', displayName: 'iCloud Drive', path: expected },
 		]);
 	});
 
@@ -57,7 +57,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations();
 		expect(result).toEqual([
-			{ type: 'icloud', displayName: 'iCloud Drive', path: expected, detected: true },
+			{ type: 'icloud', displayName: 'iCloud Drive', path: expected },
 		]);
 	});
 
@@ -68,7 +68,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations();
 		expect(result).toEqual([
-			{ type: 'dropbox', displayName: 'Dropbox', path: expected, detected: true },
+			{ type: 'dropbox', displayName: 'Dropbox', path: expected },
 		]);
 	});
 
@@ -79,7 +79,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations();
 		expect(result).toEqual([
-			{ type: 'onedrive', displayName: 'OneDrive', path: expected, detected: true },
+			{ type: 'onedrive', displayName: 'OneDrive', path: expected },
 		]);
 	});
 
@@ -90,7 +90,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations();
 		expect(result).toEqual([
-			{ type: 'onedrive', displayName: 'OneDrive', path: expected, detected: true },
+			{ type: 'onedrive', displayName: 'OneDrive', path: expected },
 		]);
 	});
 
@@ -101,7 +101,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations();
 		expect(result).toEqual([
-			{ type: 'syncthing', displayName: 'Syncthing', path: expected, detected: true },
+			{ type: 'syncthing', displayName: 'Syncthing', path: expected },
 		]);
 	});
 
@@ -113,7 +113,7 @@ describe('detectSyncLocations', () => {
 
 		const result = detectSyncLocations(vaultPath);
 		expect(result).toEqual([
-			{ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: expected, detected: true },
+			{ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: expected },
 		]);
 	});
 

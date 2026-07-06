@@ -29,10 +29,7 @@ export class SyncEngine {
 		this.errorHandler = errorHandler;
 		this.state = state;
 
-		if ('setOnScanDiscovered' in backend) {
-			(backend as { setOnScanDiscovered: (cb: (refs: ScanReference[]) => void) => void })
-				.setOnScanDiscovered((refs) => this.processBatch(refs));
-		}
+		backend.setOnScanDiscovered?.((refs) => this.processBatch(refs));
 	}
 
 	start(): void {
@@ -173,9 +170,7 @@ export class SyncEngine {
 			}
 			if (highWater !== null) {
 				this.state.advanceTimestamp(highWater);
-				if ('updateLastSyncTimestamp' in this.backend) {
-					(this.backend as { updateLastSyncTimestamp(ts: string): void }).updateLastSyncTimestamp(highWater);
-				}
+				this.backend.updateLastSyncTimestamp?.(highWater);
 			}
 
 			if (synced > 0) {

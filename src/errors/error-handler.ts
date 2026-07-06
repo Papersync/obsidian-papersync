@@ -86,7 +86,7 @@ export class ErrorHandler {
 	}
 
 	private classify403Guidance(msg: string): string {
-		if (msg.includes('invalid_grant') || msg.includes('token') && msg.includes('revoked')) {
+		if (msg.includes('invalid_grant') || (msg.includes('token') && msg.includes('revoked'))) {
 			return STRINGS.NOTICE_DRIVE_403_TOKEN_REVOKED;
 		}
 		if (msg.includes('insufficient') || msg.includes('scope') || msg.includes('drive.file')) {
@@ -110,7 +110,7 @@ export class ErrorHandler {
 	}
 }
 
-function isSyncError(err: unknown): err is SyncError {
+export function isSyncError(err: unknown): err is SyncError {
 	return (
 		typeof err === 'object' &&
 		err !== null &&

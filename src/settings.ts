@@ -135,6 +135,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private syncDesc: HTMLElement | null = null;
 	private activeTab: 'sync' | 'template' | 'advanced' = 'sync';
 	private previewComponent: Component | null = null;
+	private previewDebounce: number | null = null;
 
 	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app, plugin);
@@ -195,6 +196,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.activeTab = 'sync';
 		this.previewComponent?.unload();
 		this.previewComponent = null;
+		if (this.previewDebounce !== null) {
+			window.clearTimeout(this.previewDebounce);
+			this.previewDebounce = null;
+		}
 	}
 
 	private renderLogoHeader(containerEl: HTMLElement): void {
@@ -340,21 +345,25 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.setDesc('Browse to the PaperSync folder your app saves scans to. Select the PaperSync folder itself, not the scans folder inside it.')
 			.addButton((button) =>
 				button.setButtonText('Browse').onClick(asyncHandler(async () => {
-					const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
-					const dialog = electron?.remote?.dialog;
-					if (dialog) {
-						const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-						if (!result.canceled && result.filePaths[0]) {
-							// Scans live under <PaperSync>/scans. If the user picked the PaperSync
-							// folder (as the copy asks), watch its scans subfolder; tolerate a
-							// direct scans selection too.
-							const picked = result.filePaths[0];
-							const scansSubdir = path.join(picked, 'scans');
-							const resolved = fs.existsSync(scansSubdir) ? scansSubdir : picked;
-							await this.selectFolderLocation(resolved, 'custom');
+					try {
+						const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
+						const dialog = electron?.remote?.dialog;
+						if (dialog) {
+							const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+							if (!result.canceled && result.filePaths[0]) {
+								// Scans live under <PaperSync>/scans. If the user picked the PaperSync
+								// folder (as the copy asks), watch its scans subfolder; tolerate a
+								// direct scans selection too.
+								const picked = result.filePaths[0];
+								const scansSubdir = path.join(picked, 'scans');
+								const resolved = fs.existsSync(scansSubdir) ? scansSubdir : picked;
+								await this.selectFolderLocation(resolved, 'custom');
+							}
+						} else {
+							new Notice('Folder browser not available');
 						}
-					} else {
-						new Notice('Folder browser not available');
+					} catch (err) {
+						new Notice(`Could not open the folder browser: ${errorMessage(err)}`);
 					}
 				}))
 			);
@@ -532,11 +541,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			// token, render the entry standalone so the heading isn't crowded.
 			if (embedsSeparator()) {
 				const prior = previewEl.createDiv({ cls: 'papersync-preview-prior markdown-rendered' });
-				void MarkdownRenderer.render(this.app, PRIOR_ENTRY_MD, prior, '', component);
+				MarkdownRenderer.render(this.app, PRIOR_ENTRY_MD, prior, '', component).catch(console.error);
 			}
 
 			const md = renderTemplate(textarea.value, PREVIEW_CONTEXT);
-			void MarkdownRenderer.render(this.app, md, previewEl, '', component).then(() => {
+			MarkdownRenderer.render(this.app, md, previewEl, '', component).then(() => {
 				// Only the scan embed (a correctly-written {{ps_image_file}}, which resolves
 				// to the sample path) becomes the placeholder. A malformed embed such as
 				// ![[{{}}]] leaves the token literal, so its src won't match and it keeps
@@ -551,14 +560,14 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						box.createEl('pre', { cls: 'papersync-preview-scan', text: SCAN_PLACEHOLDER });
 					}
 				});
-			});
+			}).catch(console.error);
 		};
 
-		let debounce: number | null = null;
 		textarea.addEventListener('input', () => {
 			this.plugin.settings.templateString = textarea.value;
-			if (debounce !== null) {window.clearTimeout(debounce);}
-			debounce = window.setTimeout(() => {
+			if (this.previewDebounce !== null) {window.clearTimeout(this.previewDebounce);}
+			this.previewDebounce = window.setTimeout(() => {
+				this.previewDebounce = null;
 				this.plugin.saveSettings().catch(console.error);
 				renderPreview();
 			}, 250);
