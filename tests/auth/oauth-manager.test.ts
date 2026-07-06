@@ -67,8 +67,42 @@ describe('OAuthManager', () => {
 			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'token_revoked' });
 		});
 
-		it('clears tokens and throws when refresh fails', async () => {
-			mockedRequestUrl.mockRejectedValueOnce(new Error('network'));
+		it('keeps the refresh token on a transient NETWORK failure — does not disconnect (#1)', async () => {
+			mockedRequestUrl.mockRejectedValueOnce(new Error('network down'));
+
+			const tokenChange = jest.fn();
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.setOnTokenChange(tokenChange);
+			mgr.restoreFromToken('refresh-abc');
+
+			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'network_timeout' });
+			// Token preserved so the next attempt can recover — one blip must not sign the user out.
+			expect(mgr.isAuthenticated).toBe(true);
+			expect(tokenChange).not.toHaveBeenCalled();
+		});
+
+		it('keeps the token on a transient 5xx (null error body → ?? {} guard) (#1)', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 503, json: null } as never);
+
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.restoreFromToken('refresh-abc');
+
+			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'network_timeout' });
+			expect(mgr.isAuthenticated).toBe(true);
+		});
+
+		it('keeps the token on a 401 that is NOT invalid_grant (#1)', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 401, json: { error: 'temporarily_unavailable' } } as never);
+
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.restoreFromToken('refresh-abc');
+
+			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'network_timeout' });
+			expect(mgr.isAuthenticated).toBe(true);
+		});
+
+		it('clears the token ONLY on a definitive invalid_grant (400) (#1)', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 400, json: { error: 'invalid_grant' } } as never);
 
 			const tokenChange = jest.fn();
 			const mgr = new OAuthManager(makePlugin(), 'client-id');
@@ -80,14 +114,25 @@ describe('OAuthManager', () => {
 			expect(tokenChange).toHaveBeenCalledWith('');
 		});
 
-		it('clears tokens when refresh response lacks access_token', async () => {
-			mockedRequestUrl.mockResolvedValueOnce({ json: {} } as never);
+		it('clears on invalid_grant even without a token-change listener (?. no-op) (#1)', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 400, json: { error: 'invalid_grant' } } as never);
 
 			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			// No setOnTokenChange — the `this.onTokenChange?.('')` optional chain must no-op.
 			mgr.restoreFromToken('refresh-abc');
 
 			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'token_revoked' });
 			expect(mgr.isAuthenticated).toBe(false);
+		});
+
+		it('keeps the token when a 2xx refresh response lacks an access_token (transient) (#1)', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 200, json: {} } as never);
+
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.restoreFromToken('refresh-abc');
+
+			await expect(mgr.getValidAccessToken()).rejects.toMatchObject({ type: 'network_timeout' });
+			expect(mgr.isAuthenticated).toBe(true);
 		});
 
 		it('defaults the token lifetime when a refresh response omits expires_in', async () => {

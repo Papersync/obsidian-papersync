@@ -47,11 +47,16 @@ export const MarkdownRenderer = {
 	render: jest.fn(() => Promise.resolve()),
 };
 
+export class TFile {
+	path = '';
+}
+
 export class Vault {
 	getAbstractFileByPath() { return null; }
 	create() { return Promise.resolve(); }
 	createBinary() { return Promise.resolve(); }
 	createFolder() { return Promise.resolve(); }
+	process(_file: unknown, fn: (data: string) => string) { return Promise.resolve(fn('')); }
 	adapter = {
 		read: () => Promise.resolve(''),
 		write: () => Promise.resolve(),

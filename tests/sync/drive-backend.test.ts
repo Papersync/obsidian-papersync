@@ -54,6 +54,26 @@ describe('DriveBackend', () => {
 			expect(refs.map((r) => r.imagePath).sort()).toEqual(['img-1', 'img-2', 'img-3']);
 		});
 
+		it('does not pair a JSON with a prefix-only image name (exact extension match, #5)', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
+				.mockResolvedValueOnce({
+					json: {
+						files: [
+							{ id: 'json-1', name: 'abc.json', createdTime: '2026-04-12T14:30:00Z' },
+							// 'abcd.jpg' shares the 'abc' prefix but is a DIFFERENT scan.
+							{ id: 'img-x', name: 'abcd.jpg' },
+						],
+					},
+				} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			const refs = await backend.discoverUnsynced();
+			expect(refs).toHaveLength(1);
+			expect(refs[0].imagePath).toBe('');
+		});
+
 		it('returns refs with empty imagePath when a companion image is missing', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
@@ -175,34 +195,38 @@ describe('DriveBackend', () => {
 	});
 
 	describe('markSynced', () => {
-		it('PATCHes the JSON with synced:true and preserves other fields', async () => {
-			// markSynced calls fetchScan if scanData not provided → 1 GET + 1 PATCH
+		it('re-fetches the RAW JSON and PATCHes synced:true, preserving unmodeled fields + types (#4)', async () => {
+			// version is a NUMBER and there is an extra unmodeled field: a zod-parse round
+			// trip would coerce version to a string and drop `note`. The raw re-fetch must not.
+			const rawJson = { ...validScanJson, version: 1, note: 'user-added', synced: false };
 			mockedRequestUrl
-				.mockResolvedValueOnce({ json: validScanJson } as never)
-				.mockResolvedValueOnce({ json: {} } as never);
+				.mockResolvedValueOnce({ json: rawJson } as never) // GET ?alt=media (raw)
+				.mockResolvedValueOnce({ json: {} } as never);      // PATCH
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 			await backend.markSynced({ id: 'a', jsonPath: 'json-1', imagePath: 'img-1' });
 
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
+			expect(mockedRequestUrl.mock.calls[0][0].url).toContain('alt=media');
 			const patchCall = mockedRequestUrl.mock.calls[1][0];
 			expect(patchCall.method).toBe('PATCH');
 			const body = JSON.parse(patchCall.body as string);
 			expect(body.synced).toBe(true);
 			expect(body.markdown).toBe('# Sample');
+			expect(body.version).toBe(1); // number preserved (no String() coercion)
+			expect(body.note).toBe('user-added'); // unmodeled field preserved
 		});
 
-		it('uses provided scanData to skip the extra fetch', async () => {
-			mockedRequestUrl.mockResolvedValueOnce({ json: {} } as never);
+		it('tolerates a null raw body on re-fetch (?? {} guard)', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: null } as never) // GET raw returns null
+				.mockResolvedValueOnce({ json: {} } as never);  // PATCH
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
-			await backend.markSynced(
-				{ id: 'a', jsonPath: 'json-1', imagePath: 'img-1' },
-				{ ...validScanJson, synced: false }
-			);
+			await backend.markSynced({ id: 'a', jsonPath: 'json-1', imagePath: 'img-1' });
 
-			expect(mockedRequestUrl).toHaveBeenCalledTimes(1);
-			const body = JSON.parse(mockedRequestUrl.mock.calls[0][0].body as string);
-			expect(body.synced).toBe(true);
+			const body = JSON.parse(mockedRequestUrl.mock.calls[1][0].body as string);
+			expect(body).toEqual({ synced: true });
 		});
 	});
 

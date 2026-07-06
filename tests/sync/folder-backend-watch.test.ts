@@ -78,6 +78,34 @@ describe('FolderBackend.start watcher', () => {
 	}, 15000);
 });
 
+describe('FolderBackend.start watcher error event (#6)', () => {
+	let tmp: string;
+	let backend: FolderBackend;
+
+	beforeEach(() => {
+		tmp = makeTempDir();
+		backend = new FolderBackend(tmp);
+	});
+
+	afterEach(() => {
+		backend.stop();
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
+
+	it('absorbs a watcher error event and stops cleanly instead of throwing uncaught', () => {
+		backend.start();
+		const watcher = (backend as unknown as { watcher: fs.FSWatcher | null }).watcher;
+		expect(watcher).not.toBeNull();
+
+		// Without our 'error' listener, emitting 'error' on an EventEmitter throws
+		// uncaught. Our handler must log and stop, absorbing it.
+		expect(() => watcher!.emit('error', new Error('watched folder vanished'))).not.toThrow();
+
+		// stop() ran inside the handler → the watcher field is cleared.
+		expect((backend as unknown as { watcher: fs.FSWatcher | null }).watcher).toBeNull();
+	});
+});
+
 describe('FolderBackend.start error path', () => {
 	it('logs and recovers if the folder does not exist', () => {
 		const backend = new FolderBackend('/non/existent/folder/papersync');

@@ -99,9 +99,10 @@ export class ErrorHandler {
 		const userMessage = error.guidance ?? USER_MESSAGES[error.type];
 		logger.error(`${error.type}: ${error.message}`);
 
-		if (!error.retriable) {
-			new Notice(userMessage, 10_000);
-		}
+		// Always notify. surface() runs only terminally (after retries are exhausted),
+		// so a retriable type that reached here has given up — suppressing the Notice
+		// would leave the user with zero signal that the scan did not sync.
+		new Notice(userMessage, 10_000);
 	}
 
 	resetRetries(): void {

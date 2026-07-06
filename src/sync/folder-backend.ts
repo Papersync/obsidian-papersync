@@ -34,6 +34,14 @@ export class FolderBackend implements SyncBackend {
 				}
 			});
 
+			// fs.watch emits 'error' (e.g. the watched folder is deleted or becomes
+			// unavailable) asynchronously; without a listener Node throws it uncaught.
+			// Log and tear the watcher down cleanly instead.
+			this.watcher.on('error', (err) => {
+				logger.error(`Folder watcher error: ${errorMessage(err)}`);
+				this.stop();
+			});
+
 			logger.info(`Folder watcher started on ${this.folderPath}`);
 			this.debouncedDiscovery();
 		} catch (err) {

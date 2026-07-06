@@ -1,4 +1,4 @@
-import { App, Vault, moment, normalizePath } from 'obsidian';
+import { App, Vault, TFile, moment, normalizePath } from 'obsidian';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { saveImageToVault } from '@/notes/image-handler';
@@ -59,7 +59,8 @@ export class NoteCreator {
 		}
 
 		const existingFile = this.vault.getAbstractFileByPath(notePath);
-		const isAppend = !!existingFile;
+		// Only a file (not a folder) at this path counts as an append target.
+		const isAppend = existingFile instanceof TFile;
 
 		// Save the scan image now that notePath is known (Obsidian's note-relative
 		// attachment mode needs it). Empty imagePath => no embed (stripped below).
@@ -94,13 +95,15 @@ export class NoteCreator {
 			rendered = rendered.replace(/^[ \t]*(?:>[ \t]*)?(?:[-*][ \t]*)?!\[\[\]\][ \t]*(?:\r?\n|$)/gm, '');
 		}
 
-		if (isAppend) {
-			const existingContent = await this.vault.adapter.read(notePath);
-			const trimmed = existingContent.trimEnd();
-			const newContent = trimmed.length > 0
-				? trimmed + '\n\n' + rendered
-				: rendered;
-			await this.vault.adapter.write(notePath, newContent);
+		if (existingFile instanceof TFile) {
+			// vault.process is an atomic read-modify-write that goes through Obsidian's
+			// cache and fires modify events, unlike adapter.read/write which bypasses both.
+			await this.vault.process(existingFile, (existingContent) => {
+				const trimmed = existingContent.trimEnd();
+				return trimmed.length > 0
+					? trimmed + '\n\n' + rendered
+					: rendered;
+			});
 			logger.info(`Appended scan ${scanId} to ${notePath}`);
 		} else {
 			await this.vault.create(notePath, rendered);
@@ -115,7 +118,9 @@ export class NoteCreator {
 	// cross-platform). We reuse our own stable filename below, so take only the directory;
 	// '' means the vault root.
 	private async resolveAttachmentsFolder(scanId: string, notePath: string): Promise<string> {
-		const override = this.config.attachmentsFolder.trim();
+		// Strip a trailing slash for parity with targetFolder, so 'Attachments/' does not
+		// become 'Attachments//papersync-<id>.jpg' and a broken embed.
+		const override = this.config.attachmentsFolder.trim().replace(/\/+$/, '');
 		if (override) {
 			return override;
 		}

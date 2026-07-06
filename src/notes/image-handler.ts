@@ -1,4 +1,4 @@
-import { Vault } from 'obsidian';
+import { Vault, normalizePath } from 'obsidian';
 import { logger } from '@/utils/logger';
 
 export async function saveImageToVault(
@@ -10,8 +10,8 @@ export async function saveImageToVault(
 	const folderPath = attachmentsFolder;
 	const fileName = `papersync-${scanId}.jpg`;
 	// An empty folder means the vault root: save the file there with no leading slash and
-	// no folder to create.
-	const filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
+	// no folder to create. normalizePath collapses any stray '//' so the embed never breaks.
+	const filePath = normalizePath(folderPath ? `${folderPath}/${fileName}` : fileName);
 
 	if (folderPath) {
 		await ensureFolderExists(vault, folderPath);

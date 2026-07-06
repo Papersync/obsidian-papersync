@@ -135,8 +135,11 @@ export class DriveBackend implements SyncBackend {
 		const refs: ScanReference[] = [];
 
 		for (const file of jsonFiles) {
-			const baseName = file.name.replace('.json', '');
-			const imageFile = imageFiles.find((f) => f.name.startsWith(baseName));
+			const baseName = file.name.replace(/\.json$/, '');
+			// Exact companion match only — a prefix match would pair base "abc" with an
+			// unrelated "abcd.jpg" or a "abc-thumb.jpg". Mirror folder-backend's candidates.
+			const candidateNames = [`${baseName}.jpg`, `${baseName}.jpeg`, `${baseName}.png`];
+			const imageFile = imageFiles.find((f) => candidateNames.includes(f.name));
 
 			refs.push({
 				id: baseName,
@@ -185,11 +188,18 @@ export class DriveBackend implements SyncBackend {
 		return response.arrayBuffer;
 	}
 
-	async markSynced(ref: ScanReference, scanData?: ScanFile): Promise<void> {
+	async markSynced(ref: ScanReference): Promise<void> {
 		const token = await this.oauthManager.getValidAccessToken();
 
-		const scan = scanData ?? await this.fetchScan(ref);
-		const updated = { ...scan, synced: true };
+		// Re-fetch the RAW JSON (not the zod-parsed ScanFile, which drops unmodeled fields
+		// and coerces types e.g. version number->string) so the PATCH round-trips every
+		// original field untouched. Mirrors FolderBackend.markSynced.
+		const response = await this.driveRequest({
+			url: `${DRIVE_API_BASE}/files/${ref.jsonPath}?alt=media`,
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		const raw = (response.json ?? {}) as Record<string, unknown>;
+		raw.synced = true;
 
 		await this.driveRequest({
 			url: `${DRIVE_UPLOAD_BASE}/files/${ref.jsonPath}?uploadType=media`,
@@ -198,7 +208,7 @@ export class DriveBackend implements SyncBackend {
 				Authorization: `Bearer ${token}`,
 				'Content-Type': 'application/json',
 			},
-			body: JSON.stringify(updated),
+			body: JSON.stringify(raw),
 		});
 
 		logger.info(`Marked scan ${ref.id} as synced on Drive`);

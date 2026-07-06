@@ -1,5 +1,10 @@
+import { TFile } from 'obsidian';
+
 import { NoteCreator } from '@/notes/note-creator';
 import type { ScanFile } from '@/validation/scan-file-schema';
+
+// getAbstractFileByPath must return a real TFile for the append path (instanceof check).
+const asTFile = (path: string): TFile => Object.assign(new TFile(), { path });
 
 const mockApp = {
 	internalPlugins: {
@@ -12,6 +17,9 @@ const mockVault = {
 	create: jest.fn().mockResolvedValue(undefined),
 	createBinary: jest.fn().mockResolvedValue(undefined),
 	createFolder: jest.fn().mockResolvedValue(undefined),
+	// Atomic read-modify-write. Default no-op over empty content; append tests supply
+	// existing content via a per-test mockImplementation.
+	process: jest.fn(async (_file: unknown, fn: (data: string) => string) => fn('')),
 	adapter: {
 		read: jest.fn().mockResolvedValue(''),
 		write: jest.fn().mockResolvedValue(undefined),
@@ -101,17 +109,20 @@ describe('NoteCreator', () => {
 
 	it('appends to existing file with delimiter when note already exists', async () => {
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'PaperSync/2026-04-12.md') return { path };
+			if (path === 'PaperSync/2026-04-12.md') return asTFile(path);
 			return null;
 		});
-		mockVault.adapter.read.mockResolvedValue('# Existing content\n\nPrevious notes.');
+		let written = '';
+		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => {
+			written = fn('# Existing content\n\nPrevious notes.');
+			return written;
+		});
 
 		const scan = makeScanFile();
 		const imageData = new ArrayBuffer(10);
 
 		await creator.createOrAppend(scan, imageData, 'scan-002');
 
-		const written = mockVault.adapter.write.mock.calls[0]?.[1] as string;
 		expect(written).toContain('# Existing content');
 		expect(written).toContain('***');
 		expect(written).toContain('# Test Notes');
@@ -120,17 +131,20 @@ describe('NoteCreator', () => {
 	it('preserves existing content when appending', async () => {
 		const existingContent = '# Morning scan\n\nFirst notes of the day.\n\nEdited by user.';
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'PaperSync/2026-04-12.md') return { path };
+			if (path === 'PaperSync/2026-04-12.md') return asTFile(path);
 			return null;
 		});
-		mockVault.adapter.read.mockResolvedValue(existingContent);
+		let written = '';
+		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => {
+			written = fn(existingContent);
+			return written;
+		});
 
 		const scan = makeScanFile();
 		const imageData = new ArrayBuffer(10);
 
 		await creator.createOrAppend(scan, imageData, 'scan-003');
 
-		const written = mockVault.adapter.write.mock.calls[0]?.[1] as string;
 		expect(written.startsWith(existingContent)).toBe(true);
 	});
 
@@ -219,16 +233,16 @@ describe('NoteCreator', () => {
 			{ ...defaultConfig, targetFolder: 'PaperSync/' }
 		);
 		mockVault.getAbstractFileByPath.mockImplementation((p: string) =>
-			p === 'PaperSync/2026-04-12.md' ? { path: p } : null
+			p === 'PaperSync/2026-04-12.md' ? asTFile(p) : null
 		);
-		mockVault.adapter.read.mockResolvedValue('# Prior');
+		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => fn('# Prior'));
 
 		const scan = makeScanFile();
 		await c.createOrAppend(scan, new ArrayBuffer(10), 'scan-slash');
 
 		// Existence check runs on the normalized path (no double slash) → append, not create.
 		expect(mockVault.getAbstractFileByPath).toHaveBeenCalledWith('PaperSync/2026-04-12.md');
-		expect(mockVault.adapter.write).toHaveBeenCalled();
+		expect(mockVault.process).toHaveBeenCalled();
 		expect(mockVault.create).not.toHaveBeenCalled();
 	});
 
@@ -274,6 +288,25 @@ describe('NoteCreator', () => {
 			'papersync-scan-root-att.jpg',
 			expect.any(ArrayBuffer)
 		);
+	});
+
+	it('strips a trailing slash from an attachments override so the embed has no // (#9)', async () => {
+		const c = new NoteCreator(
+			{ ...mockApp, vault: mockVault } as any,
+			mockVault as any,
+			{ ...defaultConfig, attachmentsFolder: 'Attachments/' }
+		);
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-slash-att');
+
+		// No double slash: 'Attachments/' must not yield 'Attachments//papersync-...jpg'.
+		expect(mockVault.createBinary).toHaveBeenCalledWith(
+			'Attachments/papersync-scan-slash-att.jpg',
+			expect.any(ArrayBuffer)
+		);
+		const content = mockVault.create.mock.calls[0]?.[1] as string;
+		expect(content).toContain('![[Attachments/papersync-scan-slash-att.jpg]]');
+		expect(content).not.toContain('//papersync');
 	});
 
 	it('renders 12:MM AM at midnight (covers h24 % 12 || 12 fallback)', async () => {
@@ -350,16 +383,19 @@ describe('NoteCreator', () => {
 
 	it('writes rendered content directly when existing file is empty (no leading separator)', async () => {
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'PaperSync/2026-04-12.md') return { path };
+			if (path === 'PaperSync/2026-04-12.md') return asTFile(path);
 			return null;
 		});
 		// Empty existing content → trimEnd().length === 0 → takes the else branch
-		mockVault.adapter.read.mockResolvedValue('');
+		let written = '';
+		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => {
+			written = fn('');
+			return written;
+		});
 
 		const scan = makeScanFile();
 		await creator.createOrAppend(scan, new ArrayBuffer(10), 'scan-empty-existing');
 
-		const written = mockVault.adapter.write.mock.calls[0]?.[1] as string;
 		// No "existing\n\n" prefix in front — rendered content stands alone
 		expect(written.startsWith('\n')).toBe(false);
 		expect(written).toContain('# Test Notes');

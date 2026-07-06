@@ -185,6 +185,10 @@ export default class PaperSyncPlugin extends Plugin {
 			logger.info('Folder sync started');
 		} else {
 			logger.info('No backend configured or authenticated — sync not started');
+			// startSync replaced this.syncState above, so any error status set before this
+			// call was lost. Set it on the LIVE instance so the UI reflects the misconfig
+			// instead of silently showing "synced".
+			this.syncState.setStatus('error');
 		}
 	}
 

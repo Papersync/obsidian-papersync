@@ -266,7 +266,7 @@ describe('SyncEngine.processBatch', () => {
 		expect(backend.markSynced).toHaveBeenCalledTimes(12);
 	});
 
-	it('drops refs with empty imagePath before processing', async () => {
+	it('drops refs with empty imagePath before processing when images are downloaded', async () => {
 		const refs = [
 			{ id: 'with', jsonPath: 'j1', imagePath: 'i1' },
 			{ id: 'without', jsonPath: 'j2', imagePath: '' },
@@ -278,8 +278,9 @@ describe('SyncEngine.processBatch', () => {
 
 		const state = new SyncState('');
 		const eh = new ErrorHandler(state);
+		// downloadImages ON → an image-less ref cannot produce an embed, so it is dropped.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+		const engine = new SyncEngine(backend, makeApp() as any, { ...noteConfig, downloadImages: true }, eh, state);
 
 		await engine.forceSyncNow();
 
@@ -288,6 +289,28 @@ describe('SyncEngine.processBatch', () => {
 			expect.objectContaining({ id: 'with' }),
 			expect.anything()
 		);
+	});
+
+	it('keeps image-less refs when downloadImages is off (#11)', async () => {
+		const refs = [
+			{ id: 'with', jsonPath: 'j1', imagePath: 'i1' },
+			{ id: 'without', jsonPath: 'j2', imagePath: '' },
+		];
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue(refs);
+		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// noteConfig.downloadImages is false → the empty-imagePath ref still produces a note.
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(backend.markSynced).toHaveBeenCalledTimes(2);
+		expect(backend.fetchImage).not.toHaveBeenCalled();
 	});
 
 	it('tracks refs that exhausted retries (errorHandler returned null) in pendingNetwork', async () => {
@@ -329,5 +352,141 @@ describe('SyncEngine.processBatch', () => {
 		).processBatch([{ id: 'r', jsonPath: 'j', imagePath: 'i' }]);
 
 		expect(backend.fetchScan).not.toHaveBeenCalled();
+	});
+
+	// A non-retriable failure fails fast (no backoff sleep) — ideal for cursor-contiguity tests.
+	const nonRetriable = { type: 'schema_mismatch', message: 'nope', retriable: false };
+
+	it('does not advance the cursor to or past an earlier FAILED scan (#2)', async () => {
+		// A (earlier) fails, B (later) succeeds. Advancing to B would strand A forever
+		// because Drive re-queries `createdTime > cursor` and A lives only in memory.
+		const refA = { id: 'A', jsonPath: 'jA', imagePath: 'iA', createdTime: '2026-05-01T10:00:00Z' };
+		const refB = { id: 'B', jsonPath: 'jB', imagePath: 'iB', createdTime: '2026-05-02T10:00:00Z' };
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & { updateLastSyncTimestamp: jest.Mock };
+		backend.updateLastSyncTimestamp = jest.fn();
+		// Deliberately out of createdTime order — the engine must sort before advancing.
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([refB, refA]);
+		backend.fetchScan = jest.fn().mockImplementation(async (ref: { id: string }) => {
+			if (ref.id === 'A') {throw nonRetriable;}
+			return validScan;
+		});
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(state.lastSyncTimestamp).toBe('');
+		expect(backend.updateLastSyncTimestamp).not.toHaveBeenCalled();
+	});
+
+	it('advances the cursor only up to the last success BEFORE the first failure (#2)', async () => {
+		const refA = { id: 'A', jsonPath: 'jA', imagePath: 'iA', createdTime: '2026-05-01T10:00:00Z' }; // ok
+		const refB = { id: 'B', jsonPath: 'jB', imagePath: 'iB', createdTime: '2026-05-02T10:00:00Z' }; // fail
+		const refC = { id: 'C', jsonPath: 'jC', imagePath: 'iC', createdTime: '2026-05-03T10:00:00Z' }; // ok
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & { updateLastSyncTimestamp: jest.Mock };
+		backend.updateLastSyncTimestamp = jest.fn();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([refC, refA, refB]);
+		backend.fetchScan = jest.fn().mockImplementation(async (ref: { id: string }) => {
+			if (ref.id === 'B') {throw nonRetriable;}
+			return validScan;
+		});
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		// C succeeded but is after B's failure → cursor holds at A, not C.
+		expect(state.lastSyncTimestamp).toBe('2026-05-01T10:00:00Z');
+		expect(backend.updateLastSyncTimestamp).toHaveBeenLastCalledWith('2026-05-01T10:00:00Z');
+	});
+
+	it('keeps the cursor pinned to the earliest of MULTIPLE failures (#2)', async () => {
+		// A and B both fail (A earliest), C succeeds after both → cursor never advances.
+		const refA = { id: 'A', jsonPath: 'jA', imagePath: 'iA', createdTime: '2026-05-01T10:00:00Z' };
+		const refB = { id: 'B', jsonPath: 'jB', imagePath: 'iB', createdTime: '2026-05-02T10:00:00Z' };
+		const refC = { id: 'C', jsonPath: 'jC', imagePath: 'iC', createdTime: '2026-05-03T10:00:00Z' };
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([refA, refB, refC]);
+		backend.fetchScan = jest.fn().mockImplementation(async (ref: { id: string }) => {
+			if (ref.id === 'A' || ref.id === 'B') {throw nonRetriable;}
+			return validScan;
+		});
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(state.lastSyncTimestamp).toBe('');
+	});
+
+	it('ignores a failed ref that has no createdTime for cursor purposes (#2)', async () => {
+		// Folder-backend refs carry no createdTime — a failure there must not touch the cursor.
+		const ref = { id: 'no-ts', jsonPath: 'j', imagePath: 'i' };
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([ref]);
+		backend.fetchScan = jest.fn().mockRejectedValue(nonRetriable);
+
+		const state = new SyncState('2026-01-01T00:00:00Z');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(state.lastSyncTimestamp).toBe('2026-01-01T00:00:00Z');
+		expect(state.pendingCount).toBe(1);
+	});
+
+	it('does not double-advance when two successes share a createdTime (#2 tie)', async () => {
+		const t = '2026-06-01T00:00:00Z';
+		const refA = { id: 'A', jsonPath: 'jA', imagePath: 'iA', createdTime: t };
+		const refB = { id: 'B', jsonPath: 'jB', imagePath: 'iB', createdTime: t };
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([refA, refB]);
+		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(state.lastSyncTimestamp).toBe(t);
+	});
+
+	it('releases the sync lock via finally even when the batch body throws (#12)', async () => {
+		const ref = { id: 'r', jsonPath: 'j', imagePath: 'i', createdTime: '2026-04-12T14:30:00Z' };
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([ref]);
+		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.markSynced = jest.fn().mockResolvedValue(undefined);
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// Force a throw from the tail of the try block (after the sync lock was taken).
+		jest.spyOn(eh, 'resetRetries').mockImplementation(() => { throw new Error('boom in body'); });
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await expect(
+			(engine as unknown as { processBatch(refs: unknown[]): Promise<void> }).processBatch([ref])
+		).rejects.toThrow('boom in body');
+
+		// finally released the lock despite the throw → a future sync isn't deadlocked.
+		expect(state.isSyncing).toBe(false);
 	});
 });

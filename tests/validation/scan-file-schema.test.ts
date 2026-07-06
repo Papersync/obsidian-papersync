@@ -70,4 +70,11 @@ describe('validateScanFile', () => {
 		const result = validateScanFile({ ...validScanFile, synced: 'false' });
 		expect('error' in result).toBe(true);
 	});
+
+	it('rejects a non-ISO createdAt so it never reaches new Date() as garbage (#10)', () => {
+		// A loose z.string() would let this through and yield an "Invalid Date" note
+		// filename with a NaN:NaN time; z.iso.datetime() turns it into a schema_mismatch.
+		const result = validateScanFile({ ...validScanFile, createdAt: 'not-a-real-date' });
+		expect('error' in result).toBe(true);
+	});
 });

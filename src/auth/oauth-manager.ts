@@ -1,4 +1,5 @@
 import { requestUrl, Plugin } from 'obsidian';
+import type { RequestUrlResponse } from 'obsidian';
 import { generateCodeVerifier, computeCodeChallenge } from '@/auth/pkce';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
@@ -253,30 +254,48 @@ export class OAuthManager {
 			grant_type: 'refresh_token',
 		});
 
+		// Use throw:false so a non-2xx never lands in a bare catch that nulls the stored
+		// token: a transient 5xx / network blip must NOT permanently disconnect Drive.
+		let response: RequestUrlResponse;
 		try {
-			const response = await requestUrl({
+			response = await requestUrl({
 				url: GOOGLE_TOKEN_URL,
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body: body.toString(),
+				throw: false,
 			});
-
-			const tokenData = response.json as GoogleTokenResponse;
-			if (!tokenData.access_token) {
-				throw new Error('No access token in refresh response');
-			}
-
-			this.accessToken = tokenData.access_token;
-			this.expiresAt = Date.now() + (tokenData.expires_in ?? 3600) * 1000;
-
-			logger.info('Access token refreshed successfully');
-			return this.accessToken;
-		} catch {
-			this.accessToken = null;
-			this.refreshToken = null;
-			this.onTokenChange?.('');
-			throw createSyncError('token_revoked', 'Refresh token revoked — reconnect in settings');
+		} catch (err) {
+			// A genuine network failure (offline, DNS, reset) is transient — keep the
+			// refresh token so the next attempt can recover.
+			throw createSyncError('network_timeout', `Token refresh network error (${errorMessage(err)})`);
 		}
+
+		if (response.status >= 400) {
+			const errorData = (response.json ?? {}) as GoogleTokenError;
+			// The ONLY definitive "reconnect" signal is invalid_grant (the refresh token
+			// was actually revoked/expired). Every other 4xx/5xx is treated as transient
+			// so a single bad response cannot clear the token and disconnect the user.
+			if ((response.status === 400 || response.status === 401) && errorData.error === 'invalid_grant') {
+				this.accessToken = null;
+				this.refreshToken = null;
+				this.onTokenChange?.('');
+				throw createSyncError('token_revoked', 'Refresh token revoked — reconnect in settings');
+			}
+			throw createSyncError('network_timeout', `Token refresh failed (status ${response.status}); will retry`);
+		}
+
+		const tokenData = response.json as GoogleTokenResponse;
+		if (!tokenData.access_token) {
+			// A 2xx with no access_token is anomalous but transient — keep the token.
+			throw createSyncError('network_timeout', 'Token refresh returned no access token; will retry');
+		}
+
+		this.accessToken = tokenData.access_token;
+		this.expiresAt = Date.now() + (tokenData.expires_in ?? 3600) * 1000;
+
+		logger.info('Access token refreshed successfully');
+		return this.accessToken;
 	}
 
 	private storeTokens(tokens: OAuthTokens): void {

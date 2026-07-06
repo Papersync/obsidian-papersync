@@ -4,7 +4,10 @@ const SUPPORTED_SCHEMA_VERSIONS = ['1'] as const;
 
 export const ScanFileSchema = z.object({
 	version: z.union([z.string(), z.number()]).transform(String),
-	createdAt: z.string(),
+	// Must be a real ISO datetime (the producer emits Date.toISOString()). A loose
+	// z.string() would let a garbage value reach new Date() in note-creator and yield an
+	// "Invalid Date" filename with a NaN:NaN time instead of a clean schema_mismatch.
+	createdAt: z.iso.datetime(),
 	markdown: z.string(),
 	confidence: z.number().int().min(0).max(100),
 	provider: z.string(),

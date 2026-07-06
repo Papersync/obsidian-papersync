@@ -1,3 +1,5 @@
+import * as obsidian from 'obsidian';
+
 import { ErrorHandler } from '@/errors/error-handler';
 import { createSyncError } from '@/errors/sync-error';
 
@@ -115,6 +117,19 @@ describe('ErrorHandler', () => {
 
 			// Verify the no-throw path; the Notice instance is created with the guidance string.
 			expect(() => handler.surface(error)).not.toThrow();
+		});
+
+		it('shows a Notice even for a RETRIABLE error type (no longer silent) (#3)', () => {
+			// surface() runs only terminally — a retriable type that reaches it has exhausted
+			// its retries, so the user must still get a signal instead of silence.
+			// mockImplementation so the spy does not re-invoke the real class constructor.
+			const noticeSpy = jest.spyOn(obsidian, 'Notice').mockImplementation(() => undefined as never);
+			try {
+				handler.surface(createSyncError('network_timeout', 'gave up after retries'));
+				expect(noticeSpy).toHaveBeenCalledWith('Network timeout, retrying shortly', 10_000);
+			} finally {
+				noticeSpy.mockRestore();
+			}
 		});
 	});
 
