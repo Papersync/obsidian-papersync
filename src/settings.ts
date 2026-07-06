@@ -95,7 +95,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	folderPath: '',
 	folderType: '',
 	targetFolder: '',  // resolved on first setup from daily notes config
-	attachmentsFolder: 'attachments/Papersync',
+	attachmentsFolder: '', // empty => Obsidian's own attachment folder
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
 	oauthExpiresAt: 0,
@@ -437,19 +437,29 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		}
 
 		if (this.plugin.settings.downloadImages) {
+			let attachWarn: HTMLElement | null = null;
+			const reservedWikilinkChars = /[#|[\]]/;
+
 			new Setting(containerEl)
 				.setName('Attachments folder')
-				.setDesc('Subfolder in this vault for embedded scan images.')
+				.setDesc('Where scan images are saved. Leave empty to use Obsidian\'s own attachment folder.')
 				.setClass('papersync-sub-setting')
 				.addText((text) =>
 					text
-						.setPlaceholder('attachments/Papersync')
+						.setPlaceholder('Obsidian default')
 						.setValue(this.plugin.settings.attachmentsFolder)
 						.onChange(asyncValueHandler(async (value) => {
 							this.plugin.settings.attachmentsFolder = value;
 							await this.plugin.saveSettings();
+							attachWarn?.toggleClass('is-visible', reservedWikilinkChars.test(value));
 						}))
 				);
+
+			// Warn on wikilink-reserved characters: Obsidian reads them as link syntax, so
+			// the image saves but the ![[ ]] embed never resolves.
+			attachWarn = containerEl.createDiv({ cls: 'papersync-image-warning' });
+			attachWarn.setText('Avoid # | [ ] in the attachments folder. Obsidian reads them as wikilink syntax, so the image embed will not resolve.');
+			attachWarn.toggleClass('is-visible', reservedWikilinkChars.test(this.plugin.settings.attachmentsFolder));
 		}
 
 	}

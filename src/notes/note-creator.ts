@@ -29,16 +29,6 @@ export class NoteCreator {
 		imageData: ArrayBuffer | null,
 		scanId: string
 	): Promise<string> {
-		let imagePath = '';
-		if (this.config.downloadImages && imageData) {
-			imagePath = await saveImageToVault(
-				this.vault,
-				imageData,
-				this.config.attachmentsFolder,
-				scanId
-			);
-		}
-
 		const createdDate = new Date(scanFile.createdAt);
 		const dailyConfig = getDailyNotesConfig(this.app);
 
@@ -70,6 +60,14 @@ export class NoteCreator {
 
 		const existingFile = this.vault.getAbstractFileByPath(notePath);
 		const isAppend = !!existingFile;
+
+		// Save the scan image now that notePath is known (Obsidian's note-relative
+		// attachment mode needs it). Empty imagePath => no embed (stripped below).
+		let imagePath = '';
+		if (this.config.downloadImages && imageData) {
+			const attachmentsFolder = await this.resolveAttachmentsFolder(scanId, notePath);
+			imagePath = await saveImageToVault(this.vault, imageData, attachmentsFolder, scanId);
+		}
 
 		const context: TemplateContext = {
 			ps_scan_date: scanFile.createdAt,
@@ -110,6 +108,25 @@ export class NoteCreator {
 		}
 
 		return notePath;
+	}
+
+	// Where scan images are saved. A user override is used verbatim; otherwise mirror
+	// Obsidian's own attachment location (via the public FileManager API — sanitized and
+	// cross-platform). We reuse our own stable filename below, so take only the directory;
+	// '' means the vault root.
+	private async resolveAttachmentsFolder(scanId: string, notePath: string): Promise<string> {
+		const override = this.config.attachmentsFolder.trim();
+		if (override) {
+			return override;
+		}
+		const obsidianPath = await this.app.fileManager.getAvailablePathForAttachment(
+			`papersync-${scanId}.jpg`,
+			notePath
+		);
+		const dir = obsidianPath.includes('/')
+			? obsidianPath.slice(0, obsidianPath.lastIndexOf('/'))
+			: '';
+		return dir ? normalizePath(dir) : '';
 	}
 
 	private async ensureFolderExists(folderPath: string): Promise<void> {

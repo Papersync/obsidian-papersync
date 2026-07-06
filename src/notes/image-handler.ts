@@ -9,9 +9,13 @@ export async function saveImageToVault(
 ): Promise<string> {
 	const folderPath = attachmentsFolder;
 	const fileName = `papersync-${scanId}.jpg`;
-	const filePath = `${folderPath}/${fileName}`;
+	// An empty folder means the vault root: save the file there with no leading slash and
+	// no folder to create.
+	const filePath = folderPath ? `${folderPath}/${fileName}` : fileName;
 
-	await ensureFolderExists(vault, folderPath);
+	if (folderPath) {
+		await ensureFolderExists(vault, folderPath);
+	}
 
 	const existing = vault.getAbstractFileByPath(filePath);
 	if (existing) {

@@ -232,6 +232,50 @@ describe('NoteCreator', () => {
 		expect(mockVault.create).not.toHaveBeenCalled();
 	});
 
+	it('defaults attachments to Obsidian\'s own attachment folder (no extra subfolder)', async () => {
+		const getAvailablePathForAttachment = jest
+			.fn()
+			.mockResolvedValue('vault-attachments/papersync-x.jpg');
+		const app = {
+			internalPlugins: { getPluginById: () => null },
+			fileManager: { getAvailablePathForAttachment },
+		};
+		const c = new NoteCreator(
+			{ ...app, vault: mockVault } as any,
+			mockVault as any,
+			{ ...defaultConfig, attachmentsFolder: '' }
+		);
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-att');
+
+		expect(getAvailablePathForAttachment).toHaveBeenCalledWith('papersync-scan-att.jpg', 'PaperSync/2026-04-12.md');
+		expect(mockVault.createBinary).toHaveBeenCalledWith(
+			'vault-attachments/papersync-scan-att.jpg',
+			expect.any(ArrayBuffer)
+		);
+	});
+
+	it('saves at the vault root when Obsidian returns a bare filename', async () => {
+		const getAvailablePathForAttachment = jest.fn().mockResolvedValue('papersync-y.jpg');
+		const app = {
+			internalPlugins: { getPluginById: () => null },
+			fileManager: { getAvailablePathForAttachment },
+		};
+		const c = new NoteCreator(
+			{ ...app, vault: mockVault } as any,
+			mockVault as any,
+			{ ...defaultConfig, attachmentsFolder: '' }
+		);
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-root-att');
+
+		// No folder prefix, no leading slash, no folder creation for the root case.
+		expect(mockVault.createBinary).toHaveBeenCalledWith(
+			'papersync-scan-root-att.jpg',
+			expect.any(ArrayBuffer)
+		);
+	});
+
 	it('renders 12:MM AM at midnight (covers h24 % 12 || 12 fallback)', async () => {
 		const scan = makeScanFile({ createdAt: '2026-04-12T00:15:00.000Z' });
 		// Local timezone-dependent; rely on the formatter producing 12:* AM or PM
