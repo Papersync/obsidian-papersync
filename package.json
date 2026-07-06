@@ -23,6 +23,10 @@
 		"icloud"
 	],
 	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/Papersync/obsidian-papersync.git"
+	},
 	"devDependencies": {
 		"@eslint/js": "9.39.4",
 		"@types/jest": "^30.0.0",

@@ -12,7 +12,7 @@ describe('Settings tab', function () {
 	let isConnected: boolean;
 
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+		await browser.executeObsidianCommand('papersync:open-settings');
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
@@ -138,7 +138,7 @@ describe('Settings tab', function () {
 		// Google auth or Folder setupComplete.
 		await browser.execute(async () => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void>; oauthManager?: { disconnect: () => void } }> } } }).app;
-			const plugin = app.plugins.plugins['obsidian-papersync'];
+			const plugin = app.plugins.plugins['papersync'];
 			if (!plugin) { throw new Error('Plugin not loaded'); }
 
 			// Set the half-state: drive intent without authentication.
@@ -155,7 +155,7 @@ describe('Settings tab', function () {
 		});
 
 		// Re-open settings so display() re-runs with the half-state.
-		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+		await browser.executeObsidianCommand('papersync:open-settings');
 		await browser.pause(800);
 
 		const body = await browser.$('body');

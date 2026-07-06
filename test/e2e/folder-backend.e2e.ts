@@ -1,6 +1,6 @@
 describe('Folder backend settings', function () {
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+		await browser.executeObsidianCommand('papersync:open-settings');
 		await browser.pause(1000);
 	});
 

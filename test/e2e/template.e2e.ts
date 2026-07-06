@@ -10,7 +10,7 @@ describe('Template editor', function () {
 	let isConnected: boolean;
 
 	before(async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+		await browser.executeObsidianCommand('papersync:open-settings');
 		await browser.pause(1000);
 		const body = await browser.$('body');
 		const text = await body.getText();
@@ -23,7 +23,7 @@ describe('Template editor', function () {
 			this.skip();
 			return;
 		}
-		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+		await browser.executeObsidianCommand('papersync:open-settings');
 		await browser.pause(1000);
 		await clickTab('Template');
 	});

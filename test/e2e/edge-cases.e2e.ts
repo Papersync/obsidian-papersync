@@ -1,9 +1,9 @@
 describe('Edge cases and error handling', function () {
 	it('survives rapid sync now clicks', async function () {
 		// Fire sync command 3 times rapidly — should not crash
-		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
-		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
-		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
+		await browser.executeObsidianCommand('papersync:sync-now');
+		await browser.executeObsidianCommand('papersync:sync-now');
+		await browser.executeObsidianCommand('papersync:sync-now');
 		await browser.pause(2000);
 
 		// Plugin should still be functional
@@ -14,7 +14,7 @@ describe('Edge cases and error handling', function () {
 
 	it('survives opening and closing settings rapidly', async function () {
 		for (let i = 0; i < 5; i++) {
-			await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+			await browser.executeObsidianCommand('papersync:open-settings');
 			await browser.pause(200);
 			await browser.keys('Escape');
 			await browser.pause(200);
@@ -26,7 +26,7 @@ describe('Edge cases and error handling', function () {
 	});
 
 	it('handles settings reset without crashing', async function () {
-		await browser.executeObsidianCommand('obsidian-papersync:open-settings');
+		await browser.executeObsidianCommand('papersync:open-settings');
 		await browser.pause(1000);
 
 		// Reset lives under the Advanced tab now; activate it (no-op if not connected).
@@ -78,7 +78,7 @@ describe('Edge cases and error handling', function () {
 	it('handles missing DEV commands gracefully in production', async function () {
 		// DEV_MODE is false in production builds — command won't exist
 		try {
-			await browser.executeObsidianCommand('obsidian-papersync:papersync-dev-fake-scan');
+			await browser.executeObsidianCommand('papersync:dev-fake-scan');
 		} catch {
 			// Expected — command doesn't exist in production
 		}

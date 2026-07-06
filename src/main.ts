@@ -59,7 +59,7 @@ export default class PaperSyncPlugin extends Plugin {
 
 		if (DEV_MODE) {
 			this.addCommand({
-				id: 'papersync-dev-fake-scan',
+				id: 'dev-fake-scan',
 				name: 'DEV: Add fake scan to Drive',
 				callback: () => {
 					if (!this.oauthManager?.isAuthenticated) {

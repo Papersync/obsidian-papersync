@@ -26,7 +26,7 @@ describe('Sync pipeline E2E', function () {
 		// Configure plugin to use iCloud backend pointing to our test folder
 		await browser.execute(async (folder: string) => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void>; startSync: () => Promise<void> }> } } }).app;
-			const plugin = app.plugins.plugins['obsidian-papersync'];
+			const plugin = app.plugins.plugins['papersync'];
 			if (!plugin) { throw new Error('Plugin not loaded'); }
 
 			plugin.settings.backendType = 'folder';
@@ -83,7 +83,7 @@ describe('Sync pipeline E2E', function () {
 		await browser.pause(3000);
 
 		// Trigger manual sync in case watcher didn't fire
-		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
+		await browser.executeObsidianCommand('papersync:sync-now');
 		await browser.pause(3000);
 
 		// Verify the note was created in the vault
@@ -182,7 +182,7 @@ describe('Sync pipeline E2E', function () {
 		fs.writeFileSync(path.join(scansFolderPath, `${pngId}.png`), placeholderPng);
 
 		await browser.pause(3000);
-		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
+		await browser.executeObsidianCommand('papersync:sync-now');
 		await browser.pause(3000);
 
 		const noteContent = await browser.execute(async () => {
@@ -231,7 +231,7 @@ describe('Sync pipeline E2E', function () {
 		);
 
 		await browser.pause(3000);
-		await browser.executeObsidianCommand('obsidian-papersync:sync-now');
+		await browser.executeObsidianCommand('papersync:sync-now');
 		await browser.pause(3000);
 
 		const noteContent = await browser.execute(async () => {
