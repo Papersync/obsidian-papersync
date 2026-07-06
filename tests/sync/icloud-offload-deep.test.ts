@@ -1,32 +1,6 @@
 import { Platform } from 'obsidian';
 
-import { probeOffloadState, triggerICloudDownload } from '@/sync/icloud-offload';
-
-describe('probeOffloadState (non-iCloud / non-macOS paths)', () => {
-	beforeEach(() => {
-		(Platform as { isMacOS: boolean }).isMacOS = false;
-	});
-
-	it('returns {offloaded:false} for paths outside the iCloud container', () => {
-		(Platform as { isMacOS: boolean }).isMacOS = true;
-		expect(probeOffloadState('/Users/me/Documents/scan.json')).toEqual({ offloaded: false });
-	});
-
-	it('returns {offloaded:false} on non-macOS regardless of path shape', () => {
-		expect(
-			probeOffloadState('/Users/me/Library/Mobile Documents/com~apple~CloudDocs/scan.json')
-		).toEqual({ offloaded: false });
-	});
-
-	it('returns {offloaded:false} when execSync throws (xattr unavailable)', () => {
-		// On the jest jsdom platform there's no brctl/xattr — execSync will throw,
-		// which the implementation catches and returns offloaded:false.
-		(Platform as { isMacOS: boolean }).isMacOS = true;
-		expect(
-			probeOffloadState('/Users/test/Library/Mobile Documents/com~apple~CloudDocs/scan.json')
-		).toEqual({ offloaded: false });
-	});
-});
+import { triggerICloudDownload } from '@/sync/icloud-offload';
 
 describe('triggerICloudDownload (non-macOS short-circuit)', () => {
 	beforeEach(() => {

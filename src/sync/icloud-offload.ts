@@ -1,5 +1,6 @@
 import { Platform } from 'obsidian';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { logger } from '@/utils/logger';
 
 const ICLOUD_CONTAINER_PREFIX_MACOS = '/Library/Mobile Documents/';
@@ -13,34 +14,6 @@ export function isICloudPath(filePath: string): boolean {
 }
 
 /**
- * Probes whether a file is iCloud-offloaded (placeholder only, not materialized locally).
- * Returns `{ offloaded: false }` immediately on non-macOS or non-iCloud paths.
- */
-export function probeOffloadState(filePath: string): { offloaded: boolean } {
-	if (!isICloudPath(filePath)) {
-		return { offloaded: false };
-	}
-
-	try {
-		const result = execSync(
-			`brctl download "${filePath}" 2>/dev/null; xattr -p com.apple.metadata:com_apple_clouddocs_state "${filePath}" 2>/dev/null`,
-			{ encoding: 'utf-8', timeout: 5000 }
-		).trim();
-
-		// State value 3 = fully downloaded, anything else may be offloaded
-		// If xattr is empty or absent, assume not offloaded (local file)
-		if (!result) {return { offloaded: false };}
-
-		// The raw xattr output is a binary plist; a non-empty result with the xattr present
-		// means iCloud is managing this file. We check if the file is readable to determine state.
-		return { offloaded: false };
-	} catch {
-		// xattr not available or file not in iCloud container — not offloaded
-		return { offloaded: false };
-	}
-}
-
-/**
  * Attempts to trigger iCloud to download an offloaded file by invoking `brctl download`.
  * Returns true if the file appears materialized after the attempt, false otherwise.
  */
@@ -51,9 +24,13 @@ export async function triggerICloudDownload(filePath: string, timeoutMs = 30000)
 	logger.info(`File offloaded — triggering iCloud download: ${filename}`);
 
 	try {
-		execSync(`brctl download "${filePath}"`, { timeout: 5000 });
+		// execFile (not execSync/`sh -c`) so the file path is passed as a single argv
+		// element — shell metacharacters in a filename can never be interpreted. Promisify
+		// at call time (not module load) so the module never crashes if child_process is
+		// mocked without execFile, and the mock is resolved deterministically per call.
+		await promisify(execFile)('brctl', ['download', filePath], { timeout: 5000 });
 	} catch {
-		// brctl may not be available; try reading as fallback to trigger download
+		// brctl may not be available; fall through to the read-poll fallback below.
 	}
 
 	// Poll until the file is readable with non-zero content, or timeout
