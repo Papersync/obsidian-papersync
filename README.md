@@ -8,9 +8,12 @@
 <p align="center">
   <a href="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml"><img alt="CI" src="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml/badge.svg"></a>
   <img alt="Coverage 100%" src="https://img.shields.io/badge/coverage-100%25-brightgreen">
+  <a href="https://github.com/Papersync/obsidian-papersync/releases/latest"><img alt="Version" src="https://img.shields.io/github/manifest-json/v/Papersync/obsidian-papersync?label=version"></a>
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Obsidian 1.11.4+" src="https://img.shields.io/badge/Obsidian-1.11.4%2B-7c3aed">
   <img alt="Desktop" src="https://img.shields.io/badge/platform-desktop-lightgrey">
+  <!-- After community-registry approval, add the official download count:
+  <img alt="Obsidian downloads" src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=7c3aed&label=downloads&query=$['obsidian-papersync'].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json"> -->
 </p>
 
 <p align="center">
