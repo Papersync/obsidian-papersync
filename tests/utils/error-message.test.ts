@@ -23,4 +23,26 @@ describe('errorMessage', () => {
 		expect(errorMessage({})).toBe('[object Object]');
 		expect(errorMessage({ message: 42 })).toBe('[object Object]');
 	});
+
+	it('falls through to String() for an empty-string message (never surfaces a blank notice)', () => {
+		expect(errorMessage({ message: '' })).toBe('[object Object]');
+	});
+
+	it('degrades to Unknown error when the message getter itself throws', () => {
+		const hostile = {
+			get message(): string {
+				throw new Error('gotcha');
+			},
+		};
+		expect(errorMessage(hostile)).toBe('Unknown error');
+	});
+
+	it('degrades to Unknown error for a null-prototype object (String() throws on it)', () => {
+		expect(errorMessage(Object.create(null))).toBe('Unknown error');
+	});
+
+	it('still surfaces a valid message carried by a null-prototype object', () => {
+		const err = Object.assign(Object.create(null) as Record<string, unknown>, { message: 'still readable' });
+		expect(errorMessage(err)).toBe('still readable');
+	});
 });
