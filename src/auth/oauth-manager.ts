@@ -7,14 +7,11 @@ import { createSyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
 import * as http from 'http';
 
-import { OAUTH_TIMEOUT_MS, GOOGLE_CLIENT_SECRET, DEFAULT_GOOGLE_ENDPOINTS } from '@/config';
-import type { GoogleEndpoints } from '@/config';
+import { OAUTH_TIMEOUT_MS, GOOGLE_CLIENT_SECRET } from '@/config';
+import { resolveGoogleEndpoint } from '@/google-endpoints';
+import type { GoogleEndpointsSupplier } from '@/google-endpoints';
 
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-
-// Resolved at CALL time (not construction) because the OAuthManager is built at
-// plugin load, before an E2E spec has any chance to write settings.endpointOverrides.
-export type GoogleEndpointsSupplier = () => Partial<GoogleEndpoints> | undefined;
 
 export interface OAuthTokens {
 	accessToken: string;
@@ -53,8 +50,11 @@ export class OAuthManager {
 		this.endpointsSupplier = endpointsSupplier;
 	}
 
+	// Resolved at CALL time (the manager is built at plugin load, before an E2E spec
+	// can write settings.endpointOverrides) through the shared loopback-gated resolver
+	// (non-loopback / malformed / empty overrides fall back to production defaults).
 	private endpoint(key: 'authUrl' | 'tokenUrl'): string {
-		return this.endpointsSupplier?.()?.[key] ?? DEFAULT_GOOGLE_ENDPOINTS[key];
+		return resolveGoogleEndpoint(key, this.endpointsSupplier?.());
 	}
 
 	get isAuthenticated(): boolean {

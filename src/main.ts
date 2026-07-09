@@ -106,6 +106,11 @@ export default class PaperSyncPlugin extends Plugin {
 		const loaded = await this.loadData();
 		if (loaded && typeof loaded === 'object') {
 			const raw = loaded as Record<string, unknown>;
+			// The endpointOverrides seam is runtime-injected by E2E only — never honor a
+			// persisted copy across a plugin load. Stripping it here (in memory; no
+			// re-persist needed) makes a stale or tampered data.json self-heal instead of
+			// steering OAuth/Drive traffic at whatever host the file names.
+			delete raw.endpointOverrides;
 			const versionBefore = raw.settingsVersion;
 			const migrated = migrateSettings(raw);
 			this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated as Partial<PluginSettings>);
@@ -184,7 +189,10 @@ export default class PaperSyncPlugin extends Plugin {
 		};
 
 		if (this.settings.backendType === 'drive' && this.oauthManager?.isAuthenticated) {
-			const backend = new DriveBackend(this.oauthManager, this.settings.drivePollInterval, this.settings.lastSyncTimestamp, this.settings.endpointOverrides);
+			// Same call-time supplier as OAuthManager gets in initAsync, so the token and
+			// Drive legs of a sync can never resolve against two different snapshots of
+			// the endpoint seam.
+			const backend = new DriveBackend(this.oauthManager, this.settings.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
 			this.syncEngine = new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState);
 			this.syncEngine.start();
 			logger.info('Drive sync started');

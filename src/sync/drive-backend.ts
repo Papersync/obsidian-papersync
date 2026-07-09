@@ -8,8 +8,9 @@ import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
-import { GOOGLE_SCANS_FOLDER, DEFAULT_GOOGLE_ENDPOINTS } from '@/config';
-import type { GoogleEndpoints } from '@/config';
+import { GOOGLE_SCANS_FOLDER } from '@/config';
+import { resolveGoogleEndpoint } from '@/google-endpoints';
+import type { GoogleEndpointsSupplier } from '@/google-endpoints';
 
 interface DriveFile {
 	id: string;
@@ -28,22 +29,27 @@ export class DriveBackend implements SyncBackend {
 	private intervalId: number | null = null;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 	private lastSyncTimestamp: string;
-	// DriveBackend is constructed per-sync inside startSync() (after any E2E spec
-	// has written settings.endpointOverrides), so constructor snapshots suffice here.
-	private readonly apiBase: string;
-	private readonly uploadBase: string;
+	// Same call-time supplier form as OAuthManager (main.ts hands the SAME supplier
+	// to both), so OAuth and Drive can never split-brain across two snapshots of the
+	// endpoint seam (token grant to one host, Drive calls to another).
+	private endpointsSupplier: GoogleEndpointsSupplier | undefined;
 
 	constructor(
 		oauthManager: OAuthManager,
 		pollIntervalSeconds: number,
 		lastSyncTimestamp?: string,
-		endpoints?: Partial<GoogleEndpoints>
+		endpointsSupplier?: GoogleEndpointsSupplier
 	) {
 		this.oauthManager = oauthManager;
 		this.pollIntervalMs = pollIntervalSeconds * 1000;
 		this.lastSyncTimestamp = lastSyncTimestamp ?? '';
-		this.apiBase = endpoints?.driveApiBase ?? DEFAULT_GOOGLE_ENDPOINTS.driveApiBase;
-		this.uploadBase = endpoints?.driveUploadBase ?? DEFAULT_GOOGLE_ENDPOINTS.driveUploadBase;
+		this.endpointsSupplier = endpointsSupplier;
+	}
+
+	// Resolved at CALL time through the shared loopback-gated resolver (non-loopback /
+	// malformed / empty overrides fall back to production defaults).
+	private endpoint(key: 'driveApiBase' | 'driveUploadBase'): string {
+		return resolveGoogleEndpoint(key, this.endpointsSupplier?.());
 	}
 
 	// Wraps requestUrl so a failed Drive call surfaces Google's real error message
@@ -121,7 +127,7 @@ export class DriveBackend implements SyncBackend {
 		let pageToken: string | undefined;
 
 		do {
-			let url = `${this.apiBase}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime),nextPageToken&orderBy=createdTime&pageSize=100`;
+			let url = `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime),nextPageToken&orderBy=createdTime&pageSize=100`;
 			if (pageToken) {
 				url += `&pageToken=${encodeURIComponent(pageToken)}`;
 			}
@@ -168,7 +174,7 @@ export class DriveBackend implements SyncBackend {
 		const token = await this.oauthManager.getValidAccessToken();
 
 		const response = await this.driveRequest({
-			url: `${this.apiBase}/files/${ref.jsonPath}?alt=media`,
+			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
@@ -190,7 +196,7 @@ export class DriveBackend implements SyncBackend {
 		const token = await this.oauthManager.getValidAccessToken();
 
 		const response = await this.driveRequest({
-			url: `${this.apiBase}/files/${ref.imagePath}?alt=media`,
+			url: `${this.endpoint('driveApiBase')}/files/${ref.imagePath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
@@ -204,14 +210,14 @@ export class DriveBackend implements SyncBackend {
 		// and coerces types e.g. version number->string) so the PATCH round-trips every
 		// original field untouched. Mirrors FolderBackend.markSynced.
 		const response = await this.driveRequest({
-			url: `${this.apiBase}/files/${ref.jsonPath}?alt=media`,
+			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
 		const raw = (response.json ?? {}) as Record<string, unknown>;
 		raw.synced = true;
 
 		await this.driveRequest({
-			url: `${this.uploadBase}/files/${ref.jsonPath}?uploadType=media`,
+			url: `${this.endpoint('driveUploadBase')}/files/${ref.jsonPath}?uploadType=media`,
 			method: 'PATCH',
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -234,7 +240,7 @@ export class DriveBackend implements SyncBackend {
 		for (const part of parts) {
 			const query = `name = '${part}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
 			const response = await this.driveRequest({
-				url: `${this.apiBase}/files?q=${encodeURIComponent(query)}&fields=files(id)`,
+				url: `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id)`,
 				headers: { Authorization: `Bearer ${token}` },
 			});
 

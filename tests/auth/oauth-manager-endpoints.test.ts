@@ -1,7 +1,9 @@
 // Endpoint-override seam: the OAuthManager resolves its auth/token URLs through a
-// call-time supplier. With no supplier (or a supplier yielding nothing) every URL
-// must be byte-identical to today's hardcoded Google values; with an override the
-// override wins. Each `??`/`?.` branch of endpoint() is covered here.
+// call-time supplier feeding the shared loopback-gated resolver. With no supplier
+// (or a supplier yielding nothing) every URL must be byte-identical to today's
+// hardcoded Google values; a loopback override wins; anything non-loopback, empty,
+// or malformed is ignored (the resolver's own branch matrix lives in
+// tests/google-endpoints.test.ts — here we prove the wiring through the manager).
 
 import { requestUrl } from 'obsidian';
 import type { Plugin } from 'obsidian';
@@ -98,6 +100,16 @@ describe('OAuthManager endpoint resolution', () => {
 		const mgr = new OAuthManager(makePlugin(), 'client-id', () => ({ authUrl: 'http://127.0.0.1:9/fake-auth' }));
 		const url = await authUrlFor(mgr);
 		expect(url.startsWith('http://127.0.0.1:9/fake-auth?')).toBe(true);
+	});
+
+	it('ignores a non-loopback override and falls back to the production URL (credential-redirect hardening)', async () => {
+		const mgr = new OAuthManager(makePlugin(), 'client-id', () => ({ tokenUrl: 'https://attacker.example.com/token' }));
+		expect(await refreshUrlFor(mgr)).toBe(DEFAULT_GOOGLE_ENDPOINTS.tokenUrl);
+	});
+
+	it('ignores an empty-string override instead of throwing on new URL("")', async () => {
+		const mgr = new OAuthManager(makePlugin(), 'client-id', () => ({ tokenUrl: '' }));
+		expect(await refreshUrlFor(mgr)).toBe(DEFAULT_GOOGLE_ENDPOINTS.tokenUrl);
 	});
 
 	it('resolves the supplier at CALL time, not construction time', async () => {

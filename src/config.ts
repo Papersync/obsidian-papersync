@@ -4,7 +4,9 @@ export const GOOGLE_CLIENT_SECRET = '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';
 
 // The four Google endpoints the plugin talks to. Overridable via the undocumented
 // `endpointOverrides` settings seam (E2E-only — no UI ever writes it); with no
-// override every URL resolves to these production values.
+// override every URL resolves to these production values. Overrides are honored
+// only for loopback URLs and never survive a plugin load — see
+// src/google-endpoints.ts (resolver) and main.ts loadSettings (strip-on-load).
 export interface GoogleEndpoints {
 	authUrl: string;
 	tokenUrl: string;
