@@ -7,11 +7,14 @@ import { createSyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
 import * as http from 'http';
 
-import { OAUTH_TIMEOUT_MS, GOOGLE_CLIENT_SECRET } from '@/config';
+import { OAUTH_TIMEOUT_MS, GOOGLE_CLIENT_SECRET, DEFAULT_GOOGLE_ENDPOINTS } from '@/config';
+import type { GoogleEndpoints } from '@/config';
 
-const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
-const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
+// Resolved at CALL time (not construction) because the OAuthManager is built at
+// plugin load, before an E2E spec has any chance to write settings.endpointOverrides.
+export type GoogleEndpointsSupplier = () => Partial<GoogleEndpoints> | undefined;
 
 export interface OAuthTokens {
 	accessToken: string;
@@ -42,10 +45,16 @@ export class OAuthManager {
 	// window.setTimeout returns a DOM number (obsidianmd/prefer-window-timers).
 	private authTimeout: number | null = null;
 	private onTokenChange: ((token: string) => void) | null = null;
+	private endpointsSupplier: GoogleEndpointsSupplier | undefined;
 
-	constructor(plugin: Plugin, clientId: string) {
+	constructor(plugin: Plugin, clientId: string, endpointsSupplier?: GoogleEndpointsSupplier) {
 		this.plugin = plugin;
 		this.clientId = clientId;
+		this.endpointsSupplier = endpointsSupplier;
+	}
+
+	private endpoint(key: 'authUrl' | 'tokenUrl'): string {
+		return this.endpointsSupplier?.()?.[key] ?? DEFAULT_GOOGLE_ENDPOINTS[key];
 	}
 
 	get isAuthenticated(): boolean {
@@ -77,7 +86,7 @@ export class OAuthManager {
 
 		const { port, redirectUri } = await this.startCallbackServer(verifier);
 
-		const authUrl = new URL(GOOGLE_AUTH_URL);
+		const authUrl = new URL(this.endpoint('authUrl'));
 		authUrl.searchParams.set('client_id', this.clientId);
 		authUrl.searchParams.set('redirect_uri', redirectUri);
 		authUrl.searchParams.set('response_type', 'code');
@@ -205,7 +214,7 @@ export class OAuthManager {
 		let tokenData: GoogleTokenResponse;
 		try {
 			const response = await requestUrl({
-				url: GOOGLE_TOKEN_URL,
+				url: this.endpoint('tokenUrl'),
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body: body.toString(),
@@ -273,7 +282,7 @@ export class OAuthManager {
 		let response: RequestUrlResponse;
 		try {
 			response = await requestUrl({
-				url: GOOGLE_TOKEN_URL,
+				url: this.endpoint('tokenUrl'),
 				method: 'POST',
 				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
 				body: body.toString(),

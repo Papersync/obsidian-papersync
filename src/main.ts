@@ -122,7 +122,9 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	private async initAsync(): Promise<void> {
-		this.oauthManager = new OAuthManager(this, GOOGLE_CLIENT_ID);
+		// The endpoints supplier is resolved at call time: OAuthManager is built at
+		// plugin load, before the E2E seam (settings.endpointOverrides) can be written.
+		this.oauthManager = new OAuthManager(this, GOOGLE_CLIENT_ID, () => this.settings.endpointOverrides);
 		this.oauthManager.setOnTokenChange((token) => {
 			this.settings.oauthRefreshToken = token;
 			void this.saveSettings();
@@ -182,7 +184,7 @@ export default class PaperSyncPlugin extends Plugin {
 		};
 
 		if (this.settings.backendType === 'drive' && this.oauthManager?.isAuthenticated) {
-			const backend = new DriveBackend(this.oauthManager, this.settings.drivePollInterval, this.settings.lastSyncTimestamp);
+			const backend = new DriveBackend(this.oauthManager, this.settings.drivePollInterval, this.settings.lastSyncTimestamp, this.settings.endpointOverrides);
 			this.syncEngine = new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState);
 			this.syncEngine.start();
 			logger.info('Drive sync started');

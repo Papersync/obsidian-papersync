@@ -8,6 +8,7 @@ import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
+import type { GoogleEndpoints } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
 // so the preview is stable and never depends on real vault state.
@@ -75,6 +76,11 @@ export interface PluginSettings {
 	oauthRefreshToken: string;
 	lastSyncTimestamp: string;
 	lastSyncAt: number;
+	// Undocumented test seam: overrides for the Google OAuth/Drive endpoints.
+	// Absent in DEFAULT_SETTINGS, never written by any UI path, no settings-UI
+	// control. E2E specs set it at runtime to point the REAL OAuth + Drive flow
+	// at an in-repo fake server (test/e2e/fake-google.ts).
+	endpointOverrides?: Partial<GoogleEndpoints>;
 }
 
 const DEFAULT_TEMPLATE = `{{ps_separator}}

@@ -5,6 +5,7 @@
 
 jest.mock('http');
 jest.mock('@/config', () => ({
+	...jest.requireActual('@/config'),
 	OAUTH_TIMEOUT_MS: 50,
 	GOOGLE_CLIENT_SECRET: 'test-secret',
 }));

@@ -8,10 +8,8 @@ import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
-import { GOOGLE_SCANS_FOLDER } from '@/config';
-
-const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
-const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
+import { GOOGLE_SCANS_FOLDER, DEFAULT_GOOGLE_ENDPOINTS } from '@/config';
+import type { GoogleEndpoints } from '@/config';
 
 interface DriveFile {
 	id: string;
@@ -30,11 +28,22 @@ export class DriveBackend implements SyncBackend {
 	private intervalId: number | null = null;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 	private lastSyncTimestamp: string;
+	// DriveBackend is constructed per-sync inside startSync() (after any E2E spec
+	// has written settings.endpointOverrides), so constructor snapshots suffice here.
+	private readonly apiBase: string;
+	private readonly uploadBase: string;
 
-	constructor(oauthManager: OAuthManager, pollIntervalSeconds: number, lastSyncTimestamp?: string) {
+	constructor(
+		oauthManager: OAuthManager,
+		pollIntervalSeconds: number,
+		lastSyncTimestamp?: string,
+		endpoints?: Partial<GoogleEndpoints>
+	) {
 		this.oauthManager = oauthManager;
 		this.pollIntervalMs = pollIntervalSeconds * 1000;
 		this.lastSyncTimestamp = lastSyncTimestamp ?? '';
+		this.apiBase = endpoints?.driveApiBase ?? DEFAULT_GOOGLE_ENDPOINTS.driveApiBase;
+		this.uploadBase = endpoints?.driveUploadBase ?? DEFAULT_GOOGLE_ENDPOINTS.driveUploadBase;
 	}
 
 	// Wraps requestUrl so a failed Drive call surfaces Google's real error message
@@ -112,7 +121,7 @@ export class DriveBackend implements SyncBackend {
 		let pageToken: string | undefined;
 
 		do {
-			let url = `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime),nextPageToken&orderBy=createdTime&pageSize=100`;
+			let url = `${this.apiBase}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime),nextPageToken&orderBy=createdTime&pageSize=100`;
 			if (pageToken) {
 				url += `&pageToken=${encodeURIComponent(pageToken)}`;
 			}
@@ -159,7 +168,7 @@ export class DriveBackend implements SyncBackend {
 		const token = await this.oauthManager.getValidAccessToken();
 
 		const response = await this.driveRequest({
-			url: `${DRIVE_API_BASE}/files/${ref.jsonPath}?alt=media`,
+			url: `${this.apiBase}/files/${ref.jsonPath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
@@ -181,7 +190,7 @@ export class DriveBackend implements SyncBackend {
 		const token = await this.oauthManager.getValidAccessToken();
 
 		const response = await this.driveRequest({
-			url: `${DRIVE_API_BASE}/files/${ref.imagePath}?alt=media`,
+			url: `${this.apiBase}/files/${ref.imagePath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
@@ -195,14 +204,14 @@ export class DriveBackend implements SyncBackend {
 		// and coerces types e.g. version number->string) so the PATCH round-trips every
 		// original field untouched. Mirrors FolderBackend.markSynced.
 		const response = await this.driveRequest({
-			url: `${DRIVE_API_BASE}/files/${ref.jsonPath}?alt=media`,
+			url: `${this.apiBase}/files/${ref.jsonPath}?alt=media`,
 			headers: { Authorization: `Bearer ${token}` },
 		});
 		const raw = (response.json ?? {}) as Record<string, unknown>;
 		raw.synced = true;
 
 		await this.driveRequest({
-			url: `${DRIVE_UPLOAD_BASE}/files/${ref.jsonPath}?uploadType=media`,
+			url: `${this.uploadBase}/files/${ref.jsonPath}?uploadType=media`,
 			method: 'PATCH',
 			headers: {
 				Authorization: `Bearer ${token}`,
@@ -225,7 +234,7 @@ export class DriveBackend implements SyncBackend {
 		for (const part of parts) {
 			const query = `name = '${part}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
 			const response = await this.driveRequest({
-				url: `${DRIVE_API_BASE}/files?q=${encodeURIComponent(query)}&fields=files(id)`,
+				url: `${this.apiBase}/files?q=${encodeURIComponent(query)}&fields=files(id)`,
 				headers: { Authorization: `Bearer ${token}` },
 			});
 
