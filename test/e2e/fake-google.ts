@@ -44,6 +44,11 @@ interface TokenFault {
 	body: Record<string, unknown>;
 }
 
+interface PageSnapshot {
+	files: Array<{ id: string; name: string; createdTime: string }>;
+	offset: number;
+}
+
 function s256(verifier: string): string {
 	return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
@@ -74,6 +79,10 @@ export class FakeGoogle {
 	private refreshTokens = new Set<string>();
 	private files = new Map<string, DriveNode>();
 	private nextTokenFault: TokenFault | null = null;
+	// Page tokens reference a snapshot of the result set taken at the FIRST page, so
+	// a seed landing mid-pagination can never skip or duplicate entries the way a
+	// bare mutable offset would.
+	private pageTokens = new Map<string, PageSnapshot>();
 	private seq = 0;
 
 	get origin(): string {
@@ -108,6 +117,9 @@ export class FakeGoogle {
 
 	async stop(): Promise<void> {
 		if (!this.server) { return; }
+		// close() only resolves once every keep-alive connection drains — sever them
+		// so stop() can never hang the suite teardown.
+		this.server.closeAllConnections?.();
 		await new Promise<void>((resolve) => this.server!.close(() => resolve()));
 		this.server = null;
 	}
@@ -117,6 +129,22 @@ export class FakeGoogle {
 	/** Fail the NEXT /token request (any grant) with a canned status + body. */
 	failNextTokenRequest(status: number, body: Record<string, unknown>): void {
 		this.nextTokenFault = { status, body };
+	}
+
+	/**
+	 * Drop any armed-but-unconsumed fault. afterEach hygiene: a fault stranded by a
+	 * failed test (mocha retries re-run it) would otherwise poison the next token
+	 * request that happens to arrive.
+	 */
+	clearFaults(): void {
+		this.nextTokenFault = null;
+	}
+
+	/** Mint a refresh token the fake accepts, for specs that seed a connected state directly. */
+	issueRefreshToken(): string {
+		const token = `refresh-${crypto.randomBytes(12).toString('hex')}`;
+		this.refreshTokens.add(token);
+		return token;
 	}
 
 	clearRequests(): void {
@@ -186,13 +214,29 @@ export class FakeGoogle {
 	private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
 		const chunks: Buffer[] = [];
 		req.on('data', (c: Buffer) => chunks.push(c));
+		// A client abort mid-request emits 'error'; without a listener node throws
+		// and takes the whole wdio worker down with it.
+		req.on('error', () => { /* aborted request — nothing to serve or record */ });
 		req.on('end', () => {
 			const body = Buffer.concat(chunks);
 			const url = new URL(req.url ?? '/', this.origin);
 			const query: Record<string, string> = {};
 			url.searchParams.forEach((v, k) => { query[k] = v; });
 
-			const status = this.route(req, res, url.pathname, query, body);
+			// A handler bug must ANSWER the plugin's request (not hang it until the
+			// spec times out): degrade to a Google-shaped 500 and still record it.
+			let status: number;
+			try {
+				status = this.route(req, res, url.pathname, query, body);
+			} catch (err) {
+				const message = err instanceof Error ? err.message : String(err);
+				if (res.headersSent) {
+					res.end();
+					status = 500;
+				} else {
+					status = sendDriveError(res, 500, `fake-google internal error: ${message}`, 'INTERNAL');
+				}
+			}
 
 			this.requests.push({
 				method: req.method ?? '',
@@ -270,8 +314,11 @@ export class FakeGoogle {
 			codeChallenge: q.code_challenge,
 		});
 
-		const location = `${q.redirect_uri}?code=${encodeURIComponent(code)}`;
-		res.writeHead(302, { Location: location });
+		// Build the redirect through the URL API (never string-append `?code=`): a
+		// redirect_uri that already carries a query or fragment stays well-formed.
+		const location = new URL(q.redirect_uri);
+		location.searchParams.set('code', code);
+		res.writeHead(302, { Location: location.toString() });
 		res.end();
 		return 302;
 	}
@@ -357,23 +404,37 @@ export class FakeGoogle {
 
 		const listChildren = /^'([^']+)' in parents and trashed = false( and createdTime > '([^']+)')?$/.exec(query);
 		if (listChildren) {
-			const parentId = listChildren[1]!;
-			const after = listChildren[3];
-			let children = [...this.files.values()]
-				.filter((f) => f.parentId === parentId)
-				.sort((a, b) => a.createdTime.localeCompare(b.createdTime)); // orderBy=createdTime
-			if (after) {
-				children = children.filter((f) => f.createdTime > after);
+			const pageSize = Math.max(1, parseInt(q.pageSize ?? '100', 10) || 100);
+
+			let files: PageSnapshot['files'];
+			let offset = 0;
+			if (q.pageToken) {
+				// Continue from the snapshot the first page took (single-use token).
+				const snapshot = this.pageTokens.get(q.pageToken);
+				if (!snapshot) {
+					return sendDriveError(res, 400, `Invalid pageToken: ${q.pageToken}`, 'INVALID_ARGUMENT');
+				}
+				this.pageTokens.delete(q.pageToken);
+				({ files, offset } = snapshot);
+			} else {
+				const parentId = listChildren[1]!;
+				const after = listChildren[3];
+				let children = [...this.files.values()]
+					.filter((f) => f.parentId === parentId)
+					.sort((a, b) => a.createdTime.localeCompare(b.createdTime)); // orderBy=createdTime
+				if (after) {
+					children = children.filter((f) => f.createdTime > after);
+				}
+				files = children.map((f) => ({ id: f.id, name: f.name, createdTime: f.createdTime }));
 			}
 
-			const pageSize = Math.max(1, parseInt(q.pageSize ?? '100', 10) || 100);
-			const offset = q.pageToken ? parseInt(q.pageToken, 10) || 0 : 0;
-			const page = children.slice(offset, offset + pageSize);
-			const payload: { files: Array<{ id: string; name: string; createdTime: string }>; nextPageToken?: string } = {
-				files: page.map((f) => ({ id: f.id, name: f.name, createdTime: f.createdTime })),
+			const payload: { files: PageSnapshot['files']; nextPageToken?: string } = {
+				files: files.slice(offset, offset + pageSize),
 			};
-			if (offset + pageSize < children.length) {
-				payload.nextPageToken = String(offset + pageSize);
+			if (offset + pageSize < files.length) {
+				const token = `page-${crypto.randomBytes(8).toString('hex')}`;
+				this.pageTokens.set(token, { files, offset: offset + pageSize });
+				payload.nextPageToken = token;
 			}
 			return sendJson(res, 200, payload);
 		}
