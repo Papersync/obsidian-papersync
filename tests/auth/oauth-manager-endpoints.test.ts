@@ -26,15 +26,26 @@ async function refreshUrlFor(mgr: OAuthManager): Promise<string> {
 }
 
 // Captures the URL handed to window.open by startAuthFlow, then tears the flow down.
+// The browser hop only happens after PKCE generation + callback-server bind, so poll
+// for the capture (bounded, no fixed sleep) instead of hoping 50ms is enough.
 async function authUrlFor(mgr: OAuthManager): Promise<string> {
 	let captured = '';
 	const originalOpen = window.open;
 	window.open = ((url: string) => { captured = String(url); return null; }) as typeof window.open;
 	const flow = mgr.startAuthFlow();
 	flow.catch(() => undefined); // torn down before completion — silence the rejection
-	await new Promise((r) => setTimeout(r, 50));
-	window.open = originalOpen;
-	mgr.cleanup();
+	try {
+		const deadline = Date.now() + 2000;
+		while (!captured && Date.now() < deadline) {
+			await new Promise((r) => setTimeout(r, 10));
+		}
+	} finally {
+		window.open = originalOpen;
+		mgr.cleanup();
+		// Give the callback server's close() callback a turn of the event loop so the
+		// test leaves no open-handle noise behind.
+		await new Promise((r) => setTimeout(r, 0));
+	}
 	return captured;
 }
 
