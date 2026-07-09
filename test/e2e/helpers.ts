@@ -67,10 +67,11 @@ export function writeScan(dir: string, id: string, scan: Record<string, unknown>
 	if (image) { fs.writeFileSync(path.join(dir, `${id}.jpg`), MINIMAL_JPEG); }
 }
 
-export async function syncNow(): Promise<void> {
-	await browser.pause(2500);
-	// Resolve the sync-now command by suffix so it works regardless of the plugin's
-	// manifest-id prefix (papersync vs obsidian-papersync).
+// Fire the plugin's sync-now command with NO settle pauses — callers own their own
+// readiness waits (e.g. waitUntil on a fake server's recorded requests). Resolved by
+// suffix so it works regardless of the plugin's manifest-id prefix (papersync vs
+// obsidian-papersync).
+export async function triggerSyncNow(): Promise<void> {
 	await browser.execute(() => {
 		const app = (window as unknown as { app: { commands: {
 			commands: Record<string, unknown>;
@@ -79,6 +80,11 @@ export async function syncNow(): Promise<void> {
 		const id = Object.keys(app.commands.commands).find((k) => k.endsWith(':sync-now'));
 		if (id) { app.commands.executeCommandById(id); }
 	});
+}
+
+export async function syncNow(): Promise<void> {
+	await browser.pause(2500);
+	await triggerSyncNow();
 	await browser.pause(3000);
 }
 

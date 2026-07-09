@@ -1,7 +1,7 @@
 import { createHash, randomBytes } from 'crypto';
 import { FakeGoogle } from './fake-google';
-import { MINIMAL_JPEG, waitForPlugin, syncNow, readNotes, isoStamp } from './helpers';
-import { GOOGLE_CLIENT_ID } from '../../src/config';
+import { MINIMAL_JPEG, waitForPlugin, triggerSyncNow, readNotes, isoStamp } from './helpers';
+import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET } from '../../src/config';
 
 // Drives the REAL Google Drive lane (PKCE OAuth + Drive v3 sync client) end-to-end
 // against the in-repo fake-Google server (test/e2e/fake-google.ts), reached through
@@ -12,7 +12,12 @@ import { GOOGLE_CLIENT_ID } from '../../src/config';
 // patch is window.open: the fake auth endpoint 302s straight back to the plugin's
 // loopback callback, so a no-cors fetch of the auth URL (the request fires even
 // though the response is CORS-opaque, and redirects are followed) stands in for
-// the user's browser hop.
+// the user's browser hop. The patch is scoped per test (restored in afterEach).
+//
+// loadSettings strips endpointOverrides on every plugin load (production vaults
+// self-heal from a stale/tampered seam), so reloadPlugin re-injects the overrides
+// after each reload — with setupComplete parked false across the reload so the
+// auto-started poll can never race off toward real Google in between.
 //
 // Scenarios (spec I/O matrix): PKCE-mismatch guard, Connect happy path, sync round
 // trip + markSynced PATCH, refresh grant after reload, transient-500 refresh (token
@@ -46,19 +51,34 @@ describe('Drive OAuth + sync against fake Google', function () {
 		});
 	}
 
+	// Command resolved by suffix (same id-agnostic pattern as helpers.ts) so the
+	// spec survives a manifest-id change.
 	async function openSettings(): Promise<void> {
-		await browser.executeObsidianCommand('papersync:open-settings');
+		await browser.execute(() => {
+			const app = (window as unknown as { app: { commands: {
+				commands: Record<string, unknown>;
+				executeCommandById: (id: string) => void;
+			} } }).app;
+			const id = Object.keys(app.commands.commands).find((k) => k.endsWith(':open-settings'));
+			if (!id) { throw new Error('open-settings command not found'); }
+			app.commands.executeCommandById(id);
+		});
 		await browser.pause(800);
 	}
 
-	// Patch window.open (in-spec only) and click the real Connect button in one page
-	// call so the patch is guaranteed in place when the click handler fires.
+	// Patch window.open (in-spec only; afterEach restores it) and click the real
+	// Connect button in one page call so the patch is guaranteed in place when the
+	// click handler fires.
 	async function clickConnectWithPatchedOpen(): Promise<void> {
 		await browser.execute(() => {
 			const w = window as unknown as { __psRealOpen?: typeof window.open };
 			if (!w.__psRealOpen) { w.__psRealOpen = window.open; }
 			window.open = ((url?: string | URL) => {
-				if (url) { void fetch(String(url), { mode: 'no-cors' }); }
+				// no-cors: the response is opaque but the request (and its 302 onto the
+				// plugin's loopback callback) still fires. Swallow the rejection — an
+				// aborted fetch would otherwise surface as an unhandled rejection in the
+				// renderer.
+				if (url) { fetch(String(url), { mode: 'no-cors' }).catch(() => undefined); }
 				return null;
 			}) as typeof window.open;
 
@@ -68,15 +88,69 @@ describe('Drive OAuth + sync against fake Google', function () {
 		});
 	}
 
+	// Re-establish the "connected with a valid refresh token" precondition from
+	// scratch, so every reload-based scenario (and any mocha retry of it) stands on
+	// its own state instead of the previous test's leftovers — the invalid_grant
+	// scenario clears the token, which used to make its own retry unrecoverable.
+	async function seedConnectedState(): Promise<void> {
+		const refreshToken = fake.issueRefreshToken();
+		await browser.execute(async (token: string) => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
+			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
+				settings: Record<string, unknown>;
+				saveSettings: () => Promise<void>;
+			} | undefined;
+			if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
+			plugin.settings.backendType = 'drive';
+			plugin.settings.oauthRefreshToken = token;
+			plugin.settings.setupComplete = true;
+			await plugin.saveSettings();
+		}, refreshToken);
+	}
+
+	// Reload the plugin (Obsidian-restart equivalence: OAuthManager is rebuilt from
+	// the persisted refresh token, with no access token in memory). loadSettings
+	// strips the endpointOverrides seam on every load, so setupComplete is parked
+	// false across the reload — the fresh instance takes the first-run path and
+	// starts NO sync — then the seam is re-injected and sync restarted under it.
+	// Without the parking, the auto-started poll would race off toward real Google
+	// (egress, plus a real invalid_grant that would clear the seeded token).
 	async function reloadPlugin(): Promise<void> {
-		await browser.execute(async () => {
-			const plugins = (window as unknown as { app: { plugins: {
+		await browser.execute(async (overrides: Record<string, string>) => {
+			const appPlugins = (window as unknown as { app: { plugins: {
+				plugins: Record<string, unknown>;
 				disablePlugin: (id: string) => Promise<void>;
 				enablePlugin: (id: string) => Promise<void>;
 			} } }).app.plugins;
-			await plugins.disablePlugin('papersync');
-			await plugins.enablePlugin('papersync');
-		});
+			interface ReloadablePlugin {
+				settings: Record<string, unknown>;
+				saveSettings: () => Promise<void>;
+				startSync: () => Promise<void>;
+				firstRunTimeout: number | null;
+			}
+			// Same id-agnostic resolution as helpers.ts — never hardcode the manifest id.
+			const id = ['papersync', 'obsidian-papersync'].find((k) => appPlugins.plugins[k]);
+			if (!id) { throw new Error('PaperSync plugin not loaded'); }
+
+			const current = appPlugins.plugins[id] as ReloadablePlugin;
+			current.settings.setupComplete = false;
+			await current.saveSettings();
+
+			await appPlugins.disablePlugin(id);
+			await appPlugins.enablePlugin(id);
+
+			const plugin = appPlugins.plugins[id] as ReloadablePlugin;
+			// The first-run path scheduled a deferred settings-open; cancel it so the
+			// reload has no UI side effects.
+			if (plugin.firstRunTimeout !== null) {
+				window.clearTimeout(plugin.firstRunTimeout);
+				plugin.firstRunTimeout = null;
+			}
+			plugin.settings.endpointOverrides = overrides;
+			plugin.settings.setupComplete = true;
+			await plugin.saveSettings();
+			await plugin.startSync();
+		}, fake.endpointOverrides);
 		await waitForPlugin();
 	}
 
@@ -110,13 +184,23 @@ describe('Drive OAuth + sync against fake Google', function () {
 		}, fake.endpointOverrides, TARGET_FOLDER);
 	});
 
-	after(async function () {
-		// Leave no drive/oauth state behind for later spec files: restore window.open,
-		// strip the endpoint seam, and reset the connection baseline.
-		await browser.execute(async () => {
+	afterEach(async function () {
+		// A fault armed by a failed (or retried) test must not stay stranded and
+		// poison the next test's token request.
+		fake.clearFaults();
+		// The window.open patch is scoped per Connect click — restore it here so no
+		// later test (or retry) runs under a stale patch.
+		await browser.execute(() => {
 			const w = window as unknown as { __psRealOpen?: typeof window.open };
 			if (w.__psRealOpen) { window.open = w.__psRealOpen; delete w.__psRealOpen; }
+		});
+	});
 
+	after(async function () {
+		// Leave no drive/oauth state behind for later spec files: strip the endpoint
+		// seam and reset the connection baseline plus the folder/poll settings this
+		// suite customized (the vault's data.json is shared across spec files).
+		await browser.execute(async () => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
 			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
 				settings: Record<string, unknown>;
@@ -131,6 +215,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 			plugin.settings.setupComplete = false;
 			plugin.settings.oauthRefreshToken = '';
 			plugin.settings.lastSyncTimestamp = '';
+			plugin.settings.targetFolder = '';
+			plugin.settings.attachmentsFolder = '';
+			plugin.settings.drivePollInterval = 30;
 			delete plugin.settings.endpointOverrides;
 			await plugin.saveSettings();
 		});
@@ -224,16 +311,24 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(s.setupComplete).toBe(true);
 		expect(s.refreshToken.startsWith('refresh-')).toBe(true); // persisted fake-issued token
 
-		// The plugin sent its real production identity + PKCE parameters to the issuer.
+		// The plugin sent its real production identity + the full offline-access PKCE
+		// contract to the issuer. Each param is asserted on the RECORDED request, so a
+		// refactor that drops one (and would break real Google Connect) fails here
+		// instead of staying green against the fake.
 		const authReq = fake.requests.find((r) => r.path === '/o/oauth2/auth');
 		expect(authReq).toBeDefined();
 		expect(authReq!.query.client_id).toBe(GOOGLE_CLIENT_ID);
 		expect(authReq!.query.code_challenge_method).toBe('S256');
+		expect(authReq!.query.access_type).toBe('offline'); // without it Google issues no refresh token
+		expect(authReq!.query.prompt).toBe('consent');      // re-consent guarantees a refresh token on reconnect
+		expect(authReq!.query.scope).toBe('https://www.googleapis.com/auth/drive.file');
 		expect(authReq!.responseStatus).toBe(302);
 
 		const exchange = fake.tokenRequests().find((r) => r.params.get('grant_type') === 'authorization_code');
 		expect(exchange).toBeDefined();
 		expect(exchange!.responseStatus).toBe(200); // 200 ⇒ the fake's PKCE check passed
+		expect(exchange!.params.get('client_secret')).toBe(GOOGLE_CLIENT_SECRET); // desktop-app clients still send it
+		expect(exchange!.params.get('code_verifier')).toBeTruthy();
 
 		// The settings UI re-rendered into the connected state.
 		await browser.waitUntil(async () => (await (await browser.$('body')).getText()).includes('Change Storage'), {
@@ -259,7 +354,14 @@ describe('Drive OAuth + sync against fake Google', function () {
 		};
 		const { jsonId } = fake.seedScan(base, scan, MINIMAL_JPEG);
 
-		await syncNow();
+		await triggerSyncNow();
+
+		// The markSynced PATCH is the round trip's final leg — poll for it (same
+		// pattern as the other scenarios) instead of fixed pauses.
+		await browser.waitUntil(
+			async () => fake.requests.some((r) => r.method === 'PATCH' && r.path === `/upload/drive/v3/files/${jsonId}` && r.responseStatus === 200),
+			{ timeout: 15000, interval: 250, timeoutMsg: 'markSynced PATCH never reached the fake Drive' }
+		);
 
 		const notes = await readNotes(TARGET_FOLDER);
 		expect(notes).toContain('# Drive E2E Scan');
@@ -284,10 +386,12 @@ describe('Drive OAuth + sync against fake Google', function () {
 	});
 
 	it('refreshes the access token via grant_type=refresh_token after a plugin reload', async function () {
+		// Own precondition, not the Connect test's leftovers: a fresh fake-issued
+		// refresh token seeded into settings, then a reload — which rebuilds
+		// OAuthManager from the persisted token with no access token in memory, the
+		// exact "expired/absent access token" state of the matrix.
+		await seedConnectedState();
 		fake.clearRequests();
-
-		// A reload rebuilds OAuthManager from the persisted refresh token with no access
-		// token in memory — the exact "expired/absent access token" state of the matrix.
 		await reloadPlugin();
 
 		await browser.waitUntil(
@@ -295,7 +399,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 			{ timeout: 15000, interval: 500, timeoutMsg: 'No successful refresh_token grant reached the fake server' }
 		);
 
-		// Sync proceeded: the immediate post-reload poll hit Drive with the new token.
+		// Sync proceeded: the post-reload poll hit Drive with the new token.
 		await browser.waitUntil(
 			async () => fake.driveListRequests().some((r) => r.responseStatus === 200 && fake.isIssuedAccessToken(r.authorization)),
 			{ timeout: 15000, interval: 500, timeoutMsg: 'No authenticated Drive list request followed the refresh' }
@@ -307,6 +411,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 	});
 
 	it('keeps the refresh token on a transient refresh 500 and recovers on the next sync', async function () {
+		await seedConnectedState(); // retry-safe: precondition rebuilt from scratch
 		fake.clearRequests();
 		fake.failNextTokenRequest(500, { error: 'internal_failure' });
 
@@ -323,7 +428,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(s.refreshToken.startsWith('refresh-')).toBe(true);
 
 		// The next sync retries the refresh (fault consumed) and recovers.
-		await syncNow();
+		await triggerSyncNow();
 		await browser.waitUntil(
 			async () => fake.tokenRequests().some((r) => r.params.get('grant_type') === 'refresh_token' && r.responseStatus === 200),
 			{ timeout: 15000, interval: 500, timeoutMsg: 'Refresh never recovered after the transient 500' }
@@ -338,6 +443,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 	});
 
 	it('clears tokens and disconnects when a refresh comes back invalid_grant', async function () {
+		// Retry-safe: this scenario destroys its own precondition (the stored token),
+		// so it re-seeds a fresh one every run instead of leaning on a previous test.
+		await seedConnectedState();
 		fake.clearRequests();
 		fake.failNextTokenRequest(400, { error: 'invalid_grant', error_description: 'Token has been expired or revoked.' });
 
