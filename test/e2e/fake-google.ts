@@ -1,0 +1,408 @@
+import * as http from 'http';
+import * as crypto from 'crypto';
+import { GOOGLE_SCANS_FOLDER } from '../../src/config';
+
+// Hand-rolled fake Google (OAuth issuer + Drive v3 subset) for the wdio E2E lane.
+// Runs on the wdio-worker (Node) side; the Obsidian process reaches it over
+// loopback via the plugin's undocumented `endpointOverrides` settings seam.
+// Never imported by src/, never bundled into main.js.
+//
+// Faithfulness bar: Google-shaped JSON on success AND error, a real PKCE S256
+// verification on the authorization_code grant (the lane must prove the plugin's
+// PKCE code, not bypass it), and the exact Drive v3 query subset drive-backend.ts
+// emits (folder-chain lookup, list-by-parent with createdTime filter + pagination,
+// alt=media download, uploadType=media PATCH).
+
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+export interface RecordedRequest {
+	method: string;
+	path: string;
+	query: Record<string, string>;
+	body: string;
+	authorization: string;
+	responseStatus: number;
+}
+
+interface DriveNode {
+	id: string;
+	name: string;
+	mimeType: string;
+	parentId: string; // 'root' at the top of the chain
+	createdTime: string;
+	content: Buffer;
+}
+
+interface PendingCode {
+	clientId: string;
+	redirectUri: string;
+	codeChallenge: string;
+}
+
+interface TokenFault {
+	status: number;
+	body: Record<string, unknown>;
+}
+
+function s256(verifier: string): string {
+	return crypto.createHash('sha256').update(verifier).digest('base64url');
+}
+
+function sendJson(res: http.ServerResponse, status: number, body: unknown): number {
+	res.writeHead(status, { 'Content-Type': 'application/json' });
+	res.end(JSON.stringify(body));
+	return status;
+}
+
+// Google's two error shapes: OAuth token errors are flat ({error, error_description});
+// Drive API errors are nested ({error: {code, message, status}}).
+function sendOAuthError(res: http.ServerResponse, status: number, error: string, description: string): number {
+	return sendJson(res, status, { error, error_description: description });
+}
+
+function sendDriveError(res: http.ServerResponse, status: number, message: string, statusText: string): number {
+	return sendJson(res, status, { error: { code: status, message, status: statusText } });
+}
+
+export class FakeGoogle {
+	private server: http.Server | null = null;
+	port = 0;
+	readonly requests: RecordedRequest[] = [];
+
+	private pendingCodes = new Map<string, PendingCode>();
+	private accessTokens = new Set<string>();
+	private refreshTokens = new Set<string>();
+	private files = new Map<string, DriveNode>();
+	private nextTokenFault: TokenFault | null = null;
+	private seq = 0;
+
+	get origin(): string {
+		return `http://127.0.0.1:${this.port}`;
+	}
+
+	// The values a spec writes into settings.endpointOverrides.
+	get endpointOverrides(): { authUrl: string; tokenUrl: string; driveApiBase: string; driveUploadBase: string } {
+		return {
+			authUrl: `${this.origin}/o/oauth2/auth`,
+			tokenUrl: `${this.origin}/token`,
+			driveApiBase: `${this.origin}/drive/v3`,
+			driveUploadBase: `${this.origin}/upload/drive/v3`,
+		};
+	}
+
+	async start(): Promise<void> {
+		this.server = http.createServer((req, res) => this.handle(req, res));
+		await new Promise<void>((resolve, reject) => {
+			this.server!.on('error', reject);
+			this.server!.listen(0, '127.0.0.1', () => {
+				const address = this.server!.address();
+				if (address && typeof address !== 'string') {
+					this.port = address.port;
+					resolve();
+				} else {
+					reject(new Error('fake-google failed to bind'));
+				}
+			});
+		});
+	}
+
+	async stop(): Promise<void> {
+		if (!this.server) { return; }
+		await new Promise<void>((resolve) => this.server!.close(() => resolve()));
+		this.server = null;
+	}
+
+	// ---- test controls -------------------------------------------------------
+
+	/** Fail the NEXT /token request (any grant) with a canned status + body. */
+	failNextTokenRequest(status: number, body: Record<string, unknown>): void {
+		this.nextTokenFault = { status, body };
+	}
+
+	clearRequests(): void {
+		this.requests.length = 0;
+	}
+
+	tokenRequests(): Array<RecordedRequest & { params: URLSearchParams }> {
+		return this.requests
+			.filter((r) => r.path === '/token')
+			.map((r) => ({ ...r, params: new URLSearchParams(r.body) }));
+	}
+
+	driveListRequests(): RecordedRequest[] {
+		return this.requests.filter((r) => r.method === 'GET' && r.path === '/drive/v3/files');
+	}
+
+	isIssuedAccessToken(bearer: string): boolean {
+		return this.accessTokens.has(bearer.replace(/^Bearer /, ''));
+	}
+
+	/** Create the GOOGLE_SCANS_FOLDER chain ('PaperSync/scans') and return the leaf folder id. */
+	seedScansFolder(): string {
+		let parentId = 'root';
+		for (const part of GOOGLE_SCANS_FOLDER.split('/')) {
+			const existing = [...this.files.values()].find(
+				(f) => f.mimeType === FOLDER_MIME && f.name === part && f.parentId === parentId
+			);
+			if (existing) {
+				parentId = existing.id;
+				continue;
+			}
+			const id = `folder-${++this.seq}`;
+			this.files.set(id, {
+				id, name: part, mimeType: FOLDER_MIME, parentId,
+				createdTime: new Date().toISOString(), content: Buffer.alloc(0),
+			});
+			parentId = id;
+		}
+		return parentId;
+	}
+
+	/** Seed an unsynced scan (<base>.json + <base>.jpg) into the scans folder. */
+	seedScan(baseName: string, scan: Record<string, unknown>, image: Buffer, createdTime?: string): { jsonId: string; imageId: string } {
+		const folderId = this.seedScansFolder();
+		const time = createdTime ?? new Date().toISOString();
+		const jsonId = `file-${++this.seq}`;
+		this.files.set(jsonId, {
+			id: jsonId, name: `${baseName}.json`, mimeType: 'application/json', parentId: folderId,
+			createdTime: time, content: Buffer.from(JSON.stringify(scan, null, 2)),
+		});
+		const imageId = `file-${++this.seq}`;
+		this.files.set(imageId, {
+			id: imageId, name: `${baseName}.jpg`, mimeType: 'image/jpeg', parentId: folderId,
+			createdTime: time, content: image,
+		});
+		return { jsonId, imageId };
+	}
+
+	fileJson(id: string): unknown {
+		const node = this.files.get(id);
+		if (!node) { throw new Error(`fake-google: no file ${id}`); }
+		return JSON.parse(node.content.toString('utf-8'));
+	}
+
+	// ---- request handling ----------------------------------------------------
+
+	private handle(req: http.IncomingMessage, res: http.ServerResponse): void {
+		const chunks: Buffer[] = [];
+		req.on('data', (c: Buffer) => chunks.push(c));
+		req.on('end', () => {
+			const body = Buffer.concat(chunks);
+			const url = new URL(req.url ?? '/', this.origin);
+			const query: Record<string, string> = {};
+			url.searchParams.forEach((v, k) => { query[k] = v; });
+
+			const status = this.route(req, res, url.pathname, query, body);
+
+			this.requests.push({
+				method: req.method ?? '',
+				path: url.pathname,
+				query,
+				body: body.toString('utf-8'),
+				authorization: req.headers.authorization ?? '',
+				responseStatus: status,
+			});
+		});
+	}
+
+	private route(
+		req: http.IncomingMessage,
+		res: http.ServerResponse,
+		path: string,
+		query: Record<string, string>,
+		body: Buffer
+	): number {
+		const method = req.method ?? '';
+
+		if (method === 'GET' && path === '/o/oauth2/auth') {
+			return this.handleAuth(res, query);
+		}
+		if (method === 'POST' && path === '/token') {
+			return this.handleToken(res, body.toString('utf-8'));
+		}
+
+		// Everything under /drive and /upload requires a Bearer token we issued.
+		if (path.startsWith('/drive/') || path.startsWith('/upload/')) {
+			const bearer = (req.headers.authorization ?? '').replace(/^Bearer /, '');
+			if (!this.accessTokens.has(bearer)) {
+				return sendDriveError(res, 401, 'Invalid Credentials', 'UNAUTHENTICATED');
+			}
+		}
+
+		if (method === 'GET' && path === '/drive/v3/files') {
+			return this.handleList(res, query);
+		}
+		const getMatch = /^\/drive\/v3\/files\/([^/]+)$/.exec(path);
+		if (method === 'GET' && getMatch) {
+			return this.handleGetFile(res, getMatch[1]!, query);
+		}
+		const patchMatch = /^\/upload\/drive\/v3\/files\/([^/]+)$/.exec(path);
+		if (method === 'PATCH' && patchMatch) {
+			return this.handlePatchFile(res, patchMatch[1]!, query, body);
+		}
+
+		return sendDriveError(res, 404, `Unknown fake-google route: ${method} ${path}`, 'NOT_FOUND');
+	}
+
+	// GET /o/oauth2/auth — validates the real PKCE authorization request the plugin
+	// builds, then 302s the one-time code back to the plugin's loopback callback.
+	private handleAuth(res: http.ServerResponse, q: Record<string, string>): number {
+		if (!q.client_id) {
+			return sendOAuthError(res, 400, 'invalid_request', 'client_id missing');
+		}
+		if (!q.redirect_uri || !q.redirect_uri.startsWith('http://127.0.0.1:')) {
+			return sendOAuthError(res, 400, 'invalid_request', 'redirect_uri missing or not loopback');
+		}
+		if (q.response_type !== 'code') {
+			return sendOAuthError(res, 400, 'invalid_request', 'response_type must be code');
+		}
+		if (!q.code_challenge) {
+			return sendOAuthError(res, 400, 'invalid_request', 'code_challenge missing');
+		}
+		if (q.code_challenge_method !== 'S256') {
+			return sendOAuthError(res, 400, 'invalid_request', 'code_challenge_method must be S256');
+		}
+
+		const code = `code-${crypto.randomBytes(12).toString('hex')}`;
+		this.pendingCodes.set(code, {
+			clientId: q.client_id,
+			redirectUri: q.redirect_uri,
+			codeChallenge: q.code_challenge,
+		});
+
+		const location = `${q.redirect_uri}?code=${encodeURIComponent(code)}`;
+		res.writeHead(302, { Location: location });
+		res.end();
+		return 302;
+	}
+
+	private handleToken(res: http.ServerResponse, rawBody: string): number {
+		if (this.nextTokenFault) {
+			const fault = this.nextTokenFault;
+			this.nextTokenFault = null;
+			return sendJson(res, fault.status, fault.body);
+		}
+
+		const params = new URLSearchParams(rawBody);
+		const grantType = params.get('grant_type');
+
+		if (grantType === 'authorization_code') {
+			const code = params.get('code') ?? '';
+			const pending = this.pendingCodes.get(code);
+			this.pendingCodes.delete(code); // single use, even on failure
+			if (!pending) {
+				return sendOAuthError(res, 400, 'invalid_grant', 'Unknown or already-used authorization code');
+			}
+			if (params.get('client_id') !== pending.clientId) {
+				return sendOAuthError(res, 400, 'invalid_client', 'client_id does not match the authorization request');
+			}
+			if (params.get('redirect_uri') !== pending.redirectUri) {
+				return sendOAuthError(res, 400, 'invalid_grant', 'redirect_uri does not match the authorization request');
+			}
+			// The PKCE guard this lane exists to prove: S256(code_verifier) must equal
+			// the code_challenge captured at the authorization step.
+			const verifier = params.get('code_verifier') ?? '';
+			if (s256(verifier) !== pending.codeChallenge) {
+				return sendOAuthError(res, 400, 'invalid_grant', 'PKCE verification failed: code_verifier does not match code_challenge');
+			}
+
+			const accessToken = `access-${crypto.randomBytes(12).toString('hex')}`;
+			const refreshToken = `refresh-${crypto.randomBytes(12).toString('hex')}`;
+			this.accessTokens.add(accessToken);
+			this.refreshTokens.add(refreshToken);
+			return sendJson(res, 200, {
+				access_token: accessToken,
+				refresh_token: refreshToken,
+				expires_in: 3600,
+				token_type: 'Bearer',
+				scope: 'https://www.googleapis.com/auth/drive.file',
+			});
+		}
+
+		if (grantType === 'refresh_token') {
+			const refreshToken = params.get('refresh_token') ?? '';
+			if (!this.refreshTokens.has(refreshToken)) {
+				return sendOAuthError(res, 400, 'invalid_grant', 'Unknown refresh token');
+			}
+			const accessToken = `access-${crypto.randomBytes(12).toString('hex')}`;
+			this.accessTokens.add(accessToken);
+			return sendJson(res, 200, {
+				access_token: accessToken,
+				expires_in: 3600,
+				token_type: 'Bearer',
+				scope: 'https://www.googleapis.com/auth/drive.file',
+			});
+		}
+
+		return sendOAuthError(res, 400, 'unsupported_grant_type', `grant_type ${grantType ?? '(none)'} not supported`);
+	}
+
+	// GET /drive/v3/files — the two query shapes drive-backend.ts emits:
+	//   folder lookup:  name = 'X' and '<parent>' in parents and mimeType = '...folder' and trashed = false
+	//   list children:  '<parent>' in parents and trashed = false [and createdTime > '<ts>']
+	// Anything else is a 400 so a drifted query fails loudly instead of silently matching.
+	private handleList(res: http.ServerResponse, q: Record<string, string>): number {
+		const query = q.q ?? '';
+
+		const folderLookup = new RegExp(
+			`^name = '([^']+)' and '([^']+)' in parents and mimeType = '${FOLDER_MIME.replace(/[.]/g, '\\.')}' and trashed = false$`
+		).exec(query);
+		if (folderLookup) {
+			const [, name, parentId] = folderLookup;
+			const matches = [...this.files.values()]
+				.filter((f) => f.mimeType === FOLDER_MIME && f.name === name && f.parentId === parentId)
+				.map((f) => ({ id: f.id }));
+			return sendJson(res, 200, { files: matches });
+		}
+
+		const listChildren = /^'([^']+)' in parents and trashed = false( and createdTime > '([^']+)')?$/.exec(query);
+		if (listChildren) {
+			const parentId = listChildren[1]!;
+			const after = listChildren[3];
+			let children = [...this.files.values()]
+				.filter((f) => f.parentId === parentId)
+				.sort((a, b) => a.createdTime.localeCompare(b.createdTime)); // orderBy=createdTime
+			if (after) {
+				children = children.filter((f) => f.createdTime > after);
+			}
+
+			const pageSize = Math.max(1, parseInt(q.pageSize ?? '100', 10) || 100);
+			const offset = q.pageToken ? parseInt(q.pageToken, 10) || 0 : 0;
+			const page = children.slice(offset, offset + pageSize);
+			const payload: { files: Array<{ id: string; name: string; createdTime: string }>; nextPageToken?: string } = {
+				files: page.map((f) => ({ id: f.id, name: f.name, createdTime: f.createdTime })),
+			};
+			if (offset + pageSize < children.length) {
+				payload.nextPageToken = String(offset + pageSize);
+			}
+			return sendJson(res, 200, payload);
+		}
+
+		return sendDriveError(res, 400, `Unrecognized query: ${query}`, 'INVALID_ARGUMENT');
+	}
+
+	private handleGetFile(res: http.ServerResponse, id: string, q: Record<string, string>): number {
+		const node = this.files.get(id);
+		if (!node) {
+			return sendDriveError(res, 404, `File not found: ${id}`, 'NOT_FOUND');
+		}
+		if (q.alt !== 'media') {
+			return sendDriveError(res, 400, 'Only alt=media is supported by fake-google', 'INVALID_ARGUMENT');
+		}
+		res.writeHead(200, { 'Content-Type': node.mimeType });
+		res.end(node.content);
+		return 200;
+	}
+
+	private handlePatchFile(res: http.ServerResponse, id: string, q: Record<string, string>, body: Buffer): number {
+		const node = this.files.get(id);
+		if (!node) {
+			return sendDriveError(res, 404, `File not found: ${id}`, 'NOT_FOUND');
+		}
+		if (q.uploadType !== 'media') {
+			return sendDriveError(res, 400, 'Only uploadType=media is supported by fake-google', 'INVALID_ARGUMENT');
+		}
+		node.content = Buffer.from(body);
+		return sendJson(res, 200, { id: node.id, name: node.name });
+	}
+}
