@@ -105,7 +105,7 @@ All variables are namespaced under `ps_` so they never clash with Obsidian's cor
 ## Privacy & Security
 
 - **BYOK** — the plugin stores **zero** LLM API keys; all AI inference happens on your mobile device
-- **Least-privilege Google access** — OAuth via **PKCE** (RFC 8252 desktop-app flow), scoped to `drive.file` (only files the app itself creates); a single refresh token lives in Obsidian's OS-backed **Secret Storage**
+- **Least-privilege Google access** — OAuth via **PKCE** (RFC 8252 desktop-app flow), scoped to `drive.file` (only files the app itself creates); a single refresh token is stored in the plugin's local `data.json` inside your vault — it never leaves your machine (there is no PaperSync server), but guard that file as you would any credential (see [SECURITY.md](SECURITY.md))
 - **Folder path stores no credentials** at all
 - **Minimal network surface** — requests go only to `googleapis.com` and `accounts.google.com`
 - **No telemetry, no analytics** — nothing about you or your notes is collected
@@ -121,7 +121,7 @@ Trust comes from evidence, not promises. Every commit runs the full gate in CI:
 
 ## Requirements
 
-- Obsidian **v1.11.4+** (for the Secret Storage API)
+- Obsidian **v1.11.4+**
 - The **PaperSync mobile app**, installed and configured
 - A Google Drive account or a sync folder matching your mobile setup
 
