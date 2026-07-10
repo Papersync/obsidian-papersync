@@ -73,7 +73,6 @@ export interface PluginSettings {
 	templateString: string;
 	downloadImages: boolean;
 	oauthExpiresAt: number;
-	oauthRefreshToken: string;
 	lastSyncTimestamp: string;
 	lastSyncAt: number;
 	// Undocumented test seam: overrides for the Google OAuth/Drive endpoints.
@@ -94,7 +93,7 @@ const DEFAULT_TEMPLATE = `{{ps_separator}}
 `;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-	settingsVersion: 2,
+	settingsVersion: 3,
 	setupComplete: false,
 	backendType: 'none',
 	drivePollInterval: 30,
@@ -105,7 +104,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
 	oauthExpiresAt: 0,
-	oauthRefreshToken: '',
 	lastSyncTimestamp: '',
 	lastSyncAt: 0,
 };
@@ -122,6 +120,14 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 			delete data.icloudFolderPath;
 		}
 		data.settingsVersion = 2;
+	}
+
+	if (version < 3) {
+		// The Google OAuth refresh token moved out of plaintext data.json into Obsidian's
+		// OS secret storage. Drop any legacy plaintext copy at rest. (main.ts captures its
+		// value before this strip and migrates it into secret storage on load.)
+		delete data.oauthRefreshToken;
+		data.settingsVersion = 3;
 	}
 
 	return data;

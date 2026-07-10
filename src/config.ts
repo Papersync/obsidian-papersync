@@ -21,6 +21,12 @@ export const DEFAULT_GOOGLE_ENDPOINTS: GoogleEndpoints = {
 	driveUploadBase: 'https://www.googleapis.com/upload/drive/v3',
 };
 export const GOOGLE_SCANS_FOLDER = 'PaperSync/scans';
+
+// Fixed id under which the Google OAuth refresh token is kept in Obsidian's
+// OS-integrated Secret Storage (app.secretStorage), NOT plaintext data.json. The id
+// must be lowercase-alphanumeric-with-dashes — setSecret throws on an invalid id.
+export const OAUTH_TOKEN_SECRET_ID = 'papersync-oauth-refresh-token';
+
 export const DEFAULT_POLL_INTERVAL_S = 30;
 export const MAX_RETRIES = 2;
 export const OAUTH_TIMEOUT_MS = 3 * 60 * 1000;

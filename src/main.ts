@@ -5,6 +5,7 @@ import { setDebugLogging, logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 import { STRINGS } from '@/utils/strings';
 import { OAuthManager } from '@/auth/oauth-manager';
+import { readSecret, writeSecret } from '@/auth/secret-store';
 import { DriveBackend } from '@/sync/drive-backend';
 import { FolderBackend } from '@/sync/folder-backend';
 import { SyncEngine } from '@/sync/sync-engine';
@@ -12,7 +13,7 @@ import { SyncState } from '@/sync/sync-state';
 import type { SyncStateSnapshot } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
 
-import { GOOGLE_CLIENT_ID, DEV_MODE } from '@/config';
+import { GOOGLE_CLIENT_ID, DEV_MODE, OAUTH_TOKEN_SECRET_ID } from '@/config';
 import { getDailyNotesConfig } from '@/utils/daily-notes';
 import { createFakeScanOnDrive } from '@/utils/dev-tools';
 
@@ -27,6 +28,10 @@ export default class PaperSyncPlugin extends Plugin {
 	private unsubscribeSyncState: (() => void) | null = null;
 	private lastStatus: SyncStateSnapshot['status'] | null = null;
 	private firstRunTimeout: number | null = null;
+	// A legacy plaintext refresh token captured from data.json on load, held until
+	// initAsync migrates it into secret storage. Kept re-attached to data.json (via
+	// persistedData) until the secret write succeeds, so a failed write never loses it.
+	private legacyPlaintextToken: string | null = null;
 
 	async onload(): Promise<void> {
 		if (!this.checkMinObsidianVersion()) {return;}
@@ -111,11 +116,21 @@ export default class PaperSyncPlugin extends Plugin {
 			// re-persist needed) makes a stale or tampered data.json self-heal instead of
 			// steering OAuth/Drive traffic at whatever host the file names.
 			delete raw.endpointOverrides;
+			// Capture any legacy plaintext refresh token BEFORE it is stripped, so initAsync
+			// can move it into OS secret storage. Deleted from the in-memory data here so it
+			// never re-enters PluginSettings (even for an already-v3 data.json left by a prior
+			// failed migration); re-attached to data.json only via persistedData() until the
+			// one-time secret write succeeds — never lost, never left plaintext.
+			this.legacyPlaintextToken =
+				typeof raw.oauthRefreshToken === 'string' && raw.oauthRefreshToken
+					? raw.oauthRefreshToken
+					: null;
+			delete raw.oauthRefreshToken;
 			const versionBefore = raw.settingsVersion;
 			const migrated = migrateSettings(raw);
 			this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated as Partial<PluginSettings>);
 			if (versionBefore !== migrated.settingsVersion) {
-				await this.saveData(this.settings);
+				await this.saveData(this.persistedData());
 			}
 		} else {
 			this.settings = { ...DEFAULT_SETTINGS };
@@ -123,7 +138,17 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	async saveSettings(): Promise<void> {
-		await this.saveData(this.settings);
+		await this.saveData(this.persistedData());
+	}
+
+	// The shape written to data.json. Normally just the settings (which no longer carry a
+	// refresh token — that lives in secret storage). While a legacy plaintext token still
+	// awaits migration, keep it in data.json so a failed secret write can retry next load;
+	// once migrated, legacyPlaintextToken is null and nothing extra is persisted.
+	private persistedData(): PluginSettings | (PluginSettings & { oauthRefreshToken: string }) {
+		return this.legacyPlaintextToken
+			? { ...this.settings, oauthRefreshToken: this.legacyPlaintextToken }
+			: this.settings;
 	}
 
 	private async initAsync(): Promise<void> {
@@ -131,12 +156,20 @@ export default class PaperSyncPlugin extends Plugin {
 		// plugin load, before the E2E seam (settings.endpointOverrides) can be written.
 		this.oauthManager = new OAuthManager(this, GOOGLE_CLIENT_ID, () => this.settings.endpointOverrides);
 		this.oauthManager.setOnTokenChange((token) => {
-			this.settings.oauthRefreshToken = token;
-			void this.saveSettings();
+			// The refresh token lives in OS secret storage, never data.json. An empty string
+			// (disconnect / revoke) clears it — there is no deleteSecret at the 1.11.4 floor.
+			writeSecret(this.app, OAUTH_TOKEN_SECRET_ID, token);
 		});
 
-		if (this.settings.backendType === 'drive' && this.settings.oauthRefreshToken) {
-			this.oauthManager.restoreFromToken(this.settings.oauthRefreshToken);
+		await this.migrateLegacyToken();
+
+		if (this.settings.backendType === 'drive') {
+			// Post-migration the token lives in secret storage; fall back to the in-memory
+			// legacy value if the migration write could not persist (unavailable backend).
+			const token = readSecret(this.app, OAUTH_TOKEN_SECRET_ID) ?? this.legacyPlaintextToken;
+			if (token) {
+				this.oauthManager.restoreFromToken(token);
+			}
 		}
 
 		if (!this.settings.setupComplete) {
@@ -154,6 +187,19 @@ export default class PaperSyncPlugin extends Plugin {
 		}
 
 		void this.startSync();
+	}
+
+	// One-time migration of a legacy plaintext refresh token from data.json into OS secret
+	// storage. Write the secret FIRST; strip the plaintext copy (via saveSettings, which no
+	// longer re-attaches it once legacyPlaintextToken is cleared) only after a confirmed
+	// write, so a failed write retries on the next load instead of losing the token.
+	private async migrateLegacyToken(): Promise<void> {
+		if (!this.legacyPlaintextToken) {return;}
+		if (writeSecret(this.app, OAUTH_TOKEN_SECRET_ID, this.legacyPlaintextToken)) {
+			this.legacyPlaintextToken = null;
+			await this.saveSettings();
+			logger.info('Migrated legacy refresh token into secret storage');
+		}
 	}
 
 	async resolveTargetFolder(): Promise<void> {
