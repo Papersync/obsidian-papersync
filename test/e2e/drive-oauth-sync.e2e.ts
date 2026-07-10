@@ -47,8 +47,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 				setupComplete: plugin.settings.setupComplete,
 				// The refresh token now lives in OS secret storage, not settings/data.json.
 				// The in-memory oauthManager.refreshToken is the ground truth for "a token is
-				// present": after a reload it is non-empty only if restore succeeded (from
-				// secret storage, or the legacy-migration in-memory fallback).
+				// present": after a reload it is non-empty only if restore succeeded from
+				// secret storage. A stray plaintext token in data.json is discarded on load
+				// (never restored to memory), so restore is secret-storage-only.
 				refreshToken: plugin.oauthManager?.refreshToken ?? '',
 				isAuthenticated: plugin.oauthManager?.isAuthenticated ?? false,
 			};
@@ -493,6 +494,13 @@ describe('Drive OAuth + sync against fake Google', function () {
 			const s = await state();
 			return !s.isAuthenticated && s.refreshToken === '';
 		}, { timeout: 15000, interval: 500, timeoutMsg: 'invalid_grant refresh never cleared the stored tokens' });
+
+		// Read-back symmetry with the Connect happy path's persistedSecret() assertion:
+		// prove the STORED secret was actually cleared to empty, not merely the in-memory
+		// oauthManager.refreshToken. A cleared secret reads back as "" (or absent) since
+		// there is no deleteSecret at the 1.11.4 floor.
+		const persistedAfterRevoke = await persistedSecret();
+		expect(persistedAfterRevoke ?? '').toBe('');
 
 		const faulted = fake.tokenRequests().find((r) => r.responseStatus === 400);
 		expect(faulted).toBeDefined();
