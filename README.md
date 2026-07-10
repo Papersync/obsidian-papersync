@@ -105,7 +105,7 @@ All variables are namespaced under `ps_` so they never clash with Obsidian's cor
 ## Privacy & Security
 
 - **BYOK** — the plugin stores **zero** LLM API keys; all AI inference happens on your mobile device
-- **Least-privilege Google access** — OAuth via **PKCE** (RFC 8252 desktop-app flow), scoped to `drive.file` (only files the app itself creates); the single refresh token is stored in Obsidian's OS-integrated secret storage (macOS Keychain, Windows Credential Manager, Linux Secret Service), **not** in plaintext `data.json` — it never leaves your machine (there is no PaperSync server) (see [SECURITY.md](SECURITY.md))
+- **Least-privilege Google access** — OAuth via **PKCE** (RFC 8252 desktop-app flow), scoped to `drive.file` (only files the app itself creates); the single refresh token is stored in Obsidian's OS-integrated secret storage (macOS Keychain, Windows Credential Manager, Linux Secret Service), **never** in plaintext `data.json`. It never leaves your machine (there is no PaperSync server) and, being device-local, does not travel with a synced vault, so you connect Google Drive once per device. If the OS credential vault is unavailable, the token stays in memory for that session only and the plugin prompts you to reconnect, still never falling back to plaintext (see [SECURITY.md](SECURITY.md))
 - **Folder path stores no credentials** at all
 - **Minimal network surface** — requests go only to `googleapis.com` and `accounts.google.com`
 - **No telemetry, no analytics** — nothing about you or your notes is collected
