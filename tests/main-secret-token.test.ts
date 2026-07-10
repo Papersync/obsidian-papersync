@@ -108,6 +108,35 @@ describe('refresh token in secret storage', () => {
 		expect(plugin.oauthManager?.isAuthenticated).toBe(false);
 	});
 
+	it('scrubs a stray plaintext token from an already-v3 data.json to disk, not just memory', async () => {
+		const storage = new SecretStorage();
+		const plugin = makePlugin(
+			// Already at v3 (so migrateSettings runs no version-bump re-save) yet still
+			// carrying a plaintext token — a tampered/corrupted file, or a prior failed
+			// secret write.
+			{ settingsVersion: 3, setupComplete: true, backendType: 'drive', oauthRefreshToken: 'stray-at-rest-token' },
+			storage
+		);
+
+		await plugin.loadSettings();
+
+		// The version did not change, but the stray plaintext forces a re-save so the
+		// field is scrubbed from disk (data.json overwritten with this.settings), not
+		// merely dropped from the in-memory settings.
+		expect(plugin.saveData).toHaveBeenCalled();
+		expect(noSaveCarriedToken(plugin)).toBe(true);
+	});
+
+	it('does not re-save on load for a clean already-v3 data.json (no stray token, no version bump)', async () => {
+		const storage = new SecretStorage();
+		const plugin = makePlugin({ settingsVersion: 3, setupComplete: true, backendType: 'drive' }, storage);
+
+		await plugin.loadSettings();
+
+		// No version change and no stray plaintext to scrub, so load must not write.
+		expect(plugin.saveData).not.toHaveBeenCalled();
+	});
+
 	it('loads without crashing when secret storage is unavailable', async () => {
 		const storage = new SecretStorage();
 		makeUnavailable(storage);

@@ -117,11 +117,19 @@ export default class PaperSyncPlugin extends Plugin {
 			// plaintext copy a pre-secret-storage dogfood build may have left behind (those
 			// devices reconnect once). The migrateSettings v3 step also strips it, but this
 			// explicit delete covers an already-v3 data.json that still carries the field.
+			// Remember whether a stray copy was present so we can scrub the plaintext from
+			// DISK below, not only from the in-memory settings.
+			const hadStrayToken = 'oauthRefreshToken' in raw;
 			delete raw.oauthRefreshToken;
 			const versionBefore = raw.settingsVersion;
 			const migrated = migrateSettings(raw);
 			this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated as Partial<PluginSettings>);
-			if (versionBefore !== migrated.settingsVersion) {
+			// Re-persist on a version bump (existing behavior) OR when a stray plaintext
+			// token was present. The latter forces "discard" to overwrite data.json with
+			// this.settings (which no longer carries the field), so an already-v3 file whose
+			// version does not change still gets the plaintext scrubbed from disk, not just
+			// from memory.
+			if (versionBefore !== migrated.settingsVersion || hadStrayToken) {
 				await this.saveData(this.settings);
 			}
 		} else {
