@@ -146,10 +146,12 @@ describe('Settings tab', function () {
 			// settings). Without this the test is at the mercy of a persisted refresh
 			// token restored at load (e.g. a dogfood data.json), which leaves the plugin
 			// authenticated and the half-state unreachable.
+			// disconnect() clears the LIVE oauthManager (isGoogleConnected reads it, not
+			// settings) and clears the refresh token from secret storage. The refresh token
+			// no longer lives in settings/data.json, so there is nothing to null there.
 			plugin.oauthManager?.disconnect();
 			plugin.settings.backendType = 'drive';
 			plugin.settings.setupComplete = false;
-			plugin.settings.oauthRefreshToken = '';
 			plugin.settings.oauthExpiresAt = 0;
 			await plugin.saveSettings();
 		});
