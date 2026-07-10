@@ -123,9 +123,11 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 	}
 
 	if (version < 3) {
-		// The Google OAuth refresh token moved out of plaintext data.json into Obsidian's
-		// OS secret storage. Drop any legacy plaintext copy at rest. (main.ts captures its
-		// value before this strip and migrates it into secret storage on load.)
+		// The Google OAuth refresh token now lives in Obsidian's OS secret storage, never
+		// plaintext data.json. Discard any stray plaintext copy a pre-secret-storage build
+		// left at rest — the plugin is unpublished, so there is nothing to migrate; those
+		// devices reconnect once. (main.ts also deletes the field on load as a belt-and-
+		// braces strip for an already-v3 data.json that still carries it.)
 		delete data.oauthRefreshToken;
 		data.settingsVersion = 3;
 	}
