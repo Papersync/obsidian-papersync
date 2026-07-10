@@ -16,6 +16,7 @@ export const STRINGS = {
 	NOTICE_TOKEN_EXPIRED: 'Your scans are safe. Reconnect Google Drive in settings to resume syncing.',
 	NOTICE_SCHEMA_MISMATCH: 'Your scan is safe in your cloud. Update PaperSync to read this newer format.',
 	NOTICE_OBSIDIAN_VERSION: 'PaperSync requires Obsidian v1.11.4 or later',
+	NOTICE_SECRET_STORAGE_UNAVAILABLE: "Secure storage is unavailable, so Google Drive stays connected only until you restart Obsidian. Reconnect from settings when secure storage is back.",
 	NOTICE_DRIVE_PERMISSION: 'Your scans are safe in Google Drive. PaperSync lost access; check its Drive permissions.',
 	NOTICE_OFFLINE: "You're offline. PaperSync will sync your scans when you're back online.",
 	NOTICE_SYNC_ERROR: 'Sync paused on an error. Your scans are safe in your cloud. PaperSync will retry on the next sync.',
