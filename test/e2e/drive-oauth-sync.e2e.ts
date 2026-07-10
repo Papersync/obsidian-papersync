@@ -108,18 +108,26 @@ describe('Drive OAuth + sync against fake Google', function () {
 			if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
 			plugin.settings.backendType = 'drive';
 			plugin.settings.setupComplete = true;
-			// Primary: seed the token into OS secret storage — the real restore precondition
-			// a reload reads from. If the OS backend is unavailable in the test host, stage it
-			// as a legacy plaintext token so the reload migrates it and restores in-memory
-			// (the same graceful-degrade path shipped for headless installs).
-			delete plugin.settings.oauthRefreshToken;
-			try {
-				plugin.app.secretStorage.setSecret(secretId, token);
-			} catch {
-				plugin.settings.oauthRefreshToken = token;
-			}
+			// Seed the token into OS secret storage — the exact restore precondition a
+			// reload reads from (the real restore path). There is no plaintext staging: the
+			// token never lives in settings/data.json.
+			plugin.app.secretStorage.setSecret(secretId, token);
 			await plugin.saveSettings();
 		}, refreshToken, OAUTH_TOKEN_SECRET_ID);
+	}
+
+	// The token the plugin actually PERSISTED to OS secret storage — the ground truth
+	// for "the write landed", distinct from the in-memory oauthManager.refreshToken
+	// (which is set regardless of whether the secret-storage write succeeded).
+	async function persistedSecret(): Promise<string | null> {
+		return browser.execute((secretId: string) => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
+			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
+				app: { secretStorage: { getSecret: (id: string) => string | null } };
+			} | undefined;
+			if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
+			return plugin.app.secretStorage.getSecret(secretId);
+		}, OAUTH_TOKEN_SECRET_ID);
 	}
 
 	// Reload the plugin (Obsidian-restart equivalence: OAuthManager is rebuilt from
@@ -182,7 +190,6 @@ describe('Drive OAuth + sync against fake Google', function () {
 				saveSettings: () => Promise<void>;
 				oauthManager: { disconnect: () => void } | null;
 				syncEngine: { stop: () => void } | null;
-				legacyPlaintextToken?: string | null;
 				app: { secretStorage: { setSecret: (id: string, value: string) => void } };
 			} | undefined;
 			if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
@@ -190,11 +197,8 @@ describe('Drive OAuth + sync against fake Google', function () {
 			plugin.oauthManager?.disconnect();
 			plugin.settings.backendType = 'none';
 			plugin.settings.setupComplete = false;
-			// The refresh token lives in secret storage; disconnect() already cleared it.
-			// Drop any legacy plaintext staging (field + pending in-memory value) and
-			// belt-and-braces clear the secret so no token bleeds into the next spec file.
-			delete plugin.settings.oauthRefreshToken;
-			plugin.legacyPlaintextToken = null;
+			// The refresh token lives only in secret storage; disconnect() already cleared it.
+			// Belt-and-braces clear the secret so no token bleeds into the next spec file.
 			try { plugin.app.secretStorage.setSecret(secretId, ''); } catch { /* backend absent */ }
 			plugin.settings.lastSyncTimestamp = '';
 			plugin.settings.targetFolder = target;
@@ -228,7 +232,6 @@ describe('Drive OAuth + sync against fake Google', function () {
 				saveSettings: () => Promise<void>;
 				oauthManager: { disconnect: () => void } | null;
 				syncEngine: { stop: () => void } | null;
-				legacyPlaintextToken?: string | null;
 				app: { secretStorage: { setSecret: (id: string, value: string) => void } };
 			} | undefined;
 			if (!plugin) { return; }
@@ -236,11 +239,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 			plugin.oauthManager?.disconnect();
 			plugin.settings.backendType = 'none';
 			plugin.settings.setupComplete = false;
-			// Clear the token from every home: secret storage (via disconnect + explicit
-			// clear) and any legacy plaintext staging — the vault's data.json is shared
-			// across spec files, so leave no drive credential behind.
-			delete plugin.settings.oauthRefreshToken;
-			plugin.legacyPlaintextToken = null;
+			// Clear the token from its only home — OS secret storage (disconnect already
+			// cleared it; this is belt-and-braces). The vault's data.json is shared across
+			// spec files, so leave no drive credential behind.
 			try { plugin.app.secretStorage.setSecret(secretId, ''); } catch { /* backend absent */ }
 			plugin.settings.lastSyncTimestamp = '';
 			plugin.settings.targetFolder = '';
@@ -337,7 +338,15 @@ describe('Drive OAuth + sync against fake Google', function () {
 		const s = await state();
 		expect(s.backendType).toBe('drive');
 		expect(s.setupComplete).toBe(true);
-		expect(s.refreshToken.startsWith('refresh-')).toBe(true); // persisted fake-issued token
+		expect(s.refreshToken.startsWith('refresh-')).toBe(true); // in-memory fake-issued token
+
+		// Prove the token was actually PERSISTED into OS secret storage — not merely held
+		// in memory. oauthManager.refreshToken is set the moment the token exchange returns,
+		// regardless of whether the secretStorage write landed; only a read-back of the
+		// stored secret proves the "never plaintext, always durable" contract.
+		const persisted = await persistedSecret();
+		expect(persisted).toBe(s.refreshToken);
+		expect(persisted?.startsWith('refresh-')).toBe(true);
 
 		// The plugin sent its real production identity + the full offline-access PKCE
 		// contract to the issuer. Each param is asserted on the RECORDED request, so a

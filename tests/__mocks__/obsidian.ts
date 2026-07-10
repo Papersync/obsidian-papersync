@@ -17,10 +17,13 @@ export class Notice {
 // In-memory stand-in for Obsidian's OS-integrated SecretStorage (1.11.4+). Map-backed,
 // synchronous, no deleteSecret (clear via setSecret(id, "")). Set `unavailable = true`
 // to force every call to throw, simulating an absent OS backend (headless CI, Linux
-// without a Secret Service) so tests can exercise the guarded degrade paths.
+// without a Secret Service). Set `silentNoop = true` to make setSecret a silent no-op
+// (no throw, no store) — the "locked backend that quietly drops the write" case the
+// read-back verify in writeSecret must catch. Both exercise the guarded degrade paths.
 export class SecretStorage {
 	private store = new Map<string, string>();
 	unavailable = false;
+	silentNoop = false;
 	// Lowercase alphanumeric with single dashes between segments — mirrors the real
 	// setSecret id validation (it throws on an invalid id).
 	private static readonly VALID_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -28,6 +31,7 @@ export class SecretStorage {
 	setSecret(id: string, secret: string): void {
 		if (this.unavailable) { throw new Error('secret storage unavailable'); }
 		if (!SecretStorage.VALID_ID.test(id)) { throw new Error(`Invalid secret id: ${id}`); }
+		if (this.silentNoop) { return; }
 		this.store.set(id, secret);
 	}
 

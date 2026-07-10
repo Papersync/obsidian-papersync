@@ -1,6 +1,6 @@
 import { SecretStorage } from 'obsidian';
 import type { App } from 'obsidian';
-import { readSecret, writeSecret } from '@/auth/secret-store';
+import { isSecretPersisted, readSecret, writeSecret } from '@/auth/secret-store';
 import { clearLogBuffer, getLogBuffer } from '@/utils/logger';
 
 function makeApp(): { app: App; storage: SecretStorage } {
@@ -14,9 +14,29 @@ function makeUnavailable(storage: SecretStorage): void {
 	(storage as unknown as { unavailable: boolean }).unavailable = true;
 }
 
+// Flip the mock's silent-no-op flag: setSecret returns without storing (a locked
+// backend that quietly drops the write), so the read-back verify must catch it.
+function makeSilentNoop(storage: SecretStorage): void {
+	(storage as unknown as { silentNoop: boolean }).silentNoop = true;
+}
+
 describe('secret-store guarded wrappers', () => {
 	beforeEach(() => {
 		clearLogBuffer();
+	});
+
+	describe('isSecretPersisted', () => {
+		it('confirms a non-empty write only when the read-back matches exactly', () => {
+			expect(isSecretPersisted('refresh-abc', 'refresh-abc')).toBe(true);
+			expect(isSecretPersisted('refresh-abc', 'refresh-xyz')).toBe(false);
+			expect(isSecretPersisted('refresh-abc', null)).toBe(false);
+		});
+
+		it('accepts an empty OR null read-back as a durable clear (no deleteSecret at 1.11.4)', () => {
+			expect(isSecretPersisted('', '')).toBe(true);
+			expect(isSecretPersisted('', null)).toBe(true);
+			expect(isSecretPersisted('', 'leftover')).toBe(false);
+		});
 	});
 
 	describe('writeSecret', () => {
@@ -27,6 +47,27 @@ describe('secret-store guarded wrappers', () => {
 
 			expect(ok).toBe(true);
 			expect(storage.getSecret('papersync-oauth-refresh-token')).toBe('refresh-abc');
+		});
+
+		it('confirms a clear (empty value) once the secret reads back empty', () => {
+			const { app, storage } = makeApp();
+			storage.setSecret('papersync-oauth-refresh-token', 'refresh-abc');
+
+			const ok = writeSecret(app, 'papersync-oauth-refresh-token', '');
+
+			expect(ok).toBe(true);
+			expect(storage.getSecret('papersync-oauth-refresh-token')).toBe('');
+		});
+
+		it('returns false and logs when the write silently no-ops (read-back mismatch)', () => {
+			const { app, storage } = makeApp();
+			makeSilentNoop(storage);
+
+			const ok = writeSecret(app, 'papersync-oauth-refresh-token', 'refresh-abc');
+
+			expect(ok).toBe(false);
+			expect(getLogBuffer().some((l) => l.includes('write unverified'))).toBe(true);
+			expect(storage.getSecret('papersync-oauth-refresh-token')).toBeNull(); // nothing landed
 		});
 
 		it('returns false and logs when the backend throws', () => {
