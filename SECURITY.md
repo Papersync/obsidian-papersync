@@ -38,9 +38,13 @@ Security does not rest on the secret being hidden. It rests on:
 - **Per-user consent:** each user grants access through Google's own screen.
 - **`drive.file` scope:** PaperSync can only see files it created, not your
   whole Drive.
-- **Local tokens:** your refresh and access tokens live in the vault's local
-  plugin data (`data.json`), which is gitignored and never transmitted to us
-  (there is no PaperSync server). Guard that file as you would any credential.
+- **OS-integrated secret storage:** your Google refresh token is stored through
+  Obsidian's `secretStorage` API, which keeps it in your operating system's
+  credential vault (macOS Keychain, Windows Credential Manager, Linux Secret
+  Service) — **not** in plaintext `data.json`. The short-lived access token lives
+  only in memory. Neither is ever transmitted to us (there is no PaperSync
+  server). The rest of `data.json` (sync preferences, folder paths) holds no
+  credentials, but it is still gitignored — treat your vault as private data.
 
 ### For contributors and security scanners
 
