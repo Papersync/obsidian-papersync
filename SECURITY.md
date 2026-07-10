@@ -45,12 +45,16 @@ Security does not rest on the secret being hidden. It rests on:
   lives only in memory. Neither is ever transmitted to us (there is no PaperSync
   server). Because the credential vault is device-local, the refresh token does
   not travel with your synced vault; connect Google Drive once per device.
-  If the OS credential vault is unavailable (for example a Linux desktop with no
-  Secret Service), the token is kept in memory for that session only, so Drive
-  works until you restart Obsidian, and the plugin then prompts you to reconnect;
-  it is still never written to plaintext as a fallback. The rest of `data.json`
-  (sync preferences, folder paths) holds no credentials, but it is still
-  gitignored — treat your vault as private data.
+  If the OS credential vault cannot **save** the token (for example during connect
+  or a token refresh on a Linux desktop with no Secret Service), the token is kept
+  in memory for that session only, so Drive works until you restart Obsidian, and
+  the plugin prompts you to reconnect; the reconnect prompt fires precisely when a
+  token fails to persist. On a cold start where the stored token cannot be **read**
+  (for example the vault is locked at launch), there is no prompt: Drive simply
+  stays disconnected and surfaces the normal sync-error status until you reconnect.
+  In every case the token is never written to plaintext as a fallback. The rest of
+  `data.json` (sync preferences, folder paths) holds no credentials, but it is
+  still gitignored — treat your vault as private data.
 
 ### For contributors and security scanners
 
