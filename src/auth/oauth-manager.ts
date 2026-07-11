@@ -53,7 +53,7 @@ export class OAuthManager {
 	// Resolved at CALL time (the manager is built at plugin load, before an E2E spec
 	// can write settings.endpointOverrides) through the shared loopback-gated resolver
 	// (non-loopback / malformed / empty overrides fall back to production defaults).
-	private endpoint(key: 'authUrl' | 'tokenUrl'): string {
+	private endpoint(key: 'authUrl' | 'tokenUrl' | 'revokeUrl'): string {
 		return resolveGoogleEndpoint(key, this.endpointsSupplier?.());
 	}
 
@@ -329,7 +329,38 @@ export class OAuthManager {
 		logger.info('Refresh token stored');
 	}
 
-	disconnect(): void {
+	// Best-effort server-side revocation of the refresh token (RFC 7009 / Google's
+	// /revoke). Revoking a refresh token also invalidates the access tokens minted
+	// from it (Google contract), so one call suffices. NEVER throws: an offline or
+	// failed revoke must not block disconnect's local teardown — the token is then
+	// left live at Google only until it expires, and any local residue self-heals
+	// via refreshAccessToken's invalid_grant clear on first use.
+	private async revokeToken(token: string): Promise<void> {
+		try {
+			const response = await requestUrl({
+				url: this.endpoint('revokeUrl'),
+				method: 'POST',
+				headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+				body: new URLSearchParams({ token }).toString(),
+				throw: false,
+			});
+			if (response.status >= 300) {
+				logger.warn(`OAuth token revoke returned status ${response.status}; token cleared locally, may stay live at Google until expiry`);
+				return;
+			}
+			logger.info('OAuth refresh token revoked at Google');
+		} catch (err) {
+			logger.warn(`OAuth token revoke request failed (${errorMessage(err)}); token cleared locally, may stay live at Google until expiry`);
+		}
+	}
+
+	async disconnect(): Promise<void> {
+		// Capture the token BEFORE the local clear — revocation needs its value.
+		const token = this.refreshToken;
+		if (token) {
+			// Best-effort: a failed/offline revoke logs and still proceeds to the clear.
+			await this.revokeToken(token);
+		}
 		this.accessToken = null;
 		this.refreshToken = null;
 		this.expiresAt = 0;

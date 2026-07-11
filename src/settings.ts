@@ -276,7 +276,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			this.addSyncNowButton(gSetting);
 			gSetting.addButton((button) =>
 				button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
-					this.plugin.oauthManager?.disconnect();
+					await this.plugin.oauthManager?.disconnect();
 					this.plugin.syncEngine?.stop();
 					this.plugin.settings.backendType = 'none';
 					this.plugin.settings.setupComplete = false;
@@ -629,7 +629,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button.setButtonText('Full reset').setWarning().onClick(asyncHandler(async () => {
 					this.plugin.syncEngine?.stop();
-					this.plugin.oauthManager?.disconnect();
+					await this.plugin.oauthManager?.disconnect();
 					this.plugin.settings = { ...DEFAULT_SETTINGS };
 					await this.plugin.saveSettings();
 					new Notice('Settings cleared. Reconnect your account to continue');

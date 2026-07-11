@@ -10,6 +10,7 @@ export const GOOGLE_CLIENT_SECRET = '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';
 export interface GoogleEndpoints {
 	authUrl: string;
 	tokenUrl: string;
+	revokeUrl: string;
 	driveApiBase: string;
 	driveUploadBase: string;
 }
@@ -17,6 +18,7 @@ export interface GoogleEndpoints {
 export const DEFAULT_GOOGLE_ENDPOINTS: GoogleEndpoints = {
 	authUrl: 'https://accounts.google.com/o/oauth2/v2/auth',
 	tokenUrl: 'https://oauth2.googleapis.com/token',
+	revokeUrl: 'https://oauth2.googleapis.com/revoke',
 	driveApiBase: 'https://www.googleapis.com/drive/v3',
 	driveUploadBase: 'https://www.googleapis.com/upload/drive/v3',
 };
