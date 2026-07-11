@@ -195,7 +195,12 @@ describe('Drive OAuth + sync against fake Google', function () {
 			} | undefined;
 			if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
 			plugin.syncEngine?.stop();
-			plugin.oauthManager?.disconnect();
+			// Inject the loopback endpoint seam BEFORE the baseline disconnect: disconnect
+			// now best-effort revokes any restored refresh token, and the override must be
+			// in place so that revoke lands on the in-repo fake (127.0.0.1), never real
+			// Google. With no token restored it is a no-op either way.
+			plugin.settings.endpointOverrides = overrides;
+			await plugin.oauthManager?.disconnect();
 			plugin.settings.backendType = 'none';
 			plugin.settings.setupComplete = false;
 			// The refresh token lives only in secret storage; disconnect() already cleared it.
@@ -205,7 +210,6 @@ describe('Drive OAuth + sync against fake Google', function () {
 			plugin.settings.targetFolder = target;
 			plugin.settings.attachmentsFolder = `${target}/attachments`;
 			plugin.settings.drivePollInterval = 300;
-			plugin.settings.endpointOverrides = overrides;
 			await plugin.saveSettings();
 		}, fake.endpointOverrides, TARGET_FOLDER, OAUTH_TOKEN_SECRET_ID);
 	});
@@ -511,6 +515,56 @@ describe('Drive OAuth + sync against fake Google', function () {
 		const text = await (await browser.$('body')).getText();
 		expect(text).toContain('Connect');
 		expect(text).not.toContain('Change Storage');
+		await browser.keys('Escape');
+	});
+
+	it('revokes the refresh token at Google when the user disconnects via Change Storage', async function () {
+		// Own precondition (retry-safe): seed a fresh fake-issued refresh token and reload
+		// so OAuthManager restores it into memory — the exact "connected" state a real
+		// UI connect leaves behind, without re-driving the whole browser hop.
+		await seedConnectedState();
+		fake.clearRequests();
+		await reloadPlugin();
+
+		// The seeded refresh token now held in memory is the value the revoke must carry.
+		const connected = await state();
+		expect(connected.isAuthenticated).toBe(true);
+		const refreshToken = connected.refreshToken;
+		expect(refreshToken.startsWith('refresh-')).toBe(true);
+
+		// Real UI disconnect: the Google-connected row renders exactly one "Change Storage"
+		// button (the handler returns before the folder branch), so clicking it exercises
+		// the plugin's genuine disconnect path — no direct oauthManager call.
+		await openSettings();
+		await browser.execute(() => {
+			const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Change Storage');
+			if (!btn) { throw new Error('Change Storage button not found in the connected settings UI'); }
+			btn.click();
+		});
+
+		// The disconnect POSTed the refresh token to the fake /revoke endpoint — a real
+		// server-side sign-out, fired BEFORE the local clear.
+		await browser.waitUntil(async () => fake.revokedTokens.includes(refreshToken), {
+			timeout: 15000, interval: 250,
+			timeoutMsg: 'Disconnect never revoked the refresh token at the fake Google /revoke endpoint',
+		});
+
+		// Local teardown still completed after the revoke: token gone from memory AND from
+		// OS secret storage (the revoke is best-effort, the local clear is unconditional).
+		await browser.waitUntil(async () => {
+			const s = await state();
+			return !s.isAuthenticated && s.refreshToken === '';
+		}, { timeout: 15000, interval: 500, timeoutMsg: 'Disconnect never cleared the local token after the revoke' });
+		const persistedAfterRevoke = await persistedSecret();
+		expect(persistedAfterRevoke ?? '').toBe('');
+
+		// A single, well-formed revoke POST carrying the token in the form body — after
+		// clearRequests this is unambiguously the Change-Storage disconnect's call.
+		const revokeReq = fake.requests.find((r) => r.method === 'POST' && r.path === '/revoke');
+		expect(revokeReq).toBeDefined();
+		expect(new URLSearchParams(revokeReq!.body).get('token')).toBe(refreshToken);
+		expect(revokeReq!.responseStatus).toBe(200);
+
 		await browser.keys('Escape');
 	});
 

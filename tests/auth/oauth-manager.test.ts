@@ -149,25 +149,73 @@ describe('OAuthManager', () => {
 	});
 
 	describe('disconnect', () => {
-		it('clears tokens and notifies token-change listener', () => {
+		it('revokes the refresh token at Google, then clears tokens and notifies the listener', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 200 } as never);
+
 			const tokenChange = jest.fn();
 			const mgr = new OAuthManager(makePlugin(), 'client-id');
 			mgr.setOnTokenChange(tokenChange);
 			mgr.restoreFromToken('refresh-abc');
 			expect(mgr.isAuthenticated).toBe(true);
 
-			mgr.disconnect();
+			await mgr.disconnect();
+
+			// Revoke fired once, POST to the revoke endpoint, refresh token in the form body.
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(1);
+			const call = mockedRequestUrl.mock.calls[0]![0];
+			expect(call.url).toBe('https://oauth2.googleapis.com/revoke');
+			expect(call.method).toBe('POST');
+			expect(call.headers).toMatchObject({ 'Content-Type': 'application/x-www-form-urlencoded' });
+			expect(new URLSearchParams(call.body as string).get('token')).toBe('refresh-abc');
+			// Then the local clear ran.
 			expect(mgr.isAuthenticated).toBe(false);
 			expect(mgr.currentAccessToken).toBeNull();
 			expect(tokenChange).toHaveBeenLastCalledWith('');
 		});
 
-		it('does not throw when disconnecting with no token-change listener registered', () => {
+		it('still clears locally and never throws when the revoke fails offline (network throw swallowed)', async () => {
+			mockedRequestUrl.mockRejectedValueOnce(new Error('network down'));
+
+			const tokenChange = jest.fn();
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.setOnTokenChange(tokenChange);
+			mgr.restoreFromToken('refresh-abc');
+
+			// Best-effort: the failed revoke is swallowed and disconnect still resolves.
+			await expect(mgr.disconnect()).resolves.toBeUndefined();
+			expect(mgr.isAuthenticated).toBe(false);
+			expect(mgr.currentAccessToken).toBeNull();
+			expect(tokenChange).toHaveBeenLastCalledWith('');
+		});
+
+		it('still clears locally when the revoke returns a non-2xx status (logged, not thrown)', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 400 } as never);
+
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			mgr.restoreFromToken('refresh-abc');
+
+			await expect(mgr.disconnect()).resolves.toBeUndefined();
+			expect(mgr.isAuthenticated).toBe(false);
+		});
+
+		it('does not call the revoke endpoint when there is no refresh token — only the local clear runs', async () => {
+			const mgr = new OAuthManager(makePlugin(), 'client-id');
+			// Never restored a token → refreshToken is null, so the revoke is skipped.
+			await mgr.disconnect();
+
+			expect(mockedRequestUrl).not.toHaveBeenCalled();
+			expect(mgr.isAuthenticated).toBe(false);
+			expect(mgr.currentAccessToken).toBeNull();
+		});
+
+		it('does not throw when disconnecting with no token-change listener registered', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ status: 200 } as never);
+
 			const mgr = new OAuthManager(makePlugin(), 'client-id');
 			mgr.restoreFromToken('refresh-abc');
 
 			// onTokenChange is null → the `this.onTokenChange?.('')` optional chain must no-op.
-			expect(() => mgr.disconnect()).not.toThrow();
+			await expect(mgr.disconnect()).resolves.toBeUndefined();
 			expect(mgr.isAuthenticated).toBe(false);
 		});
 	});

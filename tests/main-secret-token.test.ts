@@ -195,7 +195,7 @@ describe('refresh token in secret storage', () => {
 
 		await plugin.loadSettings();
 		await initAsync(plugin);
-		plugin.oauthManager?.disconnect();
+		await plugin.oauthManager?.disconnect();
 
 		expect(storage.getSecret(OAUTH_TOKEN_SECRET_ID)).toBe('');
 	});

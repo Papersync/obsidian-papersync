@@ -77,6 +77,8 @@ export class FakeGoogle {
 	private pendingCodes = new Map<string, PendingCode>();
 	private accessTokens = new Set<string>();
 	private refreshTokens = new Set<string>();
+	// Every token POSTed to /revoke, in order — the disconnect-revoke spec asserts on this.
+	readonly revokedTokens: string[] = [];
 	private files = new Map<string, DriveNode>();
 	private nextTokenFault: TokenFault | null = null;
 	// Page tokens reference a snapshot of the result set taken at the FIRST page, so
@@ -90,10 +92,11 @@ export class FakeGoogle {
 	}
 
 	// The values a spec writes into settings.endpointOverrides.
-	get endpointOverrides(): { authUrl: string; tokenUrl: string; driveApiBase: string; driveUploadBase: string } {
+	get endpointOverrides(): { authUrl: string; tokenUrl: string; revokeUrl: string; driveApiBase: string; driveUploadBase: string } {
 		return {
 			authUrl: `${this.origin}/o/oauth2/auth`,
 			tokenUrl: `${this.origin}/token`,
+			revokeUrl: `${this.origin}/revoke`,
 			driveApiBase: `${this.origin}/drive/v3`,
 			driveUploadBase: `${this.origin}/upload/drive/v3`,
 		};
@@ -264,6 +267,9 @@ export class FakeGoogle {
 		if (method === 'POST' && path === '/token') {
 			return this.handleToken(res, body.toString('utf-8'));
 		}
+		if (method === 'POST' && path === '/revoke') {
+			return this.handleRevoke(res, body.toString('utf-8'));
+		}
 
 		// Everything under /drive and /upload requires a Bearer token we issued.
 		if (path.startsWith('/drive/') || path.startsWith('/upload/')) {
@@ -382,6 +388,21 @@ export class FakeGoogle {
 		}
 
 		return sendOAuthError(res, 400, 'unsupported_grant_type', `grant_type ${grantType ?? '(none)'} not supported`);
+	}
+
+	// POST /revoke — Google's revocation endpoint (RFC 7009). Records the token, then
+	// invalidates it (a refresh grant on it afterward would 400 invalid_grant, matching
+	// Google's contract). Success is an empty 200; a missing token param is a 400.
+	private handleRevoke(res: http.ServerResponse, rawBody: string): number {
+		const token = new URLSearchParams(rawBody).get('token') ?? '';
+		if (!token) {
+			return sendOAuthError(res, 400, 'invalid_request', 'token parameter missing');
+		}
+		this.revokedTokens.push(token);
+		this.refreshTokens.delete(token);
+		res.writeHead(200, { 'Content-Type': 'application/json' });
+		res.end('');
+		return 200;
 	}
 
 	// GET /drive/v3/files — the two query shapes drive-backend.ts emits:
