@@ -276,8 +276,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			this.addSyncNowButton(gSetting);
 			gSetting.addButton((button) =>
 				button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
-					await this.plugin.oauthManager?.disconnect();
 					this.plugin.syncEngine?.stop();
+					await this.plugin.oauthManager?.disconnect();
 					this.plugin.settings.backendType = 'none';
 					this.plugin.settings.setupComplete = false;
 					await this.plugin.saveSettings();

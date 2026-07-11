@@ -330,11 +330,12 @@ export class OAuthManager {
 	}
 
 	// Best-effort server-side revocation of the refresh token (RFC 7009 / Google's
-	// /revoke). Revoking a refresh token also invalidates the access tokens minted
-	// from it (Google contract), so one call suffices. NEVER throws: an offline or
-	// failed revoke must not block disconnect's local teardown — the token is then
-	// left live at Google only until it expires, and any local residue self-heals
-	// via refreshAccessToken's invalid_grant clear on first use.
+	// /revoke), so one call kills the long-lived credential at Google. Already-issued
+	// access tokens are short-lived (~1h) and self-expire; disconnect also nulls the
+	// in-memory access token locally. NEVER throws: an offline or failed revoke must
+	// not block disconnect's local teardown (which now runs first) — the refresh
+	// token is then left live at Google only until it expires, and any local residue
+	// self-heals via refreshAccessToken's invalid_grant clear on first use.
 	private async revokeToken(token: string): Promise<void> {
 		try {
 			const response = await requestUrl({
@@ -355,18 +356,20 @@ export class OAuthManager {
 	}
 
 	async disconnect(): Promise<void> {
-		// Capture the token BEFORE the local clear — revocation needs its value.
+		// Capture the token, then do the LOCAL teardown FIRST so it can never be
+		// delayed by a slow or half-open revoke socket (captive portal, blackhole).
+		// The user-visible disconnect + secret wipe complete immediately; the
+		// best-effort server-side revocation runs afterwards with the captured value.
 		const token = this.refreshToken;
-		if (token) {
-			// Best-effort: a failed/offline revoke logs and still proceeds to the clear.
-			await this.revokeToken(token);
-		}
 		this.accessToken = null;
 		this.refreshToken = null;
 		this.expiresAt = 0;
 		this.stopCallbackServer();
 		this.onTokenChange?.('');
 		logger.info('OAuth tokens cleared');
+		if (token) {
+			await this.revokeToken(token);
+		}
 	}
 
 	cleanup(): void {

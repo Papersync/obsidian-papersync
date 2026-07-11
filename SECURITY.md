@@ -57,11 +57,12 @@ Security does not rest on the secret being hidden. It rests on:
   still gitignored — treat your vault as private data.
 - **Real disconnect (server-side revocation):** disconnecting Drive (Change
   Storage, or a settings reset) is a genuine sign-out, not just a local wipe.
-  Before the token is cleared from your device, PaperSync posts it to Google's
-  revocation endpoint (`oauth2.googleapis.com/revoke`), which kills the refresh
-  token and the access tokens minted from it server-side. This is best-effort. If
-  you disconnect while offline the local clear still completes, but the token stays
-  valid at Google until it expires on its own or you revoke it manually from your
+  PaperSync clears the token from your device first, then posts it to Google's
+  revocation endpoint (`oauth2.googleapis.com/revoke`), which kills the long-lived
+  refresh token server-side. Any already-issued access token is short-lived (about
+  an hour) and is also cleared locally on disconnect. This is best-effort. If
+  you disconnect while offline the local clear still completes, but the refresh
+  token stays valid at Google until it expires on its own or you revoke it manually from your
   Google Account settings; the failure is logged, never surfaced as an error. A
   revoked token that somehow reappears on a later load self-heals on first use,
   when Google rejects it with `invalid_grant` and the plugin clears it again.

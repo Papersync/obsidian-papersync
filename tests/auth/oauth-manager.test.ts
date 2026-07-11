@@ -149,7 +149,7 @@ describe('OAuthManager', () => {
 	});
 
 	describe('disconnect', () => {
-		it('revokes the refresh token at Google, then clears tokens and notifies the listener', async () => {
+		it('clears tokens locally then best-effort revokes the refresh token at Google', async () => {
 			mockedRequestUrl.mockResolvedValueOnce({ status: 200 } as never);
 
 			const tokenChange = jest.fn();
