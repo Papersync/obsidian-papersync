@@ -6,6 +6,7 @@ import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
+import { SCAN_PLACEHOLDER_SVG } from '@/ui/scan-placeholder';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
@@ -37,24 +38,6 @@ const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
 // structure (two prose lines and the same four checkboxes with one done) but masks
 // the text as illegible handwriting. (The sample file is not a real vault
 // note, so a live embed would otherwise render as an unresolved "not found" box.)
-const SCAN_PLACEHOLDER = ((width: number): string => {
-	const line = (s: string): string => `|${s.padEnd(width)}|`;
-	const rule = `+${'-'.repeat(width)}+`;
-	return [
-		rule,
-		line(''),
-		line('  ~~~~ ~~~~~ ~~~ ~~~~. ~~~~~~ ~~~~'),
-		line('  ~~~~~ ~~~ ~~~~~~~~ ~~~~ ~ ~~~~~.'),
-		line(''),
-		line('  [x] ~~~~~~~ ~~~ ~~~~~~ ~~ ~~~~~'),
-		line('  [ ] ~~~~ ~~ ~~~~~ ~~~~~~ ~~~'),
-		line('  [ ] ~~~~~~ ~~~~ ~~~~~ ~~~~~'),
-		line('  [ ] ~~~~ ~~~ ~~~~'),
-		line(''),
-		rule,
-	].join('\n');
-})(36);
-
 // True when a template embeds the scan image (canonical ps_image_file or its alias).
 function templateEmbedsImage(template: string): boolean {
 	return /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(template);
@@ -586,7 +569,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					if (imageSavingOff()) {
 						box.createDiv({ cls: 'papersync-preview-scan-off', text: 'Image saving is off, so this embed will be empty.' });
 					} else {
-						box.createEl('pre', { cls: 'papersync-preview-scan', text: SCAN_PLACEHOLDER });
+						const figure = box.createDiv({ cls: 'papersync-preview-scan' });
+						// Trusted static asset (no user input); parsed into a node rather
+						// than assigned as innerHTML so the DOM-safety lint stays happy.
+						const scan = new DOMParser().parseFromString(SCAN_PLACEHOLDER_SVG, 'image/svg+xml');
+						figure.appendChild(document.importNode(scan.documentElement, true));
 					}
 				});
 			}).catch(console.error);

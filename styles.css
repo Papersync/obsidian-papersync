@@ -34,17 +34,15 @@
 }
 
 .papersync-preview-scan {
-	display: inline-block;
-	font-family: var(--font-monospace);
-	font-size: var(--font-smaller);
-	line-height: 1.15;
-	color: var(--text-muted);
-	background: var(--background-secondary);
-	border-radius: 4px;
-	padding: 8px 10px;
-	margin: 2px 0;
-	white-space: pre;
-	overflow-x: auto;
+	display: block;
+	max-width: 300px;
+	margin: 4px 0;
+}
+
+.papersync-preview-scan svg {
+	display: block;
+	width: 100%;
+	height: auto;
 }
 
 .papersync-preview-scan::after {
