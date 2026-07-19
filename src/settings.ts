@@ -9,7 +9,7 @@ import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
-import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting, requireApiVersion } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
@@ -178,6 +178,93 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		return { isGoogleConnected, isFolderConnected };
 	}
 
+	// Obsidian 1.13+ renders this tab from getSettingDefinitions() and never calls
+	// display(); older versions have neither that method nor update(). Every
+	// "re-render after a state change" therefore has to route through here rather
+	// than calling display() directly, or the declarative path silently stops
+	// refreshing and the imperative path throws on a method that does not exist.
+	private get isDeclarative(): boolean {
+		return requireApiVersion('1.13.0');
+	}
+
+	private refresh(): void {
+		if (this.isDeclarative) {
+			this.update();
+			return;
+		}
+		this.display();
+	}
+
+	// The handlers below are shared by both render paths. Only the rendering is
+	// duplicated between display() and getSettingDefinitions(); the behaviour
+	// behind each control lives here once.
+
+	private async disconnectGoogle(): Promise<void> {
+		this.plugin.syncEngine?.stop();
+		await this.plugin.oauthManager?.disconnect();
+		this.plugin.settings.backendType = 'none';
+		this.plugin.settings.setupComplete = false;
+		await this.plugin.saveSettings();
+		new Notice('Disconnected from Google Drive');
+		this.refresh();
+	}
+
+	private async disconnectFolder(): Promise<void> {
+		const displayName = this.getFolderDisplayName();
+		this.plugin.syncEngine?.stop();
+		this.plugin.settings.backendType = 'none';
+		this.plugin.settings.folderPath = '';
+		this.plugin.settings.folderType = '';
+		this.plugin.settings.setupComplete = false;
+		await this.plugin.saveSettings();
+		new Notice(`Disconnected from ${displayName}`);
+		this.refresh();
+	}
+
+	private async connectGoogle(): Promise<void> {
+		try {
+			this.plugin.settings.backendType = 'drive';
+			await this.plugin.saveSettings();
+			await this.plugin.oauthManager?.startAuthFlow();
+			this.plugin.settings.setupComplete = true;
+			await this.plugin.saveSettings();
+			await this.plugin.startSync();
+			new Notice(STRINGS.SETTINGS_CONNECTED);
+		} catch (err) {
+			this.plugin.settings.backendType = 'none';
+			await this.plugin.saveSettings();
+			new Notice(`Connection failed: ${errorMessage(err)}`);
+		}
+		this.refresh();
+	}
+
+	private async resetSettings(): Promise<void> {
+		this.plugin.syncEngine?.stop();
+		const keepBackend = this.plugin.settings.backendType;
+		const keepSetup = this.plugin.settings.setupComplete;
+		this.plugin.settings = { ...DEFAULT_SETTINGS, backendType: keepBackend, setupComplete: keepSetup };
+		await this.plugin.saveSettings();
+		await this.plugin.resolveTargetFolder();
+		await this.plugin.startSync();
+		new Notice('Settings reset (account kept)');
+		this.refresh();
+	}
+
+	private async fullReset(): Promise<void> {
+		this.plugin.syncEngine?.stop();
+		await this.plugin.oauthManager?.disconnect();
+		this.plugin.settings = { ...DEFAULT_SETTINGS };
+		await this.plugin.saveSettings();
+		new Notice('Settings cleared. Reconnect your account to continue');
+		this.refresh();
+	}
+
+	private async setDownloadImages(value: boolean): Promise<void> {
+		this.plugin.settings.downloadImages = value;
+		await this.plugin.saveSettings();
+		this.refresh();
+	}
+
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
@@ -259,15 +346,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				.setClass('papersync-storage-active');
 			this.addSyncNowButton(gSetting);
 			gSetting.addButton((button) =>
-				button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
-					this.plugin.syncEngine?.stop();
-					await this.plugin.oauthManager?.disconnect();
-					this.plugin.settings.backendType = 'none';
-					this.plugin.settings.setupComplete = false;
-					await this.plugin.saveSettings();
-					new Notice('Disconnected from Google Drive');
-					this.display();
-				}))
+				button.setButtonText('Change Storage').onClick(asyncHandler(() => this.disconnectGoogle()))
 			);
 			return;
 		}
@@ -279,16 +358,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				.setClass('papersync-storage-active');
 			this.addSyncNowButton(fSetting);
 			fSetting.addButton((button) =>
-				button.setButtonText('Change Storage').onClick(asyncHandler(async () => {
-					this.plugin.syncEngine?.stop();
-					this.plugin.settings.backendType = 'none';
-					this.plugin.settings.folderPath = '';
-					this.plugin.settings.folderType = '';
-					this.plugin.settings.setupComplete = false;
-					await this.plugin.saveSettings();
-					new Notice(`Disconnected from ${displayName}`);
-					this.display();
-				}))
+				button.setButtonText('Change Storage').onClick(asyncHandler(() => this.disconnectFolder()))
 			);
 			return;
 		}
@@ -303,22 +373,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.setName('Google Drive')
 			.setDesc('Sign in with your Google account')
 			.addButton((button) =>
-				button.setButtonText('Connect').onClick(asyncHandler(async () => {
-					try {
-						this.plugin.settings.backendType = 'drive';
-						await this.plugin.saveSettings();
-						await this.plugin.oauthManager?.startAuthFlow();
-						this.plugin.settings.setupComplete = true;
-						await this.plugin.saveSettings();
-						await this.plugin.startSync();
-						new Notice(STRINGS.SETTINGS_CONNECTED);
-					} catch (err) {
-						this.plugin.settings.backendType = 'none';
-						await this.plugin.saveSettings();
-						new Notice(`Connection failed: ${errorMessage(err)}`);
-					}
-					this.display();
-				}))
+				button.setButtonText('Connect').onClick(asyncHandler(() => this.connectGoogle()))
 			);
 
 		// Folder — show detected locations inline + browse
@@ -398,7 +453,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		await this.plugin.saveSettings();
 		await this.plugin.startSync();
 		new Notice(`Now watching ${folderPath} for new scans`);
-		this.display();
+		this.refresh();
 	}
 
 	// Sync now is the primary action, so it sits on the connected provider row
@@ -438,11 +493,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.setName('Save scan images')
 			.setDesc('Download the original scan image into your vault. If off, remove {{ps_image_file}} from your template.')
 			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.downloadImages).onChange(asyncValueHandler(async (value) => {
-					this.plugin.settings.downloadImages = value;
-					await this.plugin.saveSettings();
-					this.display();
-				}))
+				toggle.setValue(this.plugin.settings.downloadImages).onChange(
+					asyncValueHandler((value) => this.setDownloadImages(value))
+				)
 			);
 
 		// Warn right at the toggle (not only on the Template tab) when saving is off but
@@ -611,27 +664,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.setName('Reset settings')
 			.setDesc('Reset preferences to defaults. Keeps your account connected.')
 			.addButton((button) =>
-				button.setButtonText('Reset settings').onClick(asyncHandler(async () => {
-					this.plugin.syncEngine?.stop();
-					const keepBackend = this.plugin.settings.backendType;
-					const keepSetup = this.plugin.settings.setupComplete;
-					this.plugin.settings = { ...DEFAULT_SETTINGS, backendType: keepBackend, setupComplete: keepSetup };
-					await this.plugin.saveSettings();
-					await this.plugin.resolveTargetFolder();
-					await this.plugin.startSync();
-					new Notice('Settings reset (account kept)');
-					this.display();
-				}))
+				button.setButtonText('Reset settings').onClick(asyncHandler(() => this.resetSettings()))
 			)
 			.addButton((button) =>
-				button.setButtonText('Full reset').setWarning().onClick(asyncHandler(async () => {
-					this.plugin.syncEngine?.stop();
-					await this.plugin.oauthManager?.disconnect();
-					this.plugin.settings = { ...DEFAULT_SETTINGS };
-					await this.plugin.saveSettings();
-					new Notice('Settings cleared. Reconnect your account to continue');
-					this.display();
-				}))
+				button.setButtonText('Full reset').setWarning().onClick(asyncHandler(() => this.fullReset()))
 			);
 	}
 }
