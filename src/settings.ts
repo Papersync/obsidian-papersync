@@ -1,12 +1,13 @@
 import * as fs from 'fs';
 import type PaperSyncPlugin from '@/main';
-import { detectSyncLocations } from '@/utils/platform';
+import { detectSyncLocations, resolvePickedFolder } from '@/utils/platform';
 import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
+import { FolderPickerGuideModal } from '@/ui/folder-picker-guide';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
@@ -341,35 +342,34 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.setName('Select your Papersync folder')
 			.setDesc('Browse to the Papersync folder your app saves scans to.')
 			.addButton((button) =>
-				button.setButtonText('Browse').onClick(asyncHandler(async () => {
-					try {
-						const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
-						const dialog = electron?.remote?.dialog;
-						if (dialog) {
-							const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-							if (!result.canceled && result.filePaths[0]) {
-								await this.selectFolderLocation(result.filePaths[0], 'custom');
-							}
-						} else {
-							new Notice('Folder browser not available');
-						}
-					} catch (err) {
-						new Notice(`Could not open the folder browser: ${errorMessage(err)}`);
-					}
-				}))
+				button.setButtonText('Browse').onClick(() => {
+					// Guidance first: the OS dialog cannot be labelled, and picking the
+					// wrong level fails silently (sync just finds nothing).
+					new FolderPickerGuideModal(this.app, () => { void this.browseForFolder(); }).open();
+				})
 			);
 	}
 
+	private async browseForFolder(): Promise<void> {
+		try {
+			const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
+			const dialog = electron?.remote?.dialog;
+			if (!dialog) {
+				new Notice('Folder browser not available');
+				return;
+			}
+			const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
+			if (result.canceled || !result.filePaths[0]) {return;}
+			await this.selectFolderLocation(resolvePickedFolder(result.filePaths[0]), 'custom');
+		} catch (err) {
+			new Notice(`Could not open the folder browser: ${errorMessage(err)}`);
+		}
+	}
+
 	private getFolderDisplayName(): string {
-		const { folderType } = this.plugin.settings;
-		const typeToName: Record<string, string> = {
-			icloud: 'iCloud Drive',
-			dropbox: 'Dropbox',
-			onedrive: 'OneDrive',
-			syncthing: 'Syncthing',
-			custom: 'Folder sync',
-		};
-		return typeToName[folderType] ?? 'Folder sync';
+		// Only iCloud is a named row now; everything else arrives through Browse or
+		// as a detected folder, and reads as generic folder sync.
+		return this.plugin.settings.folderType === 'icloud' ? 'iCloud Drive' : 'Folder sync';
 	}
 
 	// Detected locations are offered even before their scans folder exists (the

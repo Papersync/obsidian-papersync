@@ -49,6 +49,18 @@ export class SecretStorage {
 
 export class Plugin {}
 export class PluginSettingTab {}
+
+// Minimal Modal stand-in: enough for a subclass to be defined and constructed.
+// The DOM-building in onOpen() is exercised by the E2E suite against real
+// Obsidian, not here.
+export class Modal {
+	app: unknown;
+	contentEl = { empty: jest.fn(), createEl: jest.fn(), createDiv: jest.fn() };
+	titleEl = { setText: jest.fn() };
+	constructor(app: unknown) { this.app = app; }
+	open(): void { /* no-op */ }
+	close(): void { /* no-op */ }
+}
 export class Setting {
 	setName() { return this; }
 	setDesc() { return this; }

@@ -14,6 +14,20 @@ import { configureFolderBackend, writeScan, syncNow, readNotes, isoStamp, MINIMA
 const ICLOUD_ROOT = path.join(os.homedir(), 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
 const HAS_ICLOUD = process.platform === 'darwin' && fs.existsSync(ICLOUD_ROOT);
 
+// Every on-demand client leaves the same dataless signature, so the detection
+// under test is provider-agnostic. Assert that on a SECOND real provider when
+// one is installed, rather than trusting that iCloud generalises.
+function cloudStorageRoots(): Array<{ label: string; root: string }> {
+	const base = path.join(os.homedir(), 'Library', 'CloudStorage');
+	try {
+		return fs.readdirSync(base)
+			.filter((e) => /^(OneDrive|Dropbox)(-|$)/.test(e))
+			.map((e) => ({ label: e, root: path.join(base, e) }));
+	} catch {
+		return [];
+	}
+}
+
 const baseScan = (marker: string, imageFileName: string): Record<string, unknown> => ({
 	version: 1,
 	createdAt: new Date().toISOString(),
@@ -159,5 +173,54 @@ describe('Real iCloud Drive folder backend', function () {
 		fs.writeFileSync(path.join(dir, `${id}.jpg`), MINIMAL_JPEG);
 		await syncNow();
 		expect(await readNotes('ICloudPartial')).toContain(marker);
+	});
+});
+
+// A dataless file is how EVERY on-demand provider represents evicted content, so
+// the same blocks-based detection must hold outside iCloud. Confirmed on this
+// machine against OneDrive-Personal: `size=11748396 blocks=0
+// flags=compressed,dataless`, identical in shape to an evicted iCloud file.
+describe('Other on-demand providers use the same dataless signature', function () {
+	const roots = cloudStorageRoots();
+
+	it('finds at least one provider folder, or skips when none is installed', function () {
+		if (roots.length === 0) {this.skip();}
+	});
+
+	it('reports evicted content as size > 0 with zero allocated blocks', function () {
+		if (roots.length === 0) {this.skip(); return;}
+
+		const dataless: string[] = [];
+		for (const { root } of roots) {
+			const stack = [root];
+			let looked = 0;
+			while (stack.length > 0 && looked < 400 && dataless.length === 0) {
+				const dir = stack.pop()!;
+				let entries: fs.Dirent[];
+				try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { continue; }
+				for (const e of entries) {
+					const full = path.join(dir, e.name);
+					if (e.isDirectory()) { stack.push(full); continue; }
+					if (!e.isFile()) {continue;}
+					looked++;
+					try {
+						const st = fs.statSync(full);
+						if (st.size > 0 && st.blocks === 0) { dataless.push(full); break; }
+					} catch { /* unreadable entries are not our concern */ }
+				}
+			}
+		}
+
+		if (dataless.length === 0) {
+			// Everything happens to be downloaded locally. Nothing to assert, and
+			// forcing an eviction is not scriptable for these clients.
+			this.skip();
+			return;
+		}
+
+		const st = fs.statSync(dataless[0]!);
+		expect(st.size).toBeGreaterThan(0);
+		expect(st.blocks).toBe(0);
+		expect(st.isFile()).toBe(true); // the guard that keeps EISDIR a real error
 	});
 });

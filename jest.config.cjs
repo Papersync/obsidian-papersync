@@ -18,6 +18,10 @@ module.exports = {
 		// settings.ts is the Obsidian Setting-tab renderer; covered by E2E (test/e2e/settings.e2e.ts)
 		// rather than unit tests, which would require mocking the entire Obsidian Setting API surface.
 		'!src/settings.ts',
+		// Same reasoning: an Obsidian Modal that only builds DOM. Unit-testing it
+		// would assert against our own mock rather than Obsidian, so it is covered
+		// by E2E (test/e2e/folder-picker-guide.e2e.ts) against the real app.
+		'!src/ui/folder-picker-guide.ts',
 	],
 	coverageThreshold: {
 		global: {
