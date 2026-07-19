@@ -145,9 +145,11 @@ describe('Real iCloud Drive folder backend', function () {
 				syncEngine?: { forceSyncNow: () => Promise<void> };
 				syncState?: { status: string; lastError: string | null };
 			}> } } }).app.plugins.plugins;
+			// Neither id being present is a real failure mode, so reach for it optionally
+			// and let the assertions report it, rather than throwing a raw TypeError here.
 			const plugin = ps['papersync'] ?? ps['obsidian-papersync'];
-			await plugin.syncEngine?.forceSyncNow();
-			return { status: plugin.syncState?.status, lastError: plugin.syncState?.lastError };
+			await plugin?.syncEngine?.forceSyncNow();
+			return { status: plugin?.syncState?.status, lastError: plugin?.syncState?.lastError };
 		});
 
 		expect(status.status).toBe('error');

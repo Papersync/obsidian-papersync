@@ -7,6 +7,7 @@
 	"scripts": {
 		"dev": "node esbuild.config.mjs",
 		"build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+		"tsc": "tsc -noEmit -skipLibCheck && tsc -p tsconfig.e2e.json",
 		"test": "jest --config jest.config.cjs --ci",
 		"test:dev": "jest --config jest.config.cjs --watch",
 		"test:e2e": "npm run build && npx wdio run ./wdio.conf.mts",

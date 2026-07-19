@@ -2,7 +2,7 @@
 
 <p align="center">
   <b>Handwritten notes on paper. Searchable Markdown in your vault.</b><br>
-  One tap on your phone, one note in Obsidian, about forty-five seconds. No typing, no backend, no third party reads your notes.
+  One tap on your phone, one note in Obsidian. No typing, no backend, no third party reads your notes.
 </p>
 
 <p align="center">

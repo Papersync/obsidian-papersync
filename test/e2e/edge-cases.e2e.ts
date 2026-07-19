@@ -60,10 +60,11 @@ describe('Edge cases and error handling', function () {
 	});
 
 	it('no console errors from plugin on load', async function () {
-		const logs = await browser.getLogs('browser');
+		// getLogs is typed as object[], so the shape has to be asserted rather than
+		// annotated on the predicate.
+		const logs = (await browser.getLogs('browser')) as Array<{ level: string; message: string }>;
 		const pluginErrors = logs.filter(
-			(log: { level: string; message: string }) =>
-				log.level === 'SEVERE' && log.message.includes('papersync')
+			(log) => log.level === 'SEVERE' && log.message.includes('papersync')
 		);
 		expect(pluginErrors.length).toBe(0);
 	});

@@ -1,0 +1,19 @@
+{
+	// The E2E specs and the wdio config are Node programs, not plugin source, so they
+	// cannot live in tsconfig.json (which is scoped to src/** and targets the Obsidian
+	// DOM environment). Without a project of their own the editor infers a config with
+	// no `types`, which is why `fs` and the mocha globals read as undefined there, and
+	// nothing type-checked them: `npm run build` only covers src/**, and wdio transpiles
+	// specs without checking. This is that missing project; `npm run tsc:e2e` gates it.
+	"extends": "./tsconfig.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"allowImportingTsExtensions": true,
+		"types": ["node", "mocha", "@wdio/globals/types"],
+		"lib": ["ES2021", "DOM"]
+	},
+	"include": ["test/**/*.ts", "wdio.conf.mts"],
+	"exclude": []
+}
