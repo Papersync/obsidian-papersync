@@ -339,8 +339,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			);
 
 		// Folder — show detected locations inline + browse
-		const vaultPath = (this.app.vault.adapter as { getBasePath?: () => string }).getBasePath?.();
-		const detected = detectSyncLocations(vaultPath);
+		const detected = detectSyncLocations();
 
 		for (const loc of detected) {
 			new Setting(containerEl)
@@ -385,7 +384,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			dropbox: 'Dropbox',
 			onedrive: 'OneDrive',
 			syncthing: 'Syncthing',
-			'obsidian-sync': 'Obsidian Sync',
 			custom: 'Folder sync',
 		};
 		return typeToName[folderType] ?? 'Folder sync';

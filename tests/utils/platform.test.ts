@@ -115,17 +115,13 @@ describe('detectSyncLocations', () => {
 		]);
 	});
 
-	it('always offers Obsidian Sync when a vault path is given', () => {
-		(Platform as { isLinux: boolean }).isLinux = true;
-		const vaultPath = '/Users/test/Documents/MyVault';
-		expect(detectSyncLocations(vaultPath)).toEqual([
-			{ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: scans(vaultPath), basePath: vaultPath, exists: false },
-		]);
-	});
-
-	it('does not offer Obsidian Sync when no vault path is given', () => {
+	// Obsidian Sync is intentionally absent: it syncs the vault between Obsidian
+	// clients, which the mobile app is not, so it can never deliver scans there.
+	it('never offers Obsidian Sync as a location', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		expect(detectSyncLocations().find((l) => l.type === 'obsidian-sync')).toBeUndefined();
+		allowPaths([dropboxBase, oneDriveBase, syncthingBase]);
+		const names = detectSyncLocations().map((l) => l.displayName);
+		expect(names).not.toContain('Obsidian Sync');
 	});
 
 	it('returns multiple locations, iCloud first', () => {

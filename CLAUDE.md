@@ -28,5 +28,5 @@ cd plugin && npx tsc --noEmit
 - **SyncBackend interface:** Both `DriveBackend` and `FolderBackend` implement `discoverUnsynced`, `fetchScan`, `fetchImage`, `markSynced`, `start`, `stop`
 - **Desktop only:** `isDesktopOnly: true` — no mobile support
 - **No local DB:** Sync state lives in cloud (ScanFile `synced` field) and vault (note presence)
-- **Sync location detection:** `detectSyncLocations()` in `utils/platform.ts` — probes iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync
+- **Sync location detection:** `detectSyncLocations()` in `utils/platform.ts` — probes iCloud, Dropbox, OneDrive, Syncthing (Obsidian Sync is deliberately excluded: the mobile app cannot deliver scans into it)
 - **Equal-weight UX invariant:** Settings tab shows all detected sync locations at equal visual weight — no pre-selection, no "recommended" badge

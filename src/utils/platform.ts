@@ -7,8 +7,7 @@ export type SyncLocationType =
 	| 'icloud'
 	| 'dropbox'
 	| 'onedrive'
-	| 'syncthing'
-	| 'obsidian-sync';
+	| 'syncthing';
 
 export interface SyncLocation {
 	type: SyncLocationType;
@@ -42,7 +41,7 @@ function makeLocation(type: SyncLocationType, displayName: string, basePath: str
 // unconditionally on platforms that support it, so the option never vanishes
 // when the scans folder is deleted; select re-creates it (or explains when
 // iCloud Drive itself is unavailable).
-export function detectSyncLocations(vaultPath?: string): SyncLocation[] {
+export function detectSyncLocations(): SyncLocation[] {
 	const locations: SyncLocation[] = [];
 	const home = os.homedir();
 
@@ -72,10 +71,9 @@ export function detectSyncLocations(vaultPath?: string): SyncLocation[] {
 		locations.push(makeLocation('syncthing', 'Syncthing', syncthingBase));
 	}
 
-	// Obsidian Sync (vault-relative; the vault folder always exists)
-	if (vaultPath) {
-		locations.push(makeLocation('obsidian-sync', 'Obsidian Sync', vaultPath));
-	}
+	// Obsidian Sync is deliberately NOT offered: it syncs the vault between
+	// Obsidian clients, and the mobile app is not one, so it cannot deliver
+	// scans there. A vault-internal folder is reachable via Browse instead.
 
 	return locations;
 }

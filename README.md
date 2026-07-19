@@ -27,7 +27,7 @@
 
 1. **Capture** handwritten notes with the [PaperSync mobile app](https://github.com/papersync)
 2. The app converts them to Markdown using **your own** LLM API key (BYOK) — inference happens on your phone
-3. Scans land in your Google Drive or a sync folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync)
+3. Scans land in your Google Drive or a sync folder (iCloud, Dropbox, OneDrive, Syncthing)
 4. **This plugin** picks them up and writes vault notes automatically
 
 Your handwriting stays yours: the AI key never leaves your phone, and the plugin never sends your notes anywhere except the Google account you connect.
@@ -35,7 +35,7 @@ Your handwriting stays yours: the AI key never leaves your phone, and the plugin
 ## Features
 
 - **Two backends** — Google Drive polling (configurable interval) or folder watching for any sync tool
-- **Zero-config folder detection** — auto-detects iCloud, Dropbox, OneDrive, Syncthing, and Obsidian Sync paths
+- **Zero-config folder detection** — auto-detects iCloud, Dropbox, OneDrive, and Syncthing paths
 - **Live template preview** — a side-by-side editor and rendered preview in Settings, so you see the note before it syncs
 - **Namespaced template variables** (`ps_*`) that won't collide with Obsidian's core `{{date}}`/`{{time}}`
 - **Append-only daily notes** — multiple scans on the same day flow into the same note, matching your Daily Notes filename exactly

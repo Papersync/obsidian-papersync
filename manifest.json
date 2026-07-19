@@ -3,7 +3,7 @@
 	"name": "Papersync",
 	"version": "0.1.0",
 	"minAppVersion": "1.11.4",
-	"description": "Syncs handwritten scans from Google Drive or any folder (iCloud, Dropbox, OneDrive, Syncthing, Obsidian Sync) into your vault as markdown notes.",
+	"description": "Syncs handwritten scans from Google Drive or any folder (iCloud, Dropbox, OneDrive, Syncthing) into your vault as markdown notes.",
 	"author": "Papersync",
 	"authorUrl": "https://github.com/papersync",
 	"isDesktopOnly": true
