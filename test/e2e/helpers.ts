@@ -101,6 +101,32 @@ export async function readNotes(needle: string): Promise<string> {
 	}, needle);
 }
 
+// Reading straight after syncNow() assumes the sync finished inside its fixed
+// pause. That holds for a local file, and does not when the content has to be
+// downloaded first: an evicted scan routinely takes longer than the pause, so the
+// read came back empty and only the mocha retry passed — reading what the failed
+// attempt had already pulled down. Poll for the marker rather than guessing a
+// duration, so the wait scales with the network instead of hiding in a retry.
+export async function waitForNotes(
+	needle: string,
+	marker: string,
+	timeoutMs = 60_000,
+): Promise<string> {
+	let bodies = '';
+	await browser.waitUntil(
+		async () => {
+			bodies = await readNotes(needle);
+			return bodies.includes(marker);
+		},
+		{
+			timeout: timeoutMs,
+			interval: 500,
+			timeoutMsg: `No note under "${needle}" contained "${marker}" within ${timeoutMs}ms`,
+		},
+	);
+	return bodies;
+}
+
 export function isoStamp(): string {
 	const n = new Date();
 	const pad = (x: number, w = 2): string => String(x).padStart(w, '0');

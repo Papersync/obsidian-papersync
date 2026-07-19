@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
-import { configureFolderBackend, writeScan, syncNow, readNotes, isoStamp, MINIMAL_JPEG } from './helpers';
+import { configureFolderBackend, writeScan, syncNow, readNotes, waitForNotes, isoStamp, MINIMAL_JPEG } from './helpers';
 
 // End-to-end against a REAL iCloud Drive folder on macOS — the only place the
 // iCloud code paths actually execute. Everything else in the suite runs against
@@ -141,7 +141,9 @@ describe('Real iCloud Drive folder backend', function () {
 		});
 		await syncNow();
 
-		expect(await readNotes('ICloudEvicted')).toContain(marker);
+		// Recovery has to download the content before the note can be written, which
+		// outlasts syncNow()'s fixed pause — wait for the note rather than for a guess.
+		expect(await waitForNotes('ICloudEvicted', marker)).toContain(marker);
 		expect(isEvicted(jsonPath)).toBe(false); // materialized by the read
 	});
 
