@@ -133,6 +133,76 @@ describe('FolderBackend — scan removed after discovery', () => {
 	});
 });
 
+describe('FolderBackend — a read that fails on a not-yet-downloaded file', () => {
+	let tmp: string;
+
+	beforeEach(() => {
+		mockedTrigger.mockReset();
+		mockedTrigger.mockResolvedValue(false);
+		// A PLAIN temp dir with no provider marker in its path: not-yet-downloaded
+		// detection must work for any on-demand provider (Windows iCloud, OneDrive,
+		// Dropbox), so it must not depend on recognising the folder.
+		tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'nodl-'));
+	});
+
+	afterEach(() => {
+		jest.restoreAllMocks();
+		fs.rmSync(tmp, { recursive: true, force: true });
+	});
+
+	it('maps a non-ENOENT read failure on a dataless file to icloud_offloaded', async () => {
+		// The real shape of an offline eviction: the file exists and stats fine,
+		// but materializing its content fails, so readFile errors with something
+		// other than ENOENT.
+		const jsonPath = path.join(tmp, 'offline.json');
+		fs.writeFileSync(jsonPath, JSON.stringify({ a: 1 }));
+
+		const realStat = fs.promises.stat;
+		jest.spyOn(fs.promises, 'stat').mockImplementation(async (p, ...rest) => {
+			const st = await (realStat as (...a: unknown[]) => Promise<fs.Stats>)(p, ...rest);
+			return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { blocks: 0 }) as fs.Stats;
+		});
+		jest.spyOn(fs.promises, 'readFile').mockRejectedValue(
+			Object.assign(new Error('input/output error'), { code: 'EIO' })
+		);
+
+		const backend = new FolderBackend(tmp);
+		await expectSyncErrorType(
+			backend.fetchImage({ id: 'offline', jsonPath: '', imagePath: jsonPath }),
+			'icloud_offloaded'
+		);
+	});
+
+	it('rethrows a non-ENOENT read failure untouched when the file is materialized', async () => {
+		const jsonPath = path.join(tmp, 'broken.json');
+		fs.writeFileSync(jsonPath, JSON.stringify({ a: 1 }));
+		jest.spyOn(fs.promises, 'readFile').mockRejectedValue(
+			Object.assign(new Error('input/output error'), { code: 'EIO' })
+		);
+
+		const backend = new FolderBackend(tmp);
+		await backend.fetchImage({ id: 'broken', jsonPath: '', imagePath: jsonPath }).then(
+			() => { throw new Error('expected rejection'); },
+			(err: unknown) => { expect(isSyncError(err)).toBe(false); }
+		);
+	});
+
+	it('rethrows untouched when stat itself fails, since dataless is unknowable', async () => {
+		const jsonPath = path.join(tmp, 'vanished.json');
+		fs.writeFileSync(jsonPath, JSON.stringify({ a: 1 }));
+		jest.spyOn(fs.promises, 'readFile').mockRejectedValue(
+			Object.assign(new Error('input/output error'), { code: 'EIO' })
+		);
+		jest.spyOn(fs.promises, 'stat').mockRejectedValue(new Error('stat exploded'));
+
+		const backend = new FolderBackend(tmp);
+		await backend.fetchImage({ id: 'vanished', jsonPath: '', imagePath: jsonPath }).then(
+			() => { throw new Error('expected rejection'); },
+			(err: unknown) => { expect(isSyncError(err)).toBe(false); }
+		);
+	});
+});
+
 describe('FolderBackend — iCloud eviction placeholders', () => {
 	let tmp: string;
 	let backend: FolderBackend;

@@ -6,11 +6,35 @@ import { logger } from '@/utils/logger';
 const ICLOUD_CONTAINER_PREFIX_MACOS = '/Library/Mobile Documents/';
 
 /**
- * Checks whether a file path is inside an iCloud container on macOS.
- * Returns false on non-macOS platforms or non-iCloud paths.
+ * Whether a path is somewhere `brctl` can act on: an iCloud container on macOS.
+ *
+ * Intentionally macOS-only, and NOT a general "is this an iCloud file" test.
+ * iCloud Drive also runs on Windows (`%USERPROFILE%\iCloudDrive`), but `brctl`
+ * is a macOS binary with no Windows counterpart, so widening this would only
+ * route Windows callers into a download nudge that always fails. Detecting
+ * not-yet-downloaded content is handled provider- and platform-agnostically by
+ * `isDataless` instead, which is what covers Windows iCloud, OneDrive
+ * Files On-Demand and Dropbox online-only without naming any of them.
  */
 export function isICloudPath(filePath: string): boolean {
 	return Platform.isMacOS && filePath.includes(ICLOUD_CONTAINER_PREFIX_MACOS);
+}
+
+/**
+ * True when a file exists but its content is NOT on disk yet.
+ *
+ * Modern macOS evicts an iCloud file to a "dataless" file: it keeps its real
+ * name, `readdir` lists it normally, and `stat` still reports the LOGICAL size,
+ * so neither a name check nor a `size === 0` check detects it. The reliable
+ * signal is allocated blocks — a dataless file reports `blocks === 0` while
+ * claiming a non-zero size. Verified on this macOS: before download
+ * `size=35 blocks=0 flags=compressed,dataless`; after, `size=35 blocks=8`.
+ *
+ * (Older macOS and iOS instead leave a `.name.icloud` placeholder; that path is
+ * handled separately in the folder backend and still applies there.)
+ */
+export function isDataless(stat: { size: number; blocks: number }): boolean {
+	return stat.size > 0 && stat.blocks === 0;
 }
 
 /**

@@ -49,15 +49,27 @@ describe('FolderBackend.fetchScan — iCloud-offloaded JSON paths', () => {
 		jest.restoreAllMocks();
 	});
 
-	it('triggers download when JSON placeholder is size 0, then reads the materialized content', async () => {
-		const jsonPath = path.join(dir, 'scan.json');
-		fs.writeFileSync(jsonPath, ''); // size 0 placeholder
-
-		mockedTrigger.mockImplementationOnce(async () => {
-			// Simulate the download materializing the real content.
-			fs.writeFileSync(jsonPath, JSON.stringify({ ...baseScan, imageFileName: 'scan.jpg' }));
-			return true;
+	// An evicted iCloud file is "dataless": it keeps its name AND its logical
+	// size, and only `blocks === 0` betrays that the content is not on disk. A
+	// real filesystem can't produce that state on demand, so stat is stubbed.
+	// (Verified against real macOS: before download `size=35 blocks=0
+	// flags=compressed,dataless`, after `size=35 blocks=8`.)
+	function stubDataless(target: string): void {
+		const realStat = fs.promises.stat;
+		jest.spyOn(fs.promises, 'stat').mockImplementation(async (p, ...rest) => {
+			const st = await (realStat as (...a: unknown[]) => Promise<fs.Stats>)(p, ...rest);
+			if (p === target) {
+				return Object.assign(Object.create(Object.getPrototypeOf(st)), st, { blocks: 0 }) as fs.Stats;
+			}
+			return st;
 		});
+	}
+
+	it('triggers download for a dataless JSON, then reads the materialized content', async () => {
+		const jsonPath = path.join(dir, 'scan.json');
+		// Non-zero size on disk: the old `size === 0` test could never have fired.
+		fs.writeFileSync(jsonPath, JSON.stringify({ ...baseScan, imageFileName: 'scan.jpg' }));
+		stubDataless(jsonPath);
 
 		const backend = new FolderBackend(dir);
 		const scan = await backend.fetchScan({
@@ -69,16 +81,29 @@ describe('FolderBackend.fetchScan — iCloud-offloaded JSON paths', () => {
 		expect(mockedTrigger).toHaveBeenCalledWith(jsonPath);
 	});
 
-	it('throws icloud_offloaded when the placeholder download fails', async () => {
+	it('throws icloud_offloaded when the dataless download fails', async () => {
 		const jsonPath = path.join(dir, 'offline.json');
-		fs.writeFileSync(jsonPath, ''); // size 0 placeholder
-
+		fs.writeFileSync(jsonPath, JSON.stringify({ ...baseScan, imageFileName: 'offline.jpg' }));
+		stubDataless(jsonPath);
 		mockedTrigger.mockResolvedValueOnce(false);
 
 		const backend = new FolderBackend(dir);
 		await expect(
 			backend.fetchScan({ id: 'offline', jsonPath, imagePath: path.join(dir, 'offline.jpg') })
 		).rejects.toMatchObject({ type: 'icloud_offloaded' });
+	});
+
+	it('does not treat a genuinely empty file as dataless', async () => {
+		// size 0 with blocks 0 is just an empty file, not an eviction — the old
+		// check inverted exactly this case.
+		const jsonPath = path.join(dir, 'empty.json');
+		fs.writeFileSync(jsonPath, '');
+
+		const backend = new FolderBackend(dir);
+		await expect(
+			backend.fetchScan({ id: 'empty', jsonPath, imagePath: path.join(dir, 'empty.jpg') })
+		).rejects.toThrow(); // JSON.parse of '' — never an offload path
+		expect(mockedTrigger).not.toHaveBeenCalled();
 	});
 
 	it('skips offload handling and reads directly when the file is already materialized', async () => {
@@ -114,7 +139,8 @@ describe('FolderBackend.fetchScan — iCloud-offloaded JSON paths', () => {
 
 	it('rethrows a typed icloud_offloaded error raised inside the iCloud branch', async () => {
 		const jsonPath = path.join(dir, 'preflight.json');
-		fs.writeFileSync(jsonPath, ''); // size 0 so the truthy branch is entered
+		fs.writeFileSync(jsonPath, JSON.stringify(baseScan));
+		stubDataless(jsonPath); // dataless so the download branch is entered
 
 		mockedTrigger.mockImplementationOnce(() => {
 			throw createSyncError('icloud_offloaded', 'caller-supplied offload error');

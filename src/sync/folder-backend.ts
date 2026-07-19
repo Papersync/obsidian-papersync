@@ -5,7 +5,7 @@ import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
 import { createSyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
-import { isICloudPath, triggerICloudDownload } from '@/sync/icloud-offload';
+import { isICloudPath, triggerICloudDownload, isDataless } from '@/sync/icloud-offload';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
@@ -180,7 +180,15 @@ export class FolderBackend implements SyncBackend {
 		try {
 			return await fs.promises.readFile(filePath);
 		} catch (err) {
-			if (!isENOENT(err)) {throw err;}
+			if (!isENOENT(err)) {
+				// A dataless read materializes on demand, so a failure here means the
+				// content could not be fetched (offline, or iCloud declined). That is a
+				// retriable "not downloaded yet", not a corrupt scan.
+				if (await this.isNotYetDownloaded(filePath)) {
+					throw createSyncError('icloud_offloaded', `File not downloaded yet: ${path.basename(filePath)}`);
+				}
+				throw err;
+			}
 			if (fs.existsSync(placeholderPath(filePath))) {
 				const downloaded = await triggerICloudDownload(filePath);
 				if (downloaded) {
@@ -192,12 +200,38 @@ export class FolderBackend implements SyncBackend {
 		}
 	}
 
+	// Deliberately provider-AGNOSTIC. Every on-demand sync client (iCloud Drive on
+	// macOS and Windows, OneDrive Files On-Demand, Dropbox online-only) leaves a
+	// file that lists and stats normally while its content is absent, so asking
+	// the filesystem "is the content here?" is both simpler and safer than
+	// enumerating providers and their paths per platform — a list we would have to
+	// keep correct forever, and would get wrong the first time a user picks a
+	// provider we never thought of.
+	//
+	// Restricted to regular files: a directory can also report zero blocks against
+	// a non-zero size, and reading one (EISDIR) must stay a real error rather than
+	// be mistaken for a pending download. Never throws — a stat failure means
+	// "can't tell", and the caller rethrows the original error.
+	private async isNotYetDownloaded(filePath: string): Promise<boolean> {
+		try {
+			const stat = await fs.promises.stat(filePath);
+			return stat.isFile() && isDataless(stat);
+		} catch {
+			return false;
+		}
+	}
+
 	async fetchScan(ref: ScanReference): Promise<ScanFile> {
-		// Check for iCloud offloaded files before reading
+		// Nudge iCloud before reading an evicted file. The read below would
+		// materialize it on demand anyway, but that blocks for as long as the
+		// download takes, so asking first keeps the wait explicit and lets an
+		// offline failure surface as a retriable icloud_offloaded rather than a
+		// stalled sync. Detection is blocks-based: an evicted file keeps its name
+		// AND its logical size, so the old `size === 0` test never fired.
 		if (isICloudPath(ref.jsonPath)) {
 			try {
 				const stat = await fs.promises.stat(ref.jsonPath);
-				if (stat.size === 0) {
+				if (isDataless(stat)) {
 					const downloaded = await triggerICloudDownload(ref.jsonPath);
 					if (!downloaded) {
 						throw createSyncError('icloud_offloaded', `File not yet downloaded: ${ref.id}`);
