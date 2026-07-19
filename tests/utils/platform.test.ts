@@ -139,36 +139,139 @@ describe('detectSyncLocations', () => {
 	});
 });
 
+// resolvePickedFolder runs against the REAL filesystem (it sniffs file contents),
+// so these use temp dirs rather than the mocked fs the detection tests use.
 describe('resolvePickedFolder', () => {
-	const root = path.join(home, 'OneDrive-Personal');
+	const realFs = jest.requireActual<typeof import('fs')>('fs');
+	const realOs = jest.requireActual<typeof import('os')>('os');
+	let root: string;
 
-	it('descends into a Papersync child when the user picks the root', () => {
-		allowPaths([path.join(root, 'Papersync')]);
-		expect(resolvePickedFolder(root)).toBe(path.join(root, 'Papersync'));
+	const SCAN = JSON.stringify({ version: 1, markdown: '# hi', createdAt: '2026-01-01T00:00:00Z' });
+
+	function mkdir(...segments: string[]): string {
+		const dir = path.join(root, ...segments);
+		realFs.mkdirSync(dir, { recursive: true });
+		return dir;
+	}
+	function putScan(dir: string, name = 'scan.json'): void {
+		realFs.writeFileSync(path.join(dir, name), SCAN);
+	}
+
+	beforeEach(() => {
+		root = realFs.mkdtempSync(path.join(realOs.tmpdir(), 'pickres-'));
+		// Route the module's fs calls at the real filesystem for this suite.
+		for (const fn of ['readdirSync', 'readFileSync', 'accessSync'] as const) {
+			(fs[fn] as unknown as jest.Mock).mockImplementation(
+				(...args: unknown[]) => (realFs[fn] as (...a: unknown[]) => unknown)(...args)
+			);
+		}
 	});
 
-	it('climbs out of a legacy scans folder', () => {
-		const papersync = path.join(root, 'Papersync');
-		expect(resolvePickedFolder(path.join(papersync, 'scans'))).toBe(papersync);
+	afterEach(() => {
+		realFs.rmSync(root, { recursive: true, force: true });
 	});
 
-	it('leaves a correct Papersync pick untouched', () => {
-		const papersync = path.join(root, 'Papersync');
-		expect(resolvePickedFolder(papersync)).toBe(papersync);
+	it('keeps a pick that already holds scans', () => {
+		const dir = mkdir('Papersync');
+		putScan(dir);
+		expect(resolvePickedFolder(dir)).toBe(dir);
 	});
 
-	it('leaves an unrelated folder untouched rather than guessing', () => {
-		const other = path.join(home, 'Documents');
-		expect(resolvePickedFolder(other)).toBe(other);
+	// The case the user is most likely to hit: pointing at the provider root.
+	it('descends from a provider root to the folder holding scans', () => {
+		const dir = mkdir('OneDrive', 'Papersync');
+		putScan(dir);
+		expect(resolvePickedFolder(path.join(root, 'OneDrive'))).toBe(dir);
 	});
 
-	it('does not climb out of a scans folder that is not under Papersync', () => {
-		const stray = path.join(home, 'Archive', 'scans');
+	it('descends two levels into a legacy Papersync/scans layout', () => {
+		const dir = mkdir('OneDrive', 'Papersync', 'scans');
+		putScan(dir);
+		expect(resolvePickedFolder(path.join(root, 'OneDrive'))).toBe(dir);
+	});
+
+	// Content beats naming: this is what makes renamed and localized folders work
+	// without anyone hard-coding their names.
+	it('finds a scans folder under a name nobody hard-coded', () => {
+		const dir = mkdir('Sync', 'Mis Escaneos');
+		putScan(dir);
+		expect(resolvePickedFolder(path.join(root, 'Sync'))).toBe(dir);
+	});
+
+	it('prefers the nearest match when scans exist at two depths', () => {
+		const near = mkdir('root', 'Papersync');
+		putScan(near);
+		putScan(mkdir('root', 'Papersync', 'scans'));
+		expect(resolvePickedFolder(path.join(root, 'root'))).toBe(near);
+	});
+
+	it('ignores JSON that is not a scan', () => {
+		const dir = mkdir('NotScans');
+		realFs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ theme: 'dark' }));
+		expect(resolvePickedFolder(dir)).toBe(dir);
+	});
+
+	// Bounds the cost on a folder full of JSON: we stop sniffing after a handful
+	// rather than reading an entire directory to decide it is not a scans folder.
+	it('gives up after a handful of non-scan JSON files', () => {
+		const dir = mkdir('JsonHeavy');
+		for (let i = 0; i < 8; i++) {
+			realFs.writeFileSync(path.join(dir, `f${i}.json`), JSON.stringify({ i }));
+		}
+		// A real scan sits past the sniff limit and is deliberately not found.
+		putScan(dir, 'zz-late-scan.json');
+		expect(resolvePickedFolder(dir)).toBe(dir);
+	});
+
+	it('ignores unreadable and malformed JSON without throwing', () => {
+		const dir = mkdir('Broken');
+		realFs.writeFileSync(path.join(dir, 'a.json'), '{not json');
+		expect(resolvePickedFolder(dir)).toBe(dir);
+	});
+
+	it('skips dot-directories while searching', () => {
+		const hidden = mkdir('Root', '.Trash');
+		putScan(hidden);
+		const picked = path.join(root, 'Root');
+		expect(resolvePickedFolder(picked)).toBe(picked);
+	});
+
+	it('does not search deeper than two levels', () => {
+		putScan(mkdir('Root', 'a', 'b', 'c'));
+		const picked = path.join(root, 'Root');
+		expect(resolvePickedFolder(picked)).toBe(picked);
+	});
+
+	// Empty-but-correct folders have nothing to sniff, so names are the fallback.
+	it('climbs out of an empty legacy scans folder', () => {
+		const papersync = mkdir('Papersync');
+		const scansDir = mkdir('Papersync', 'scans');
+		expect(resolvePickedFolder(scansDir)).toBe(papersync);
+	});
+
+	it('descends into an empty Papersync child', () => {
+		const dir = mkdir('Root', 'Papersync');
+		expect(resolvePickedFolder(path.join(root, 'Root'))).toBe(dir);
+	});
+
+	it('does not climb out of a scans folder with an unrelated parent', () => {
+		const stray = mkdir('Archive', 'scans');
 		expect(resolvePickedFolder(stray)).toBe(stray);
 	});
 
+	it('leaves an unrelated empty folder exactly as picked', () => {
+		const dir = mkdir('Documents');
+		expect(resolvePickedFolder(dir)).toBe(dir);
+	});
+
 	it('tolerates a trailing separator', () => {
-		allowPaths([path.join(root, 'Papersync')]);
-		expect(resolvePickedFolder(`${root}${path.sep}`)).toBe(path.join(root, 'Papersync'));
+		const dir = mkdir('Papersync');
+		putScan(dir);
+		expect(resolvePickedFolder(`${dir}${path.sep}`)).toBe(dir);
+	});
+
+	it('returns the pick when it does not exist at all', () => {
+		const missing = path.join(root, 'nope');
+		expect(resolvePickedFolder(missing)).toBe(missing);
 	});
 });

@@ -7,7 +7,6 @@ import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
-import { FolderPickerGuideModal } from '@/ui/folder-picker-guide';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
@@ -340,13 +339,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Select your Papersync folder')
-			.setDesc('Browse to the Papersync folder your app saves scans to.')
+			.setDesc('Browse to the folder your phone saves scans into. Papersync finds the right level from wherever you point it.')
 			.addButton((button) =>
-				button.setButtonText('Browse').onClick(() => {
-					// Guidance first: the OS dialog cannot be labelled, and picking the
-					// wrong level fails silently (sync just finds nothing).
-					new FolderPickerGuideModal(this.app, () => { void this.browseForFolder(); }).open();
-				})
+				button.setButtonText('Browse').onClick(asyncHandler(() => this.browseForFolder()))
 			);
 	}
 

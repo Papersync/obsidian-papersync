@@ -96,24 +96,90 @@ export function isOnline(): boolean {
 	return navigator.onLine;
 }
 
+// A scan is a JSON file carrying markdown. Cheap structural check, deliberately
+// not full schema validation: this only has to tell a scans folder apart from an
+// arbitrary folder that happens to contain JSON.
+function looksLikeScan(filePath: string): boolean {
+	try {
+		const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+		return typeof parsed === 'object' && parsed !== null && 'markdown' in parsed;
+	} catch {
+		return false;
+	}
+}
+
+const SNIFF_LIMIT = 5; // enough to identify the folder, cheap on a large one
+
+function holdsScans(dir: string): boolean {
+	let entries: string[];
+	try {
+		entries = fs.readdirSync(dir);
+	} catch {
+		return false;
+	}
+	let checked = 0;
+	for (const entry of entries) {
+		if (!entry.endsWith('.json')) {continue;}
+		if (looksLikeScan(path.join(dir, entry))) {return true;}
+		if (++checked >= SNIFF_LIMIT) {break;}
+	}
+	return false;
+}
+
+function subdirectories(dir: string): string[] {
+	try {
+		return fs.readdirSync(dir, { withFileTypes: true })
+			.filter((e) => e.isDirectory() && !e.name.startsWith('.'))
+			.map((e) => path.join(dir, e.name));
+	} catch {
+		return [];
+	}
+}
+
 /**
- * The OS folder dialog cannot be labelled, so a user can land one level off in
- * either direction. Correct the two cases identifiable with certainty and leave
- * anything else exactly as picked, rather than guessing at intent:
+ * Works out which folder actually holds the scans, from wherever the user
+ * pointed. There is no guidance step and nothing to read: the OS folder dialog
+ * cannot be labelled, so rather than asking the user to land on the exact level,
+ * we find it.
  *
- *   <root>                   -> <root>/Papersync      when that child exists
- *   <root>/Papersync/scans   -> <root>/Papersync      the pre-flat layout
+ * Resolution is by CONTENT first. A folder holding scan JSON is the answer
+ * whatever it is called, which covers renamed folders, localized names and the
+ * legacy `Papersync/scans` layout without special-casing any of them. Name rules
+ * are only the fallback for a folder that is correct but still empty, since a
+ * brand-new setup has nothing to sniff.
+ *
+ * Searches two levels down, which reaches `<root>/Papersync` and
+ * `<root>/Papersync/scans` from a provider root. Deeper is left alone rather
+ * than guessed at.
  */
 export function resolvePickedFolder(picked: string): string {
 	const normalized = picked.replace(/[/\\]+$/, '');
 
+	// 1. The pick is already right.
+	if (holdsScans(normalized)) {return normalized;}
+
+	// 2. Look downward for the real thing, nearest first.
+	let frontier = [normalized];
+	for (let depth = 0; depth < 2; depth++) {
+		const next: string[] = [];
+		for (const dir of frontier) {
+			for (const child of subdirectories(dir)) {
+				if (holdsScans(child)) {return child;}
+				next.push(child);
+			}
+		}
+		frontier = next;
+	}
+
+	// 3. Nothing to sniff (an empty but correctly-named folder). Fall back to
+	//    names: climb out of a legacy scans folder, or descend into Papersync.
 	if (path.basename(normalized) === 'scans') {
 		const parent = path.dirname(normalized);
 		if (path.basename(parent) === PAPERSYNC_FOLDER) {return parent;}
 	}
-
 	const child = path.join(normalized, PAPERSYNC_FOLDER);
 	if (probe(child)) {return child;}
 
+	// 4. Take the user at their word.
 	return normalized;
 }

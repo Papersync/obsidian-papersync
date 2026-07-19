@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml"><img alt="CI" src="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml/badge.svg"></a>
   <img alt="Coverage 100%" src="https://img.shields.io/badge/coverage-100%25-brightgreen">
-  <a href="https://github.com/Papersync/obsidian-papersync/releases/latest"><img alt="Version" src="https://img.shields.io/github/manifest-json/v/Papersync/obsidian-papersync?label=version"></a>
+  <a href="https://github.com/Papersync/obsidian-papersync/releases/latest"><img alt="Version 0.1.0" src="https://img.shields.io/badge/version-0.1.0-blue"></a>
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Obsidian 1.11.4+" src="https://img.shields.io/badge/Obsidian-1.11.4%2B-7c3aed">
   <img alt="Desktop" src="https://img.shields.io/badge/platform-desktop-lightgrey">
@@ -17,15 +17,13 @@
 </p>
 
 <p align="center">
-  <img alt="Bring your own key" src="https://img.shields.io/badge/API%20keys-BYOK-success">
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-success">
   <img alt="Local-first" src="https://img.shields.io/badge/data-local--first-success">
-  <img alt="Least-privilege OAuth" src="https://img.shields.io/badge/OAuth-PKCE%20%C2%B7%20drive.file-success">
 </p>
 
 ## How it works
 
-1. **Capture** handwritten notes with the [Papersync mobile app](https://github.com/papersync)
+1. **Capture** handwritten notes with the [Papersync mobile app](https://papersync.ai)
 2. The app converts them to Markdown using **your own** LLM API key (BYOK) — inference happens on your phone
 3. Scans land in your Google Drive, iCloud Drive, or any folder your computer syncs (Dropbox, OneDrive, Syncthing, anything else)
 4. **This plugin** picks them up and writes vault notes automatically
