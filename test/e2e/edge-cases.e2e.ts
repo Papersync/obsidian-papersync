@@ -9,7 +9,7 @@ describe('Edge cases and error handling', function () {
 		// Plugin should still be functional
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('PaperSync');
+		expect(text).toContain('Papersync');
 	});
 
 	it('survives opening and closing settings rapidly', async function () {
@@ -53,7 +53,7 @@ describe('Edge cases and error handling', function () {
 			// Plugin should still be functional after reset
 			const body = await browser.$('body');
 			const text = await body.getText();
-			expect(text).toContain('PaperSync');
+			expect(text).toContain('Papersync');
 		}
 
 		await browser.keys('Escape');

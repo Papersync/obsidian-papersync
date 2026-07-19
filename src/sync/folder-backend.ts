@@ -11,6 +11,23 @@ import { errorMessage } from '@/utils/error-message';
 
 const DEBOUNCE_MS = 500;
 
+export function isENOENT(err: unknown): boolean {
+	return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
+}
+
+// iCloud represents an evicted (offloaded) file as a hidden `.name.icloud`
+// placeholder in the same directory; the real name reappears once downloaded.
+const ICLOUD_PLACEHOLDER_RE = /^\.(.+)\.icloud$/;
+
+function materializedName(entry: string): string {
+	const match = ICLOUD_PLACEHOLDER_RE.exec(entry);
+	return match ? match[1]! : entry;
+}
+
+function placeholderPath(filePath: string): string {
+	return path.join(path.dirname(filePath), `.${path.basename(filePath)}.icloud`);
+}
+
 export class FolderBackend implements SyncBackend {
 	private folderPath: string;
 	private watcher: fs.FSWatcher | null = null;
@@ -79,26 +96,46 @@ export class FolderBackend implements SyncBackend {
 	}
 
 	async discoverUnsynced(): Promise<ScanReference[]> {
-		const entries = await fs.promises.readdir(this.folderPath);
-		const entrySet = new Set(entries);
-		const jsonFiles = entries.filter((e) => e.endsWith('.json'));
+		let entries: string[];
+		try {
+			entries = await fs.promises.readdir(this.folderPath);
+		} catch (err) {
+			if (isENOENT(err)) {
+				throw createSyncError('folder_missing', `Papersync folder not found: ${this.folderPath}`);
+			}
+			throw err;
+		}
+		const presentSet = new Set(entries);
+		// Evicted iCloud files are listed only as `.name.icloud` placeholders;
+		// fold them back to their real names so offloaded scans stay discoverable.
+		const entrySet = new Set(entries.map(materializedName));
+		const jsonFiles = [...entrySet].filter((e) => e.endsWith('.json'));
 		const refs: ScanReference[] = [];
 
 		for (const jsonFile of jsonFiles) {
 			const jsonPath = path.join(this.folderPath, jsonFile);
+			const baseName = jsonFile.replace(/\.json$/, '');
 
 			try {
-				const content = await fs.promises.readFile(jsonPath, 'utf-8');
-				const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
-
-				if (parsed.synced === true) {continue;}
-
 				// Trust the JSON's imageFileName field first (the app writes `.jpg`
 				// for new captures and `.png` for legacy archives). Fall back to
-				// extension probing in case the field is missing or stale.
-				const baseName = jsonFile.replace(/\.json$/, '');
+				// extension probing in case the field is missing or stale. An
+				// evicted JSON can't be read yet — its synced flag is unknowable
+				// until fetchScan triggers the download, so discover it anyway.
+				let imageFileName: string | null = null;
+				if (presentSet.has(jsonFile)) {
+					const content = await fs.promises.readFile(jsonPath, 'utf-8');
+					const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
+
+					if (parsed.synced === true) {continue;}
+					imageFileName =
+						parsed.imageFileName && entrySet.has(parsed.imageFileName) ? parsed.imageFileName : null;
+				} else {
+					logger.info(`${jsonFile} is offloaded — discovering it for download`);
+				}
+
 				const candidate =
-					(parsed.imageFileName && entrySet.has(parsed.imageFileName) ? parsed.imageFileName : null)
+					imageFileName
 					?? (entrySet.has(`${baseName}.jpg`) ? `${baseName}.jpg` : null)
 					?? (entrySet.has(`${baseName}.jpeg`) ? `${baseName}.jpeg` : null)
 					?? (entrySet.has(`${baseName}.png`) ? `${baseName}.png` : null);
@@ -110,11 +147,15 @@ export class FolderBackend implements SyncBackend {
 
 				const imagePath = path.join(this.folderPath, candidate);
 
-				try {
-					await fs.promises.access(imagePath, fs.constants.R_OK);
-				} catch {
-					logger.info(`Skipping ${jsonFile} — companion image not readable`);
-					continue;
+				// An evicted image is unreadable until downloaded; fetchImage
+				// recovers it, so only gate on readability when it's present.
+				if (presentSet.has(candidate)) {
+					try {
+						await fs.promises.access(imagePath, fs.constants.R_OK);
+					} catch {
+						logger.info(`Skipping ${jsonFile} — companion image not readable`);
+						continue;
+					}
 				}
 
 				refs.push({
@@ -128,6 +169,27 @@ export class FolderBackend implements SyncBackend {
 		}
 
 		return refs;
+	}
+
+	/**
+	 * Reads a file, recovering from iCloud eviction: on ENOENT with a
+	 * `.name.icloud` placeholder present, triggers the download and reads again.
+	 * Throws `scan_missing` when the file is genuinely gone.
+	 */
+	private async readScanFile(filePath: string): Promise<Buffer<ArrayBuffer>> {
+		try {
+			return await fs.promises.readFile(filePath);
+		} catch (err) {
+			if (!isENOENT(err)) {throw err;}
+			if (fs.existsSync(placeholderPath(filePath))) {
+				const downloaded = await triggerICloudDownload(filePath);
+				if (downloaded) {
+					return await fs.promises.readFile(filePath);
+				}
+				throw createSyncError('icloud_offloaded', `File not yet downloaded: ${path.basename(filePath)}`);
+			}
+			throw createSyncError('scan_missing', `File removed from the Papersync folder: ${path.basename(filePath)}`);
+		}
 	}
 
 	async fetchScan(ref: ScanReference): Promise<ScanFile> {
@@ -149,7 +211,7 @@ export class FolderBackend implements SyncBackend {
 			}
 		}
 
-		const content = await fs.promises.readFile(ref.jsonPath, 'utf-8');
+		const content = (await this.readScanFile(ref.jsonPath)).toString('utf-8');
 		const raw = JSON.parse(content);
 
 		const validated = validateScanFile(raw);
@@ -161,12 +223,12 @@ export class FolderBackend implements SyncBackend {
 	}
 
 	async fetchImage(ref: ScanReference): Promise<ArrayBuffer> {
-		const buffer = await fs.promises.readFile(ref.imagePath);
+		const buffer = await this.readScanFile(ref.imagePath);
 		return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 	}
 
 	async markSynced(ref: ScanReference): Promise<void> {
-		const content = await fs.promises.readFile(ref.jsonPath, 'utf-8');
+		const content = (await this.readScanFile(ref.jsonPath)).toString('utf-8');
 		const parsed = JSON.parse(content) as Record<string, unknown>;
 		parsed.synced = true;
 		await fs.promises.writeFile(ref.jsonPath, JSON.stringify(parsed, null, 2), 'utf-8');

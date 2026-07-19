@@ -7,6 +7,8 @@ export type SyncErrorType =
 	| 'schema_mismatch'
 	| 'obsidian_version'
 	| 'icloud_offloaded'
+	| 'folder_missing'
+	| 'scan_missing'
 	| 'vault_write_failed';
 
 export interface SyncError {
@@ -51,6 +53,8 @@ export function createSyncError(
 		schema_mismatch: false,
 		obsidian_version: false,
 		icloud_offloaded: true,
+		folder_missing: false,
+		scan_missing: false,
 		vault_write_failed: true,
 	};
 

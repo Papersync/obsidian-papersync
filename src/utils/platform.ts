@@ -14,9 +14,13 @@ export interface SyncLocation {
 	type: SyncLocationType;
 	displayName: string;
 	path: string;
+	/** Provider root that must exist before the scans path can be created inside it. */
+	basePath: string;
+	/** Whether the scans path itself already exists. */
+	exists: boolean;
 }
 
-const PAPERSYNC_SCANS_FOLDER = path.join('PaperSync', 'scans');
+const PAPERSYNC_FOLDER = 'Papersync';
 
 function probe(candidate: string): boolean {
 	try {
@@ -27,50 +31,50 @@ function probe(candidate: string): boolean {
 	}
 }
 
+function makeLocation(type: SyncLocationType, displayName: string, basePath: string): SyncLocation {
+	const scansPath = path.join(basePath, PAPERSYNC_FOLDER);
+	return { type, displayName, path: scansPath, basePath, exists: probe(scansPath) };
+}
+
+// A provider is offered whenever its ROOT folder exists — the scans folder
+// inside it may not exist yet (the plugin can be set up before the app has
+// written anything) and is created on select. iCloud Drive is offered
+// unconditionally on platforms that support it, so the option never vanishes
+// when the scans folder is deleted; select re-creates it (or explains when
+// iCloud Drive itself is unavailable).
 export function detectSyncLocations(vaultPath?: string): SyncLocation[] {
 	const locations: SyncLocation[] = [];
 	const home = os.homedir();
 
-	// iCloud Drive
 	if (Platform.isMacOS) {
-		const icloudMacBase = path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
-		const p = path.join(icloudMacBase, PAPERSYNC_SCANS_FOLDER);
-		if (probe(p)) {
-			locations.push({ type: 'icloud', displayName: 'iCloud Drive', path: p });
-		}
+		locations.push(makeLocation('icloud', 'iCloud Drive', path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs')));
 	} else if (Platform.isWin) {
-		const p = path.join(home, 'iCloudDrive', PAPERSYNC_SCANS_FOLDER);
-		if (probe(p)) {
-			locations.push({ type: 'icloud', displayName: 'iCloud Drive', path: p });
-		}
+		locations.push(makeLocation('icloud', 'iCloud Drive', path.join(home, 'iCloudDrive')));
 	}
 
 	// Dropbox (same path on every platform)
-	const dropboxPath = path.join(home, 'Dropbox', PAPERSYNC_SCANS_FOLDER);
-	if (probe(dropboxPath)) {
-		locations.push({ type: 'dropbox', displayName: 'Dropbox', path: dropboxPath });
+	const dropboxBase = path.join(home, 'Dropbox');
+	if (probe(dropboxBase)) {
+		locations.push(makeLocation('dropbox', 'Dropbox', dropboxBase));
 	}
 
 	// OneDrive (same path on Windows and macOS; Linux excluded)
 	if (Platform.isWin || Platform.isMacOS) {
-		const p = path.join(home, 'OneDrive', PAPERSYNC_SCANS_FOLDER);
-		if (probe(p)) {
-			locations.push({ type: 'onedrive', displayName: 'OneDrive', path: p });
+		const oneDriveBase = path.join(home, 'OneDrive');
+		if (probe(oneDriveBase)) {
+			locations.push(makeLocation('onedrive', 'OneDrive', oneDriveBase));
 		}
 	}
 
 	// Syncthing
-	const syncthingPath = path.join(home, 'Sync', PAPERSYNC_SCANS_FOLDER);
-	if (probe(syncthingPath)) {
-		locations.push({ type: 'syncthing', displayName: 'Syncthing', path: syncthingPath });
+	const syncthingBase = path.join(home, 'Sync');
+	if (probe(syncthingBase)) {
+		locations.push(makeLocation('syncthing', 'Syncthing', syncthingBase));
 	}
 
-	// Obsidian Sync (vault-relative)
+	// Obsidian Sync (vault-relative; the vault folder always exists)
 	if (vaultPath) {
-		const p = path.join(vaultPath, PAPERSYNC_SCANS_FOLDER);
-		if (probe(p)) {
-			locations.push({ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: p });
-		}
+		locations.push(makeLocation('obsidian-sync', 'Obsidian Sync', vaultPath));
 	}
 
 	return locations;

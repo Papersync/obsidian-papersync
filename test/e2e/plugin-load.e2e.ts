@@ -1,4 +1,4 @@
-describe('PaperSync plugin', function () {
+describe('Papersync plugin', function () {
 	it('loads without errors', async function () {
 		const title = await browser.getTitle();
 		expect(title).toBeDefined();
@@ -14,10 +14,10 @@ describe('PaperSync plugin', function () {
 		await browser.keys('Escape');
 	});
 
-	it('shows PaperSync in status bar', async function () {
+	it('shows Papersync in status bar', async function () {
 		await browser.pause(500);
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('PaperSync');
+		expect(text).toContain('Papersync');
 	});
 });

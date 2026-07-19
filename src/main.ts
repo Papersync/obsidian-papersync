@@ -186,7 +186,7 @@ export default class PaperSyncPlugin extends Plugin {
 		if (this.settings.targetFolder) {return;}
 
 		const dailyConfig = getDailyNotesConfig(this.app);
-		this.settings.targetFolder = dailyConfig.folder || 'PaperSync';
+		this.settings.targetFolder = dailyConfig.folder || 'Papersync';
 		await this.saveSettings();
 		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
 	}
@@ -257,7 +257,6 @@ export default class PaperSyncPlugin extends Plugin {
 		}
 
 		const enteringError = snap.status === 'error' && this.lastStatus !== 'error';
-		const justSynced = snap.status === 'synced' && this.lastStatus !== 'synced';
 		this.lastStatus = snap.status;
 
 		// Surface a single Notice with the real reason when sync first enters the error
@@ -266,9 +265,12 @@ export default class PaperSyncPlugin extends Plugin {
 			new Notice(snap.lastError ?? STRINGS.NOTICE_SYNC_ERROR, 10000);
 		}
 		// Record the wall-clock time a sync cycle last completed (distinct from the
-		// sync cursor, which is the newest scan's timestamp).
+		// sync cursor, which is the newest scan's timestamp). Driven by the state's
+		// completion stamp rather than a status transition: a "Sync now" that found
+		// nothing new keeps status at 'synced', but the stamp still advances.
+		const justSynced = snap.lastSyncCompletedAt > this.settings.lastSyncAt;
 		if (justSynced) {
-			this.settings.lastSyncAt = Date.now();
+			this.settings.lastSyncAt = snap.lastSyncCompletedAt;
 		}
 
 		// Update settings tab after lastSyncAt so the connection row shows the fresh time.
@@ -289,7 +291,7 @@ export default class PaperSyncPlugin extends Plugin {
 		if (this.syncEngine) {
 			await this.syncEngine.forceSyncNow();
 		} else {
-			new Notice('PaperSync is not configured. Open settings to set up sync');
+			new Notice('Papersync is not configured. Open settings to set up sync');
 		}
 	}
 

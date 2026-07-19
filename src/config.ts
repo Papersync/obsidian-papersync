@@ -22,7 +22,7 @@ export const DEFAULT_GOOGLE_ENDPOINTS: GoogleEndpoints = {
 	driveApiBase: 'https://www.googleapis.com/drive/v3',
 	driveUploadBase: 'https://www.googleapis.com/upload/drive/v3',
 };
-export const GOOGLE_SCANS_FOLDER = 'PaperSync/scans';
+export const GOOGLE_SCANS_FOLDER = 'Papersync';
 
 // Fixed id under which the Google OAuth refresh token is kept in Obsidian's
 // OS-integrated Secret Storage (app.secretStorage), NOT plaintext data.json. The id

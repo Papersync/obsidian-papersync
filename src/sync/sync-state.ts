@@ -8,6 +8,7 @@ export interface SyncStateSnapshot {
 	lastSyncTimestamp: string;
 	isSyncing: boolean;
 	lastError: string | null;
+	lastSyncCompletedAt: number;
 }
 
 type SyncStateListener = (snapshot: SyncStateSnapshot) => void;
@@ -18,6 +19,7 @@ export class SyncState {
 	private _lastSyncTimestamp: string;
 	private _isSyncing = false;
 	private _lastError: string | null = null;
+	private _lastSyncCompletedAt = 0;
 	private listeners: SyncStateListener[] = [];
 
 	constructor(lastSyncTimestamp: string) {
@@ -30,6 +32,7 @@ export class SyncState {
 	get isSyncing(): boolean { return this._isSyncing; }
 
 	get lastError(): string | null { return this._lastError; }
+	get lastSyncCompletedAt(): number { return this._lastSyncCompletedAt; }
 
 	get snapshot(): SyncStateSnapshot {
 		return {
@@ -38,6 +41,7 @@ export class SyncState {
 			lastSyncTimestamp: this._lastSyncTimestamp,
 			isSyncing: this._isSyncing,
 			lastError: this._lastError,
+			lastSyncCompletedAt: this._lastSyncCompletedAt,
 		};
 	}
 
@@ -65,6 +69,19 @@ export class SyncState {
 			logger.info(`Sync state: ${status}${pendingCount !== undefined ? ` (${pendingCount} pending)` : ''}`);
 			this.notify();
 		}
+	}
+
+	// Marks the end of a completed sync cycle with wall-clock time, always
+	// notifying — setStatus alone skips notify when nothing changed, so a
+	// force-sync that found nothing new (already 'synced', 0 pending) would
+	// never reach listeners and the UI's "Last sync" time would stay frozen.
+	recordSyncCompleted(pendingCount: number): void {
+		this._status = 'synced';
+		this._pendingCount = pendingCount;
+		this._lastError = null;
+		this._lastSyncCompletedAt = Date.now();
+		logger.info(`Sync state: synced (${pendingCount} pending)`);
+		this.notify();
 	}
 
 	// Records a sync failure with its real message and moves to the error state,

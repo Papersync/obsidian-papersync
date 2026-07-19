@@ -2,7 +2,7 @@ import { App, Notice } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import { NoteCreator } from '@/notes/note-creator';
 import type { NoteCreatorConfig } from '@/notes/note-creator';
-import { ErrorHandler } from '@/errors/error-handler';
+import { ErrorHandler, isSyncError } from '@/errors/error-handler';
 import { SyncState } from '@/sync/sync-state';
 import { isOnline } from '@/utils/platform';
 import { logger } from '@/utils/logger';
@@ -67,7 +67,7 @@ export class SyncEngine {
 			if (refs.length > 0) {
 				await this.processBatch(refs);
 			} else {
-				this.state.setStatus('synced', 0);
+				this.state.recordSyncCompleted(0);
 				new Notice('All synced, nothing new');
 			}
 		} catch (err) {
@@ -119,20 +119,31 @@ export class SyncEngine {
 
 				for (const ref of chunk) {
 					const result = await this.errorHandler.handleWithRetry(ref.id, async () => {
-						const scanFile = await this.backend.fetchScan(ref);
+						try {
+							const scanFile = await this.backend.fetchScan(ref);
 
-						if (scanFile.synced) {
-							logger.info(`Scan ${ref.id} already synced, skipping`);
-							return 'skipped';
+							if (scanFile.synced) {
+								logger.info(`Scan ${ref.id} already synced, skipping`);
+								return 'skipped';
+							}
+
+							const imageData = this.noteCreator.config.downloadImages
+								? await this.backend.fetchImage(ref)
+								: null;
+							await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);
+							await this.backend.markSynced(ref, scanFile);
+							this.pendingNetwork.delete(ref.id);
+							return 'synced';
+						} catch (err) {
+							// A scan deleted between discovery and fetch is not a failure —
+							// the source of truth removed it. Skip without retries or notices.
+							if (isSyncError(err) && err.type === 'scan_missing') {
+								logger.info(`Scan ${ref.id} was removed from the source — skipping`);
+								this.pendingNetwork.delete(ref.id);
+								return 'skipped';
+							}
+							throw err;
 						}
-
-						const imageData = this.noteCreator.config.downloadImages
-							? await this.backend.fetchImage(ref)
-							: null;
-						await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);
-						await this.backend.markSynced(ref, scanFile);
-						this.pendingNetwork.delete(ref.id);
-						return 'synced';
 					});
 
 					if (result === null) {
@@ -178,10 +189,10 @@ export class SyncEngine {
 			}
 
 			if (this.pendingNetwork.size > 0) {
-				this.state.setStatus('synced', this.pendingNetwork.size);
+				this.state.recordSyncCompleted(this.pendingNetwork.size);
 				new Notice(`${this.pendingNetwork.size} scan(s) waiting for download`);
 			} else {
-				this.state.setStatus('synced', 0);
+				this.state.recordSyncCompleted(0);
 			}
 			this.errorHandler.resetRetries();
 		} finally {

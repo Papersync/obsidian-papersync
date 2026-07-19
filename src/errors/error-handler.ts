@@ -17,6 +17,8 @@ const USER_MESSAGES: Record<SyncErrorType, string> = {
 	schema_mismatch: STRINGS.NOTICE_SCHEMA_MISMATCH,
 	obsidian_version: STRINGS.NOTICE_OBSIDIAN_VERSION,
 	icloud_offloaded: STRINGS.NOTICE_DOWNLOADING_OFFLOADED,
+	folder_missing: STRINGS.NOTICE_FOLDER_MISSING,
+	scan_missing: STRINGS.NOTICE_SCAN_REMOVED,
 	vault_write_failed: 'Failed to write note to vault',
 };
 
@@ -78,6 +80,11 @@ export class ErrorHandler {
 			}
 			if (msg.includes('401') || msg.includes('unauthorized')) {
 				return createSyncError('token_expired', err.message);
+			}
+			// Raw fs errors that escaped backend-level conversion (belt for the
+			// folder backend's watched folder disappearing mid-operation).
+			if (msg.includes('enoent') || msg.includes('no such file')) {
+				return createSyncError('folder_missing', err.message);
 			}
 			return createSyncError('vault_write_failed', err.message);
 		}

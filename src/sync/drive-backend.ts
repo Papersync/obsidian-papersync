@@ -247,7 +247,7 @@ export class DriveBackend implements SyncBackend {
 			const folderData = response.json as DriveListResponse;
 			const folders = folderData.files ?? [];
 			if (folders.length === 0 || !folders[0]) {
-				logger.warn(`PaperSync scans folder not found on Drive (missing: ${part})`);
+				logger.warn(`Papersync folder not found on Drive (missing: ${part})`);
 				return null;
 			}
 			parentId = folders[0].id;

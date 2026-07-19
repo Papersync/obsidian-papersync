@@ -25,7 +25,7 @@ describe('createSyncError', () => {
 
 	it('creates all error types with correct defaults', () => {
 		const retriableTypes = ['network_timeout', 'rate_limit', 'token_expired', 'icloud_offloaded', 'vault_write_failed'] as const;
-		const nonRetriableTypes = ['permission_denied', 'token_revoked', 'schema_mismatch', 'obsidian_version'] as const;
+		const nonRetriableTypes = ['permission_denied', 'token_revoked', 'schema_mismatch', 'obsidian_version', 'folder_missing', 'scan_missing'] as const;
 
 		for (const type of retriableTypes) {
 			expect(createSyncError(type, 'test').retriable).toBe(true);

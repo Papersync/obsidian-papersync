@@ -23,7 +23,6 @@ function makeOAuthManager(token = 'test-token'): OAuthManager {
 function mockFolderChainAndEmptyList(): void {
 	mockedRequestUrl
 		.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-		.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 		.mockResolvedValueOnce({ json: { files: [] } } as never);
 }
 
@@ -64,7 +63,7 @@ describe('DriveBackend endpoint resolution', () => {
 
 		mockedRequestUrl.mockResolvedValueOnce({ arrayBuffer: new ArrayBuffer(1) } as never);
 		await backend.fetchImage({ id: 'a', jsonPath: 'j', imagePath: 'img-1' });
-		expect(mockedRequestUrl.mock.calls[3]![0].url).toBe('http://127.0.0.1:9/drive/v3/files/img-1?alt=media');
+		expect(mockedRequestUrl.mock.calls[2]![0].url).toBe('http://127.0.0.1:9/drive/v3/files/img-1?alt=media');
 	});
 
 	it('PATCHes markSynced to the override upload base', async () => {

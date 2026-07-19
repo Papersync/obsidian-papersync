@@ -168,7 +168,7 @@ export class FakeGoogle {
 		return this.accessTokens.has(bearer.replace(/^Bearer /, ''));
 	}
 
-	/** Create the GOOGLE_SCANS_FOLDER chain ('PaperSync/scans') and return the leaf folder id. */
+	/** Create the GOOGLE_SCANS_FOLDER folder ('Papersync') and return the leaf folder id. */
 	seedScansFolder(): string {
 		let parentId = 'root';
 		for (const part of GOOGLE_SCANS_FOLDER.split('/')) {

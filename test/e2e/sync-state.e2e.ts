@@ -38,7 +38,7 @@ describe('Sync state management', function () {
 	});
 
 	it('ribbon icon exists and is clickable', async function () {
-		const ribbon = await browser.$('.side-dock-ribbon-action[aria-label="PaperSync"]');
+		const ribbon = await browser.$('.side-dock-ribbon-action[aria-label="Papersync"]');
 		if (await ribbon.isExisting()) {
 			await ribbon.click();
 			await browser.pause(500);
@@ -56,7 +56,7 @@ describe('Sync state management', function () {
 		const bodyAfter = await browser.$('body');
 		const textAfter = await bodyAfter.getText();
 
-		// Status should contain PaperSync in some state
-		expect(textAfter).toContain('PaperSync');
+		// Status should contain Papersync in some state
+		expect(textAfter).toContain('Papersync');
 	});
 });

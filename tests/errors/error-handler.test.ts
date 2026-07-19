@@ -50,7 +50,7 @@ describe('ErrorHandler', () => {
 		it('classifies unknown 403 with generic guidance', () => {
 			const classified = handler.classify(new Error('403 something unknown'));
 			expect(classified.type).toBe('permission_denied');
-			expect(classified.guidance).toContain('verify the PaperSync folder');
+			expect(classified.guidance).toContain('verify the Papersync folder');
 		});
 
 		it('classifies 401 unauthorized errors', () => {
@@ -62,6 +62,12 @@ describe('ErrorHandler', () => {
 		it('defaults unknown errors to vault_write_failed', () => {
 			const classified = handler.classify(new Error('Something went wrong'));
 			expect(classified.type).toBe('vault_write_failed');
+		});
+
+		it('classifies raw ENOENT errors as folder_missing', () => {
+			const classified = handler.classify(new Error("ENOENT: no such file or directory, scandir '/gone'"));
+			expect(classified.type).toBe('folder_missing');
+			expect(classified.retriable).toBe(false);
 		});
 
 		it('handles non-Error objects', () => {

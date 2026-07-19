@@ -1,6 +1,7 @@
 import { SyncEngine } from '@/sync/sync-engine';
 import { SyncState } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
+import { createSyncError } from '@/errors/sync-error';
 import type { SyncBackend } from '@/sync/sync-backend';
 
 function makeBackend(): SyncBackend & { startCalls: number; stopCalls: number } {
@@ -68,6 +69,24 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 		engine.stop();
 	});
 
+	it('skips a scan removed between discovery and fetch, without retries or an error', async () => {
+		const backend = makeBackend();
+		const ref = { id: 'gone', jsonPath: '/x/gone.json', imagePath: '/x/gone.jpg' };
+		(backend.discoverUnsynced as jest.Mock).mockResolvedValue([ref]);
+		(backend.fetchScan as jest.Mock).mockRejectedValue(createSyncError('scan_missing', 'File removed from scans folder: gone.json'));
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+
+		expect(backend.fetchScan).toHaveBeenCalledTimes(1);
+		expect(backend.markSynced).not.toHaveBeenCalled();
+		expect(state.status).toBe('synced');
+		expect(state.lastError).toBeNull();
+	});
+
 	it('start() sets offline status and does not start backend when offline', () => {
 		Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });
 
@@ -130,6 +149,32 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 
 		await engine.forceSyncNow();
 		expect(state.status).toBe('synced');
+	});
+
+	it('forceSyncNow with nothing new still advances the completion stamp and notifies (already-synced state)', async () => {
+		jest.useFakeTimers().setSystemTime(new Date('2026-07-19T10:00:00Z'));
+		try {
+			const backend = makeBackend();
+			backend.discoverUnsynced = jest.fn().mockResolvedValue([]);
+			const state = new SyncState('');
+			const eh = new ErrorHandler(state);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+			await engine.forceSyncNow();
+			const firstStamp = state.lastSyncCompletedAt;
+			expect(firstStamp).toBe(Date.parse('2026-07-19T10:00:00Z'));
+
+			const listener = jest.fn();
+			state.subscribe(listener);
+			jest.setSystemTime(new Date('2026-07-19T10:05:00Z'));
+			await engine.forceSyncNow(); // status stays 'synced', 0 pending — the old setStatus path stayed silent here
+
+			expect(listener).toHaveBeenCalledTimes(1);
+			expect(state.lastSyncCompletedAt).toBe(Date.parse('2026-07-19T10:05:00Z'));
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 
 	it('forceSyncNow goes to error state when discover throws', async () => {

@@ -18,7 +18,47 @@ describe('SyncState', () => {
 			lastSyncTimestamp: '',
 			isSyncing: false,
 			lastError: null,
+			lastSyncCompletedAt: 0,
 		});
+	});
+
+	it('recordSyncCompleted stamps wall-clock time, moves to synced, and notifies', () => {
+		jest.useFakeTimers().setSystemTime(new Date('2026-07-19T10:00:00Z'));
+		try {
+			const s = new SyncState('');
+			const listener = jest.fn();
+			s.subscribe(listener);
+			s.recordError('boom');
+
+			s.recordSyncCompleted(2);
+
+			expect(s.status).toBe('synced');
+			expect(s.pendingCount).toBe(2);
+			expect(s.lastError).toBeNull();
+			expect(s.lastSyncCompletedAt).toBe(Date.parse('2026-07-19T10:00:00Z'));
+			expect(s.snapshot.lastSyncCompletedAt).toBe(Date.parse('2026-07-19T10:00:00Z'));
+			expect(listener).toHaveBeenCalledTimes(2); // recordError + recordSyncCompleted
+		} finally {
+			jest.useRealTimers();
+		}
+	});
+
+	it('recordSyncCompleted notifies even when already synced with nothing new', () => {
+		jest.useFakeTimers().setSystemTime(new Date('2026-07-19T10:00:00Z'));
+		try {
+			const s = new SyncState('');
+			const listener = jest.fn();
+			s.subscribe(listener);
+
+			s.recordSyncCompleted(0);
+			jest.setSystemTime(new Date('2026-07-19T10:05:00Z'));
+			s.recordSyncCompleted(0); // same status + pendingCount — setStatus would skip
+
+			expect(listener).toHaveBeenCalledTimes(2);
+			expect(s.lastSyncCompletedAt).toBe(Date.parse('2026-07-19T10:05:00Z'));
+		} finally {
+			jest.useRealTimers();
+		}
 	});
 
 	it('recordError stores the message, moves to error, and notifies', () => {

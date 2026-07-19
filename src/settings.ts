@@ -1,9 +1,10 @@
 import * as fs from 'fs';
-import * as path from 'path';
 import type PaperSyncPlugin from '@/main';
 import { detectSyncLocations } from '@/utils/platform';
+import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
+import { logger } from '@/utils/logger';
 import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
@@ -221,7 +222,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		const link = header.createEl('a', {
 			cls: 'papersync-logo',
 			href: PAPERSYNC_WEBSITE,
-			attr: { 'aria-label': 'Open the PaperSync website', target: '_blank', rel: 'noopener' },
+			attr: { 'aria-label': 'Open the Papersync website', target: '_blank', rel: 'noopener' },
 		});
 		// Trusted static asset from our own press kit (no user input); parse into a
 		// node rather than assigning innerHTML so the DOM-safety lint stays happy.
@@ -311,7 +312,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		// Not connected — show both options as equal-weight choices
 		containerEl.createEl('p', {
-			text: 'Choose the same storage you used in the PaperSync mobile app.',
+			text: 'Choose the same storage you used in the Papersync mobile app.',
 			cls: 'setting-item-description',
 		});
 
@@ -344,19 +345,19 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		for (const loc of detected) {
 			new Setting(containerEl)
 				.setName(loc.displayName)
-				.setDesc(loc.path)
+				.setDesc(loc.exists ? loc.path : `${loc.path} (will be created)`)
 				.addButton((button) =>
 					button
 						.setButtonText('Select')
 						.onClick(asyncHandler(async () => {
-							await this.selectFolderLocation(loc.path, loc.type);
+							await this.selectDetectedLocation(loc);
 						}))
 				);
 		}
 
 		new Setting(containerEl)
-			.setName('Select your PaperSync folder')
-			.setDesc('Browse to the PaperSync folder your app saves scans to. Select the PaperSync folder itself, not the scans folder inside it.')
+			.setName('Select your Papersync folder')
+			.setDesc('Browse to the Papersync folder your app saves scans to.')
 			.addButton((button) =>
 				button.setButtonText('Browse').onClick(asyncHandler(async () => {
 					try {
@@ -365,13 +366,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						if (dialog) {
 							const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
 							if (!result.canceled && result.filePaths[0]) {
-								// Scans live under <PaperSync>/scans. If the user picked the PaperSync
-								// folder (as the copy asks), watch its scans subfolder; tolerate a
-								// direct scans selection too.
-								const picked = result.filePaths[0];
-								const scansSubdir = path.join(picked, 'scans');
-								const resolved = fs.existsSync(scansSubdir) ? scansSubdir : picked;
-								await this.selectFolderLocation(resolved, 'custom');
+								await this.selectFolderLocation(result.filePaths[0], 'custom');
 							}
 						} else {
 							new Notice('Folder browser not available');
@@ -394,6 +389,28 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			custom: 'Folder sync',
 		};
 		return typeToName[folderType] ?? 'Folder sync';
+	}
+
+	// Detected locations are offered even before their scans folder exists (the
+	// plugin can be set up before the app ever wrote a scan), so create it on
+	// select. The provider root must already exist — its absence means the
+	// provider itself isn't set up on this computer, which mkdir would silently
+	// paper over with a plain local folder that never syncs.
+	private async selectDetectedLocation(loc: SyncLocation): Promise<void> {
+		if (!fs.existsSync(loc.path)) {
+			if (!fs.existsSync(loc.basePath)) {
+				new Notice(STRINGS.NOTICE_PROVIDER_UNAVAILABLE(loc.displayName));
+				return;
+			}
+			try {
+				fs.mkdirSync(loc.path, { recursive: true });
+			} catch (err) {
+				new Notice(STRINGS.NOTICE_FOLDER_CREATE_FAILED(loc.path));
+				logger.error(`Could not create ${loc.path}: ${errorMessage(err)}`);
+				return;
+			}
+		}
+		await this.selectFolderLocation(loc.path, loc.type);
 	}
 
 	private async selectFolderLocation(folderPath: string, folderType: string): Promise<void> {
@@ -433,7 +450,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.setDesc('Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).')
 			.addText((text) =>
 				text
-					.setPlaceholder('PaperSync')
+					.setPlaceholder('Papersync')
 					.setValue(this.plugin.settings.targetFolder)
 					.onChange(asyncValueHandler(async (value) => {
 						this.plugin.settings.targetFolder = value;

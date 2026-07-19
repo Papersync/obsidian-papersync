@@ -28,12 +28,10 @@ describe('DriveBackend', () => {
 
 	describe('discoverUnsynced', () => {
 		it('returns refs paired with image files (jpg/jpeg/png all accepted)', async () => {
-			// First call: find PaperSync folder root
-			// Second call: find scans subfolder
-			// Third call: list files
+			// First call: find Papersync folder
+			// Second call: list files
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
 						files: [
@@ -57,7 +55,6 @@ describe('DriveBackend', () => {
 		it('does not pair a JSON with a prefix-only image name (exact extension match, #5)', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
 						files: [
@@ -77,7 +74,6 @@ describe('DriveBackend', () => {
 		it('returns refs with empty imagePath when a companion image is missing', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
 						files: [
@@ -93,7 +89,7 @@ describe('DriveBackend', () => {
 			expect(refs[0].imagePath).toBe('');
 		});
 
-		it('returns empty when PaperSync folder is missing', async () => {
+		it('returns empty when Papersync folder is missing', async () => {
 			// First findScansFolder call returns no folder
 			mockedRequestUrl.mockResolvedValueOnce({ json: { files: [] } } as never);
 
@@ -114,7 +110,6 @@ describe('DriveBackend', () => {
 		it('treats a file-listing response with no files array as empty (files ?? [])', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({ json: {} } as never); // list call: no `files` key
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
@@ -125,20 +120,18 @@ describe('DriveBackend', () => {
 		it('applies an explicit constructor lastSyncTimestamp to the query (?? provided side)', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({ json: { files: [] } } as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-02-02T00:00:00Z');
 			await backend.discoverUnsynced();
 
-			const listCall = mockedRequestUrl.mock.calls[2][0];
+			const listCall = mockedRequestUrl.mock.calls[1][0];
 			expect(decodeURIComponent(listCall.url)).toContain("createdTime > '2026-02-02T00:00:00Z'");
 		});
 
 		it('paginates through Drive listings when nextPageToken is present', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
 						files: [{ id: 'json-1', name: 'a.json' }, { id: 'img-1', name: 'a.jpg' }],
@@ -241,14 +234,13 @@ describe('DriveBackend', () => {
 		it('updateLastSyncTimestamp influences subsequent query', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({ json: { files: [] } } as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 			backend.updateLastSyncTimestamp('2026-01-01T00:00:00Z');
 			await backend.discoverUnsynced();
 
-			const listCall = mockedRequestUrl.mock.calls[2][0];
+			const listCall = mockedRequestUrl.mock.calls[1][0];
 			expect(listCall.url).toContain('createdTime');
 		});
 
@@ -266,7 +258,6 @@ describe('DriveBackend', () => {
 		it('invokes onScanDiscovered with the discovered refs on poll success', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
 						files: [
@@ -294,7 +285,6 @@ describe('DriveBackend', () => {
 		it('does not invoke onScanDiscovered when no unsynced refs are found', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({ json: { files: [] } } as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
@@ -330,7 +320,6 @@ describe('DriveBackend', () => {
 		it('does not throw when poll() finds refs but no callback is registered', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
 						files: [{ id: 'json-1', name: 'a.json', createdTime: '2026-04-12T14:30:00Z' }],
@@ -350,23 +339,21 @@ describe('DriveBackend', () => {
 			// First discover: 2 folder searches + 1 list
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({ json: { files: [] } } as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 			await backend.discoverUnsynced();
-			expect(mockedRequestUrl).toHaveBeenCalledTimes(3);
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
 
 			// Second discover: cached folder id → ONLY the list call
 			mockedRequestUrl.mockResolvedValueOnce({ json: { files: [] } } as never);
 			await backend.discoverUnsynced();
-			expect(mockedRequestUrl).toHaveBeenCalledTimes(4);
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(3);
 		});
 
 		it('defaults lastSyncTimestamp to empty string when constructor arg is undefined', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
-				.mockResolvedValueOnce({ json: { files: [{ id: 'scans-folder' }] } } as never)
 				.mockResolvedValueOnce({ json: { files: [] } } as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30, undefined);
@@ -375,7 +362,7 @@ describe('DriveBackend', () => {
 			// The list-query `q` param should NOT include a `createdTime >` filter
 			// when the timestamp defaulted to empty. (The URL still references
 			// createdTime in `fields=` and `orderBy=` — that's structural.)
-			const listCall = mockedRequestUrl.mock.calls[2][0];
+			const listCall = mockedRequestUrl.mock.calls[1][0];
 			expect(listCall.url).not.toContain('createdTime%20%3E');
 		});
 	});

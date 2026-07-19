@@ -10,21 +10,22 @@ jest.mock('os');
 const mockAccessSync = fs.accessSync as jest.MockedFunction<typeof fs.accessSync>;
 const mockHomedir = os.homedir as jest.MockedFunction<typeof os.homedir>;
 
+const home = '/Users/test';
+const scans = (base: string) => path.join(base, 'Papersync');
+const macICloudBase = path.join(home, 'Library', 'Mobile Documents', 'com~apple~CloudDocs');
+const winICloudBase = path.join(home, 'iCloudDrive');
+const dropboxBase = path.join(home, 'Dropbox');
+const oneDriveBase = path.join(home, 'OneDrive');
+const syncthingBase = path.join(home, 'Sync');
+
 beforeEach(() => {
 	jest.resetAllMocks();
-	mockHomedir.mockReturnValue('/Users/test');
+	mockHomedir.mockReturnValue(home);
 	mockAccessSync.mockImplementation(() => { throw new Error('ENOENT'); });
 	(Platform as { isMacOS: boolean }).isMacOS = false;
 	(Platform as { isWin: boolean }).isWin = false;
 	(Platform as { isLinux: boolean }).isLinux = false;
 });
-
-function allowPath(allowed: string): void {
-	mockAccessSync.mockImplementation((p) => {
-		if (p === allowed) return;
-		throw new Error('ENOENT');
-	});
-}
 
 function allowPaths(paths: string[]): void {
 	mockAccessSync.mockImplementation((p) => {
@@ -34,104 +35,105 @@ function allowPaths(paths: string[]): void {
 }
 
 describe('detectSyncLocations', () => {
-	it('returns empty array when no sync paths exist', () => {
-		(Platform as { isMacOS: boolean }).isMacOS = true;
+	it('returns no locations on Linux when nothing is detected', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
 		expect(detectSyncLocations()).toEqual([]);
 	});
 
-	it('detects iCloud Drive on macOS', () => {
+	it('always offers iCloud Drive on macOS, even when nothing exists yet', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'PaperSync', 'scans');
-		allowPath(expected);
-
-		const result = detectSyncLocations();
-		expect(result).toEqual([
-			{ type: 'icloud', displayName: 'iCloud Drive', path: expected },
+		expect(detectSyncLocations()).toEqual([
+			{ type: 'icloud', displayName: 'iCloud Drive', path: scans(macICloudBase), basePath: macICloudBase, exists: false },
 		]);
 	});
 
-	it('detects iCloud Drive on Windows', () => {
+	it('marks the iCloud scans folder as existing when present on macOS', () => {
+		(Platform as { isMacOS: boolean }).isMacOS = true;
+		allowPaths([scans(macICloudBase)]);
+		expect(detectSyncLocations()).toEqual([
+			{ type: 'icloud', displayName: 'iCloud Drive', path: scans(macICloudBase), basePath: macICloudBase, exists: true },
+		]);
+	});
+
+	it('always offers iCloud Drive on Windows', () => {
 		(Platform as { isWin: boolean }).isWin = true;
-		const expected = path.join('/Users/test', 'iCloudDrive', 'PaperSync', 'scans');
-		allowPath(expected);
-
-		const result = detectSyncLocations();
-		expect(result).toEqual([
-			{ type: 'icloud', displayName: 'iCloud Drive', path: expected },
+		expect(detectSyncLocations()).toEqual([
+			{ type: 'icloud', displayName: 'iCloud Drive', path: scans(winICloudBase), basePath: winICloudBase, exists: false },
 		]);
 	});
 
-	it('detects Dropbox', () => {
-		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'Dropbox', 'PaperSync', 'scans');
-		allowPath(expected);
-
-		const result = detectSyncLocations();
-		expect(result).toEqual([
-			{ type: 'dropbox', displayName: 'Dropbox', path: expected },
+	it('offers Dropbox when its root exists, before the scans folder does', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
+		allowPaths([dropboxBase]);
+		expect(detectSyncLocations()).toEqual([
+			{ type: 'dropbox', displayName: 'Dropbox', path: scans(dropboxBase), basePath: dropboxBase, exists: false },
 		]);
 	});
 
-	it('detects OneDrive on Windows', () => {
+	it('marks an existing Dropbox scans folder', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
+		allowPaths([dropboxBase, scans(dropboxBase)]);
+		expect(detectSyncLocations()).toEqual([
+			{ type: 'dropbox', displayName: 'Dropbox', path: scans(dropboxBase), basePath: dropboxBase, exists: true },
+		]);
+	});
+
+	it('hides Dropbox when its root folder is absent', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
+		expect(detectSyncLocations()).toEqual([]);
+	});
+
+	it('offers OneDrive on Windows when its root exists', () => {
 		(Platform as { isWin: boolean }).isWin = true;
-		const expected = path.join('/Users/test', 'OneDrive', 'PaperSync', 'scans');
-		allowPath(expected);
+		allowPaths([oneDriveBase]);
+		const oneDrive = detectSyncLocations().find((l) => l.type === 'onedrive');
+		expect(oneDrive).toEqual(
+			{ type: 'onedrive', displayName: 'OneDrive', path: scans(oneDriveBase), basePath: oneDriveBase, exists: false },
+		);
+	});
 
-		const result = detectSyncLocations();
-		expect(result).toEqual([
-			{ type: 'onedrive', displayName: 'OneDrive', path: expected },
+	it('offers OneDrive on macOS when its root exists', () => {
+		(Platform as { isMacOS: boolean }).isMacOS = true;
+		allowPaths([oneDriveBase, scans(oneDriveBase)]);
+		const oneDrive = detectSyncLocations().find((l) => l.type === 'onedrive');
+		expect(oneDrive).toEqual(
+			{ type: 'onedrive', displayName: 'OneDrive', path: scans(oneDriveBase), basePath: oneDriveBase, exists: true },
+		);
+	});
+
+	it('does not offer OneDrive on Linux even when its root exists', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
+		allowPaths([oneDriveBase]);
+		expect(detectSyncLocations()).toEqual([]);
+	});
+
+	it('offers Syncthing when its root exists', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
+		allowPaths([syncthingBase]);
+		expect(detectSyncLocations()).toEqual([
+			{ type: 'syncthing', displayName: 'Syncthing', path: scans(syncthingBase), basePath: syncthingBase, exists: false },
 		]);
 	});
 
-	it('detects OneDrive on macOS', () => {
-		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'OneDrive', 'PaperSync', 'scans');
-		allowPath(expected);
-
-		const result = detectSyncLocations();
-		expect(result).toEqual([
-			{ type: 'onedrive', displayName: 'OneDrive', path: expected },
-		]);
-	});
-
-	it('detects Syncthing', () => {
-		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const expected = path.join('/Users/test', 'Sync', 'PaperSync', 'scans');
-		allowPath(expected);
-
-		const result = detectSyncLocations();
-		expect(result).toEqual([
-			{ type: 'syncthing', displayName: 'Syncthing', path: expected },
-		]);
-	});
-
-	it('detects Obsidian Sync when vault path provided', () => {
-		(Platform as { isMacOS: boolean }).isMacOS = true;
+	it('always offers Obsidian Sync when a vault path is given', () => {
+		(Platform as { isLinux: boolean }).isLinux = true;
 		const vaultPath = '/Users/test/Documents/MyVault';
-		const expected = path.join(vaultPath, 'PaperSync', 'scans');
-		allowPath(expected);
-
-		const result = detectSyncLocations(vaultPath);
-		expect(result).toEqual([
-			{ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: expected },
+		expect(detectSyncLocations(vaultPath)).toEqual([
+			{ type: 'obsidian-sync', displayName: 'Obsidian Sync', path: scans(vaultPath), basePath: vaultPath, exists: false },
 		]);
 	});
 
-	it('does not probe Obsidian Sync when no vault path given', () => {
+	it('does not offer Obsidian Sync when no vault path is given', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const result = detectSyncLocations();
-		expect(result.find(l => l.type === 'obsidian-sync')).toBeUndefined();
+		expect(detectSyncLocations().find((l) => l.type === 'obsidian-sync')).toBeUndefined();
 	});
 
-	it('returns multiple locations when several sync tools detected', () => {
+	it('returns multiple locations, iCloud first', () => {
 		(Platform as { isMacOS: boolean }).isMacOS = true;
-		const icloudPath = path.join('/Users/test', 'Library', 'Mobile Documents', 'com~apple~CloudDocs', 'PaperSync', 'scans');
-		const dropboxPath = path.join('/Users/test', 'Dropbox', 'PaperSync', 'scans');
-		allowPaths([icloudPath, dropboxPath]);
-
+		allowPaths([dropboxBase, scans(dropboxBase)]);
 		const result = detectSyncLocations();
 		expect(result).toHaveLength(2);
-		expect(result[0].type).toBe('icloud');
-		expect(result[1].type).toBe('dropbox');
+		expect(result[0]).toMatchObject({ type: 'icloud', exists: false });
+		expect(result[1]).toMatchObject({ type: 'dropbox', exists: true });
 	});
 });
