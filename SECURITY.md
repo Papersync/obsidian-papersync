@@ -12,7 +12,7 @@ respond within a few days.
 `src/config.ts` ships a Google `client_id` and `client_secret` (a `GOCSPX-`
 value). This is deliberate and is not a leak.
 
-PaperSync authenticates to Google Drive with the OAuth 2.0 flow for installed /
+Papersync authenticates to Google Drive with the OAuth 2.0 flow for installed /
 desktop apps (RFC 8252): Authorization Code with PKCE, an ephemeral loopback
 redirect on `127.0.0.1`, and the narrow `drive.file` scope. For this client
 type, Google documents that the client secret is not confidential:
@@ -36,13 +36,13 @@ Security does not rest on the secret being hidden. It rests on:
 - **Loopback redirect:** the authorization code is delivered only to a local
   server on your own machine.
 - **Per-user consent:** each user grants access through Google's own screen.
-- **`drive.file` scope:** PaperSync can only see files it created, not your
+- **`drive.file` scope:** Papersync can only see files it created, not your
   whole Drive.
 - **OS-integrated secret storage:** your Google refresh token is stored through
   Obsidian's `secretStorage` API, which keeps it in your operating system's
   credential vault (macOS Keychain, Windows Credential Manager, Linux Secret
   Service) — **not** in plaintext `data.json`, ever. The short-lived access token
-  lives only in memory. Neither is ever transmitted to us (there is no PaperSync
+  lives only in memory. Neither is ever transmitted to us (there is no Papersync
   server). Because the credential vault is device-local, the refresh token does
   not travel with your synced vault; connect Google Drive once per device.
   If the OS credential vault cannot **save** the token (for example during connect
@@ -57,7 +57,7 @@ Security does not rest on the secret being hidden. It rests on:
   still gitignored — treat your vault as private data.
 - **Real disconnect (server-side revocation):** disconnecting Drive (Change
   Storage, or a settings reset) is a genuine sign-out, not just a local wipe.
-  PaperSync clears the token from your device first, then posts it to Google's
+  Papersync clears the token from your device first, then posts it to Google's
   revocation endpoint (`oauth2.googleapis.com/revoke`), which kills the long-lived
   refresh token server-side. Any already-issued access token is short-lived (about
   an hour) and is also cleared locally on disconnect. This is best-effort. If

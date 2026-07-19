@@ -9,10 +9,10 @@
 ## Status Bar
 
 All states use both color AND text label (FR29 / NFR20):
-- `PaperSync: synced` 
-- `PaperSync: X pending`
-- `PaperSync: error`
-- `PaperSync: offline`
+- `Papersync: synced` 
+- `Papersync: X pending`
+- `Papersync: error`
+- `Papersync: offline`
 
 ## Settings Tab
 
