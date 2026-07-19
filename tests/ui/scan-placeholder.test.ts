@@ -75,6 +75,23 @@ describe('buildScanPlaceholderSvg', () => {
 		expect(svg).not.toMatch(/#[0-9a-fA-F]{3,6}\b/);
 	});
 
+	it('adds a gap where prose gives way to the task list', () => {
+		const height = (s: string): number => Number(/viewBox="0 0 300 (\d+)"/.exec(s)![1]);
+		// Three rows either way. The mixed one pays a shorter prose line (19 vs 25)
+		// yet still ends up taller, which can only come from the added block gap.
+		const mixed = buildScanPlaceholderSvg('some prose here\n- [ ] a task\n- [ ] another');
+		const allTasks = buildScanPlaceholderSvg('- [ ] a task\n- [ ] a task\n- [ ] another');
+		expect(height(mixed)).toBeGreaterThan(height(allTasks));
+	});
+
+	it('does not add a block gap between rows of the same kind', () => {
+		const height = (s: string): number => Number(/viewBox="0 0 300 (\d+)"/.exec(s)![1]);
+		const twoProse = height(buildScanPlaceholderSvg('one line\ntwo line'));
+		const threeProse = height(buildScanPlaceholderSvg('one line\ntwo line\nthree line'));
+		// Uniform prose rows grow by exactly one line height each, no extra gap.
+		expect(threeProse - twoProse).toBe(19);
+	});
+
 	it('returns a valid empty sheet for empty markdown', () => {
 		const svg = buildScanPlaceholderSvg('');
 		expect(countPaths(svg)).toBe(0);

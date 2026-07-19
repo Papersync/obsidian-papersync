@@ -17,6 +17,7 @@ const WORD_GAP = 5;
 const MIN_WORD_W = 7;
 const PROSE_LINE_H = 19;
 const TASK_LINE_H = 25;
+const BLOCK_GAP = 11;      // breathing room where prose gives way to the task list
 const BOX = 13;            // checkbox edge
 const BOX_GAP = 11;
 const TOP = 30;
@@ -69,8 +70,17 @@ export function buildScanPlaceholderSvg(markdown: string): string {
 	const boxes: string[] = [];
 	let y = TOP;
 	let phase = 0;
+	let prevWasTask: boolean | null = null;
 
 	for (const row of rows) {
+		const isTask = row.checked !== null;
+		// Separate the blocks the way the rendered note does, so the prose and the
+		// checklist don't run together into one undifferentiated wall of strokes.
+		if (prevWasTask !== null && prevWasTask !== isTask) {
+			y += BLOCK_GAP;
+		}
+		prevWasTask = isTask;
+
 		const indent = row.checked === null ? 0 : BOX + BOX_GAP;
 		const lineH = row.checked === null ? PROSE_LINE_H : TASK_LINE_H;
 		let x = PAD_X + indent;
