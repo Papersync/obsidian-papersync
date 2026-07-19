@@ -86,16 +86,26 @@ describe('Settings tab', function () {
 		expect(rendered).toContain('2:30 PM'); // {{ps_scan_time}} sample value
 		expect(rendered).toContain('Grocery'); // {{ps_markdown}} body, rendered
 
-		// A correctly-written image embed is swapped for the ASCII handwriting placeholder.
+		// A correctly-written image embed is swapped for the handwriting stand-in.
+		// Waited for rather than slept on: the debounce plus an async markdown render
+		// plus SVG generation has no fixed duration, and a bare pause turns CPU
+		// contention during a full-suite run into a spurious failure.
 		await editor.clearValue();
 		await editor.setValue('![[{{ps_image_file}}]]');
-		await browser.pause(700);
-		expect(await (await browser.$('.papersync-preview-scan')).isExisting()).toBe(true);
+		await browser.waitUntil(
+			async () => (await browser.$('.papersync-preview-scan')).isExisting(),
+			{ timeout: 5000, interval: 100, timeoutMsg: 'scan stand-in never rendered for a valid embed' }
+		);
 
-		// A malformed embed (empty {{}} token stays literal) must NOT get the placeholder.
+		// A malformed embed (empty {{}} token stays literal) must NOT get the stand-in.
+		// Gate on the literal token appearing first, so this proves the preview
+		// re-rendered rather than passing vacuously before the render even started.
 		await editor.clearValue();
 		await editor.setValue('![[{{}}]]');
-		await browser.pause(700);
+		await browser.waitUntil(
+			async () => (await (await browser.$('.papersync-template-preview')).getText()).includes('{{}}'),
+			{ timeout: 5000, interval: 100, timeoutMsg: 'preview never re-rendered the malformed embed' }
+		);
 		expect(await (await browser.$('.papersync-preview-scan')).isExisting()).toBe(false);
 
 		await editor.clearValue();

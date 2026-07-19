@@ -45,19 +45,6 @@
 	height: auto;
 }
 
-.papersync-preview-scan::after {
-	content: 'handwritten scan';
-	display: block;
-	margin-top: 4px;
-	font-family: var(--font-interface);
-	font-style: italic;
-	font-size: var(--font-smallest, 11px);
-	color: var(--text-faint);
-	text-align: center;
-	letter-spacing: 0.03em;
-	white-space: normal;
-}
-
 .papersync-preview-scan-off {
 	display: inline-block;
 	padding: 10px 12px;
