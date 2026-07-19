@@ -46,17 +46,28 @@ function isEvicted(filePath: string): boolean {
 	return st.size > 0 && st.blocks === 0;
 }
 
-function evict(filePath: string): boolean {
-	try {
-		execFileSync('brctl', ['evict', filePath], { timeout: 15000, stdio: 'pipe' });
-	} catch {
-		return false;
-	}
-	// Eviction is asynchronous and only works once iCloud has uploaded the file,
-	// so poll briefly rather than assuming it took.
-	for (let i = 0; i < 40; i++) {
-		if (isEvicted(filePath)) {return true;}
-		execFileSync('sleep', ['0.25']);
+// brctl refuses to evict content iCloud has not finished uploading, and upload
+// speed is not ours to control. Asking exactly once therefore raced the network:
+// whenever iCloud was slower than the caller's fixed pause, the refusal was read
+// as "cannot evict" and the test that depends on it quietly skipped. Retry the
+// eviction itself against a deadline so a slow upload costs time rather than
+// coverage, and a genuine inability to evict still ends the loop.
+function evict(filePath: string, budgetMs = 90_000): boolean {
+	const deadline = Date.now() + budgetMs;
+	while (Date.now() < deadline) {
+		try {
+			execFileSync('brctl', ['evict', filePath], { timeout: 15000, stdio: 'pipe' });
+		} catch {
+			// Still uploading. Wait and ask again rather than giving up on the run.
+			execFileSync('sleep', ['1']);
+			continue;
+		}
+		// The command was accepted, but eviction is asynchronous, so confirm it
+		// actually took instead of trusting the exit code.
+		for (let i = 0; i < 40 && Date.now() < deadline; i++) {
+			if (isEvicted(filePath)) {return true;}
+			execFileSync('sleep', ['0.25']);
+		}
 	}
 	return false;
 }
@@ -101,12 +112,19 @@ describe('Real iCloud Drive folder backend', function () {
 		const jsonPath = path.join(dir, `${id}.json`);
 		writeScan(dir, id, baseScan(marker, `${id}.jpg`));
 
-		// Give iCloud a moment to upload; eviction is refused for content that has
-		// not been uploaded yet.
-		await browser.pause(8000);
+		// evict() now waits for the upload itself, so this only has to cover the
+		// window before the file is visible to brctl at all.
+		await browser.pause(1000);
 		if (!evict(jsonPath)) {
-			// Upload speed is not ours to control. Skipping beats a red suite for a
-			// precondition we could not establish.
+			// Reachable only when iCloud cannot evict at all within the budget, which
+			// in practice means the machine is offline or signed out. Skipping still
+			// beats a red suite for a precondition we could not establish, but say so
+			// loudly: this is the assertion that covers the eviction recovery path,
+			// and a silent skip is how it went unverified before.
+			console.warn(
+				`[icloud-real] SKIPPED eviction recovery: brctl could not evict ${jsonPath} ` +
+				`within the budget. The evicted-content path was NOT verified on this run.`
+			);
 			this.skip();
 			return;
 		}
