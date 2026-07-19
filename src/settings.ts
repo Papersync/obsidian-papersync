@@ -9,8 +9,10 @@ import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
-import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
+import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting, requireApiVersion } from 'obsidian';
+import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
+import { DEFAULT_POLL_INTERVAL_S } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
 // so the preview is stable and never depends on real vault state.
@@ -39,6 +41,14 @@ const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
 // the text as illegible handwriting. (The sample file is not a real vault
 // note, so a live embed would otherwise render as an unresolved "not found" box.)
 // True when a template embeds the scan image (canonical ps_image_file or its alias).
+// Obsidian reads these as wikilink syntax, so an attachments folder containing
+// one saves the image but leaves the ![[ ]] embed unresolved. Shared by both
+// render paths.
+const RESERVED_WIKILINK_CHARS = /[#|[\]]/;
+
+// Below this, polling Drive is more likely to hit rate limits than to feel fast.
+const MIN_POLL_INTERVAL_S = 5;
+
 function templateEmbedsImage(template: string): boolean {
 	return /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(template);
 }
@@ -178,15 +188,26 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		return { isGoogleConnected, isFolderConnected };
 	}
 
-	// Single point of re-render after a state change, so the call sites do not each
-	// decide how the tab redraws. This stays display() on every version the plugin
-	// currently supports: the declarative renderer needs getSettingDefinitions(),
-	// which lives on the settings-declarative branch until Obsidian 1.13 is out of
-	// beta and the path can actually be exercised. Branching on the version here
-	// WITHOUT those definitions would be a regression, not preparation — update()
-	// would find an empty definition list, render nothing, and never fall back to
-	// display(), so the tab would stop refreshing after connect or disconnect.
+	// Obsidian 1.13+ renders this tab from getSettingDefinitions() and never calls
+	// display(); older versions have neither that method nor update(). Every
+	// "re-render after a state change" therefore has to route through here rather
+	// than calling display() directly, or the declarative path silently stops
+	// refreshing and the imperative path throws on a method that does not exist.
+	private get isDeclarative(): boolean {
+		return requireApiVersion('1.13.0');
+	}
+
 	private refresh(): void {
+		// update() only exists from 1.13.0, and the manifest floor is 1.11.4, so it is
+		// reached through an optional call rather than a direct one. That states the
+		// uncertainty in the code instead of asserting a method that may be absent,
+		// and it degrades to "no declarative re-render" rather than throwing if a
+		// version ever reports 1.13 without providing it.
+		const declarative = (this as unknown as { update?: () => void });
+		if (this.isDeclarative && typeof declarative.update === 'function') {
+			declarative.update();
+			return;
+		}
 		this.display();
 	}
 
@@ -274,6 +295,13 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// and tear down the template preview's render component.
 	hide(): void {
 		this.activeTab = 'sync';
+		this.teardownPreview();
+	}
+
+	// Shared by hide() and the declarative template row's cleanup callback: the
+	// preview owns a loaded Component and a pending debounce, and both leak if the
+	// row goes away without them being released.
+	private teardownPreview(): void {
 		this.previewComponent?.unload();
 		this.previewComponent = null;
 		if (this.previewDebounce !== null) {
@@ -502,7 +530,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		if (this.plugin.settings.downloadImages) {
 			let attachWarn: HTMLElement | null = null;
-			const reservedWikilinkChars = /[#|[\]]/;
+			const reservedWikilinkChars = RESERVED_WIKILINK_CHARS;
 
 			new Setting(containerEl)
 				.setName('Attachments folder')
@@ -664,5 +692,245 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			.addButton((button) =>
 				button.setButtonText('Full reset').setWarning().onClick(asyncHandler(() => this.fullReset()))
 			);
+	}
+
+	// ---------------------------------------------------------------------------
+	// Declarative rendering (Obsidian 1.13+)
+	//
+	// Returning a non-empty array here means display() is never called on 1.13+;
+	// it stays as the renderer for 1.11.4-1.12.x, which is the floor SecretStorage
+	// forces us to keep. The two paths therefore both exist on purpose.
+	//
+	// Rows that are plain values use `control`, so the framework owns the binding
+	// through getControlValue/setControlValue. Everything bespoke uses `render` and
+	// calls the SAME method display() calls, so the two paths cannot drift apart in
+	// what they draw. A `render` row is still indexed for settings search, because
+	// search reads the definition's name/desc rather than the DOM — which is the
+	// whole reason for doing this.
+	//
+	// One deliberate divergence: the custom tab bar has no declarative equivalent,
+	// so 1.13+ renders the three sections as headed groups in a single scroll.
+	// Groups keep every setting individually indexed; nesting them into pages would
+	// hide them from the search this exists to serve.
+	// ---------------------------------------------------------------------------
+
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [
+			{ type: 'group', heading: 'Sync', items: this.syncDefinitions() },
+			{ type: 'group', heading: 'Template', items: this.templateDefinitions() },
+			{ type: 'group', heading: 'Advanced', items: this.advancedDefinitions() },
+		];
+	}
+
+	getControlValue(key: string): unknown {
+		const s = this.plugin.settings;
+		switch (key) {
+			case 'targetFolder': return s.targetFolder;
+			case 'downloadImages': return s.downloadImages;
+			case 'attachmentsFolder': return s.attachmentsFolder;
+			// The control is a text field, so hand back a string rather than the
+			// number we store; the framework would otherwise seed it as "[object]".
+			case 'drivePollInterval': return String(s.drivePollInterval);
+			default: return undefined;
+		}
+	}
+
+	async setControlValue(key: string, value: unknown): Promise<void> {
+		const s = this.plugin.settings;
+		switch (key) {
+			case 'targetFolder': s.targetFolder = String(value); break;
+			case 'attachmentsFolder': s.attachmentsFolder = String(value); break;
+			case 'drivePollInterval': {
+				// validate() already rejects anything out of range, so by here the
+				// value parses; guard anyway rather than persist a NaN.
+				const parsed = parseInt(String(value), 10);
+				if (isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S) {return;}
+				s.drivePollInterval = parsed;
+				break;
+			}
+			// Toggling image saving changes which other rows are visible, so it goes
+			// through the shared handler that persists AND re-renders.
+			case 'downloadImages': return this.setDownloadImages(Boolean(value));
+			default: return;
+		}
+		await this.plugin.saveSettings();
+	}
+
+	private isConnected(): boolean {
+		const { isGoogleConnected, isFolderConnected } = this.getConnectionState();
+		return isGoogleConnected || isFolderConnected;
+	}
+
+	private syncDefinitions(): SettingDefinition[] {
+		const defs: SettingDefinition[] = [];
+
+		// Every row is ALWAYS in the list, with connection state expressed only
+		// through visible()/render(). Obsidian 1.13 computes this list once (at
+		// tab registration, for the settings search index) and re-runs only those
+		// callbacks per paint — so any branch taken while BUILDING the list is
+		// baked in for the tab's lifetime. Proven the hard way: at registration
+		// the oauthManager does not exist yet, so a connection branch here froze
+		// the disconnected picker into the pane even while authenticated.
+		// (detectSyncLocations() is still called here once: which sync folders
+		// exist on disk is machine-static, unlike the connection.)
+
+		defs.push({
+			name: 'Connected storage',
+			aliases: ['storage', 'provider', 'connection', 'sync now', 'disconnect'],
+			visible: () => this.isConnected(),
+			render: (setting) => {
+				const { isGoogleConnected } = this.getConnectionState();
+				setting.setName(isGoogleConnected ? '✓ Google Drive' : `✓ ${this.getFolderDisplayName()}`);
+				setting.setClass('papersync-storage-active');
+				this.addSyncNowButton(setting);
+				setting.addButton((button) =>
+					button.setButtonText('Change Storage').onClick(asyncHandler(() =>
+						this.getConnectionState().isGoogleConnected ? this.disconnectGoogle() : this.disconnectFolder()
+					))
+				);
+				// addSyncNowButton caches these for updateSyncState; drop the
+				// references when the row goes so it cannot write into dead DOM.
+				return () => { this.syncButton = null; this.syncDesc = null; };
+			},
+		});
+
+		defs.push({
+			name: 'Google Drive',
+			desc: 'Sign in with your Google account',
+			aliases: ['connect', 'storage', 'sign in'],
+			visible: () => !this.isConnected(),
+			render: (setting) => {
+				setting.addButton((button) =>
+					button.setButtonText('Connect').onClick(asyncHandler(() => this.connectGoogle()))
+				);
+			},
+		});
+
+		for (const loc of detectSyncLocations()) {
+			defs.push({
+				name: loc.displayName,
+				desc: loc.exists ? loc.path : `${loc.path} (will be created)`,
+				aliases: ['storage', 'folder', 'sync location'],
+				visible: () => !this.isConnected(),
+				render: (setting) => {
+					setting.addButton((button) =>
+						button.setButtonText('Select').onClick(asyncHandler(() => this.selectDetectedLocation(loc)))
+					);
+				},
+			});
+		}
+
+		defs.push({
+			name: 'Select your Papersync folder',
+			desc: 'Browse to the folder your phone saves scans into. Papersync finds the right level from wherever you point it.',
+			aliases: ['browse', 'storage', 'folder'],
+			visible: () => !this.isConnected(),
+			render: (setting) => {
+				setting.addButton((button) =>
+					button.setButtonText('Browse').onClick(asyncHandler(() => this.browseForFolder()))
+				);
+			},
+		});
+
+		// Everything below only means anything once a backend is chosen, which is
+		// why display() renders it under the same condition.
+		defs.push({
+			name: 'Notes folder',
+			desc: 'Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).',
+			visible: () => this.isConnected(),
+			control: { type: 'text', key: 'targetFolder', placeholder: 'Papersync' },
+		});
+
+		defs.push({
+			name: 'Save scan images',
+			desc: 'Download the original scan image into your vault. If off, remove {{ps_image_file}} from your template.',
+			visible: () => this.isConnected(),
+			control: { type: 'toggle', key: 'downloadImages' },
+		});
+
+		defs.push({
+			name: 'Template still embeds the scan image',
+			searchable: false,
+			visible: () => this.isConnected()
+				&& !this.plugin.settings.downloadImages
+				&& templateEmbedsImage(this.plugin.settings.templateString),
+			render: (setting) => {
+				setting.setClass('papersync-image-warning');
+				setting.setDesc('Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template section to make it explicit.');
+			},
+		});
+
+		defs.push({
+			name: 'Attachments folder',
+			desc: 'Where scan images are saved. Leave empty to use Obsidian\'s own attachment folder.',
+			visible: () => this.isConnected() && this.plugin.settings.downloadImages,
+			control: {
+				type: 'text',
+				key: 'attachmentsFolder',
+				placeholder: 'Obsidian default',
+				// Obsidian reads these as wikilink syntax, so the image saves but the
+				// ![[ ]] embed never resolves. Inline validation says so at the point
+				// of entry rather than as a separate warning element.
+				validate: (value) => RESERVED_WIKILINK_CHARS.test(value)
+					? 'Avoid # | [ ] here. Obsidian reads them as wikilink syntax, so the image embed will not resolve.'
+					: undefined,
+			},
+		});
+
+		return defs;
+	}
+
+	private templateDefinitions(): SettingDefinition[] {
+		return [{
+			name: 'Note template',
+			desc: 'Template for synced notes, with a live preview of a sample scan.',
+			aliases: ['template', 'preview', 'variables', 'ps_markdown', 'ps_image_file', 'ps_scan_time'],
+			render: (setting) => {
+				// Reuse the imperative renderer wholesale: the variable table, editor
+				// and live preview are identical on both paths by construction, and a
+				// declarative re-expression would be a second thing to keep in step.
+				setting.settingEl.addClass('papersync-template-row');
+				this.renderTemplateSection(setting.settingEl.createDiv());
+				return () => this.teardownPreview();
+			},
+		}];
+	}
+
+	private advancedDefinitions(): SettingDefinition[] {
+		return [
+			{
+				name: 'Poll interval (seconds)',
+				desc: 'How often to check Google Drive for new scans.',
+				visible: () => this.getConnectionState().isGoogleConnected,
+				control: {
+					type: 'text',
+					key: 'drivePollInterval',
+					placeholder: String(DEFAULT_POLL_INTERVAL_S),
+					validate: (value) => {
+						const parsed = parseInt(value, 10);
+						return isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S
+							? `Enter a whole number of seconds, ${MIN_POLL_INTERVAL_S} or more.`
+							: undefined;
+					},
+				},
+			},
+			{
+				name: 'Reset settings',
+				desc: 'Reset preferences to defaults. Keeps your account connected.',
+				aliases: ['reset', 'clear', 'defaults'],
+				render: (setting) => {
+					setting.addButton((button) =>
+						button.setButtonText('Reset settings').onClick(asyncHandler(() => this.resetSettings()))
+					);
+					setting.addButton((button) =>
+						// setDestructive would be the modern spelling, but it needs 1.13
+						// and the manifest floor is 1.11.4. setWarning is deprecated yet
+						// present in both, so one call works on either path and there is
+						// no version branch to keep correct for a button style.
+						button.setButtonText('Full reset').setWarning().onClick(asyncHandler(() => this.fullReset()))
+					);
+				},
+			},
+		];
 	}
 }
