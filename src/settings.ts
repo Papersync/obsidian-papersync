@@ -9,7 +9,7 @@ import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
-import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting, requireApiVersion } from 'obsidian';
+import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
@@ -178,20 +178,15 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		return { isGoogleConnected, isFolderConnected };
 	}
 
-	// Obsidian 1.13+ renders this tab from getSettingDefinitions() and never calls
-	// display(); older versions have neither that method nor update(). Every
-	// "re-render after a state change" therefore has to route through here rather
-	// than calling display() directly, or the declarative path silently stops
-	// refreshing and the imperative path throws on a method that does not exist.
-	private get isDeclarative(): boolean {
-		return requireApiVersion('1.13.0');
-	}
-
+	// Single point of re-render after a state change, so the call sites do not each
+	// decide how the tab redraws. This stays display() on every version the plugin
+	// currently supports: the declarative renderer needs getSettingDefinitions(),
+	// which lives on the settings-declarative branch until Obsidian 1.13 is out of
+	// beta and the path can actually be exercised. Branching on the version here
+	// WITHOUT those definitions would be a regression, not preparation — update()
+	// would find an empty definition list, render nothing, and never fall back to
+	// display(), so the tab would stop refreshing after connect or disconnect.
 	private refresh(): void {
-		if (this.isDeclarative) {
-			this.update();
-			return;
-		}
 		this.display();
 	}
 
