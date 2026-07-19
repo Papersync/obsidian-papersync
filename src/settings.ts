@@ -6,7 +6,7 @@ import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
-import { SCAN_PLACEHOLDER_SVG } from '@/ui/scan-placeholder';
+import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting } from 'obsidian';
@@ -572,7 +572,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						const figure = box.createDiv({ cls: 'papersync-preview-scan' });
 						// Trusted static asset (no user input); parsed into a node rather
 						// than assigned as innerHTML so the DOM-safety lint stays happy.
-						const scan = new DOMParser().parseFromString(SCAN_PLACEHOLDER_SVG, 'image/svg+xml');
+						const scan = new DOMParser().parseFromString(buildScanPlaceholderSvg(PREVIEW_CONTEXT.ps_markdown), 'image/svg+xml');
 						figure.appendChild(document.importNode(scan.documentElement, true));
 					}
 				});
