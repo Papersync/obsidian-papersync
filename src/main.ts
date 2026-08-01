@@ -55,7 +55,7 @@ export default class PaperSyncPlugin extends Plugin {
 		this.addCommand({
 			id: 'open-settings',
 			name: STRINGS.CMD_OPEN_SETTINGS,
-			callback: () => this.openSettings(),
+			callback: () => { void this.openSettings(); },
 		});
 
 		if (DEV_MODE) {
@@ -170,7 +170,7 @@ export default class PaperSyncPlugin extends Plugin {
 			this.syncState.setStatus('idle');
 			this.firstRunTimeout = window.setTimeout(() => {
 				this.firstRunTimeout = null;
-				this.openSettings();
+				void this.openSettings();
 			}, 500);
 			return;
 		}
@@ -295,11 +295,16 @@ export default class PaperSyncPlugin extends Plugin {
 		}
 	}
 
-	private openSettings(): void {
+	private async openSettings(): Promise<void> {
 		if ('setting' in this.app) {
-			const setting = this.app.setting as { open(): void; openTabById(id: string): void } | undefined;
-			setting?.open();
-			setting?.openTabById(this.manifest.id);
+			// On Obsidian 1.13+ the settings UI lives in its own window and open()
+			// resolves only once that window exists; calling openTabById in the same
+			// tick races the window creation and can leave Settings open with NO tab
+			// selected (empty pane). Await both — on older versions they return void
+			// and the awaits are no-ops.
+			const setting = this.app.setting as { open(): void | Promise<void>; openTabById(id: string): void | Promise<void> } | undefined;
+			await setting?.open();
+			await setting?.openTabById(this.manifest.id);
 		}
 	}
 }
