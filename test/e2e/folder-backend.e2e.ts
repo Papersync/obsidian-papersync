@@ -1,12 +1,12 @@
+import { openPluginSettings, closeSettings } from './helpers';
+
 describe('Folder backend settings', function () {
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(1000);
+		await openPluginSettings();
 	});
 
 	afterEach(async function () {
-		await browser.keys('Escape');
-		await browser.pause(300);
+		await closeSettings();
 	});
 
 	it('shows storage section with folder and drive options when not connected', async function () {

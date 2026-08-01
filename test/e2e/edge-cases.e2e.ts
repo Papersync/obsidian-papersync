@@ -1,3 +1,5 @@
+import { openPluginSettings, closeSettings, clickSettingsTab } from './helpers';
+
 describe('Edge cases and error handling', function () {
 	it('survives rapid sync now clicks', async function () {
 		// Fire sync command 3 times rapidly — should not crash
@@ -14,10 +16,8 @@ describe('Edge cases and error handling', function () {
 
 	it('survives opening and closing settings rapidly', async function () {
 		for (let i = 0; i < 5; i++) {
-			await browser.executeObsidianCommand('papersync:open-settings');
-			await browser.pause(200);
-			await browser.keys('Escape');
-			await browser.pause(200);
+			await openPluginSettings();
+			await closeSettings();
 		}
 
 		// Plugin should still be functional — verify workspace is intact
@@ -26,15 +26,10 @@ describe('Edge cases and error handling', function () {
 	});
 
 	it('handles settings reset without crashing', async function () {
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(1000);
+		await openPluginSettings();
 
-		// Reset lives under the Advanced tab now; activate it (no-op if not connected).
-		await browser.execute(() => {
-			const t = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === 'Advanced');
-			if (t) { (t as HTMLElement).click(); }
-		});
-		await browser.pause(300);
+		// Reset lives under the Advanced tab (no-op where there is no tab bar).
+		await clickSettingsTab('Advanced');
 
 		// Find and click the "Reset settings" button (not full reset)
 		const buttons = await browser.$$('button');
@@ -56,7 +51,7 @@ describe('Edge cases and error handling', function () {
 			expect(text).toContain('Papersync');
 		}
 
-		await browser.keys('Escape');
+		await closeSettings();
 	});
 
 	it('no console errors from plugin on load', async function () {

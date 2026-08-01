@@ -1,3 +1,5 @@
+import { openPluginSettings, closeSettings } from './helpers';
+
 describe('Sync state management', function () {
 	before(async function () {
 		// Wait for plugin init (wizard may open after 500ms delay), then dismiss all modals
@@ -9,6 +11,9 @@ describe('Sync state management', function () {
 			await browser.keys('Escape');
 			await browser.pause(500);
 		}
+		// On 1.13+ the first-run settings open as a separate window, which the
+		// modal loop above never sees; close it the window-aware way.
+		await closeSettings();
 		// Ensure setupComplete is true for consistent test state
 		await browser.execute(async () => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void> }> } } }).app;
@@ -22,12 +27,10 @@ describe('Sync state management', function () {
 
 	it('sync now shows notice when not configured', async function () {
 		// Open settings to check if we're connected
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(500);
+		await openPluginSettings();
 		const body = await browser.$('body');
 		const settingsText = await body.getText();
-		await browser.keys('Escape');
-		await browser.pause(300);
+		await closeSettings();
 
 		if (!settingsText.includes('Change Storage')) {
 			// Not connected — sync now should show a notice

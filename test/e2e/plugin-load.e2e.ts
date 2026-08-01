@@ -1,3 +1,5 @@
+import { openPluginSettings, closeSettings } from './helpers';
+
 describe('Papersync plugin', function () {
 	it('loads without errors', async function () {
 		const title = await browser.getTitle();
@@ -9,9 +11,8 @@ describe('Papersync plugin', function () {
 	});
 
 	it('registers the open settings command', async function () {
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(500);
-		await browser.keys('Escape');
+		await openPluginSettings();
+		await closeSettings();
 	});
 
 	it('shows Papersync in status bar', async function () {

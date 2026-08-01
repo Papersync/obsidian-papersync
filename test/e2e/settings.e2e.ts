@@ -1,27 +1,17 @@
-// The connected settings live under tabs (Sync | Note template | Advanced); only the
-// active tab's content is in the DOM, so activate a tab before asserting its content.
-async function clickTab(label: string): Promise<void> {
-	await browser.execute((l: string) => {
-		const btn = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === l);
-		if (btn) { (btn as HTMLElement).click(); }
-	}, label);
-	await browser.pause(200);
-}
+import { openPluginSettings, closeSettings, clickSettingsTab as clickTab, switchToMainWindow } from './helpers';
 
 describe('Settings tab', function () {
 	let isConnected: boolean;
 
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(1000);
+		await openPluginSettings();
 		const body = await browser.$('body');
 		const text = await body.getText();
 		isConnected = text.includes('Change Storage');
 	});
 
 	afterEach(async function () {
-		await browser.keys('Escape');
-		await browser.pause(300);
+		await closeSettings();
 	});
 
 	it('shows the storage connection or picker in the Sync tab', async function () {
@@ -146,6 +136,11 @@ describe('Settings tab', function () {
 		// Notes folder / Sync now / Note Template sections rendered even though
 		// no sync engine actually existed. Post-fix the gate requires either
 		// Google auth or Folder setupComplete.
+		// Close the settings opened by beforeEach so the re-open below is a full
+		// fresh render, then manipulate state from the main window — window.app
+		// only exists there; on 1.13+ the settings UI is in its own window.
+		await closeSettings();
+		await switchToMainWindow();
 		await browser.execute(async () => {
 			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void>; oauthManager?: { disconnect: () => void } }> } } }).app;
 			const plugin = app.plugins.plugins['papersync'];
@@ -166,9 +161,8 @@ describe('Settings tab', function () {
 			await plugin.saveSettings();
 		});
 
-		// Re-open settings so display() re-runs with the half-state.
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(800);
+		// Re-open settings so the tab re-renders with the half-state.
+		await openPluginSettings();
 
 		const body = await browser.$('body');
 		const text = await body.getText();

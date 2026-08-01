@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { FakeGoogle } from './fake-google';
-import { MINIMAL_JPEG, waitForPlugin, triggerSyncNow, readNotes, isoStamp } from './helpers';
+import { MINIMAL_JPEG, waitForPlugin, triggerSyncNow, readNotes, isoStamp, switchToMainWindow, focusSettingsUI, closeSettings, clickButtonWhenPresent } from './helpers';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_TOKEN_SECRET_ID } from '../../src/config';
 
 // Drives the REAL Google Drive lane (PKCE OAuth + Drive v3 sync client) end-to-end
@@ -34,7 +34,10 @@ describe('Drive OAuth + sync against fake Google', function () {
 	const fake = new FakeGoogle();
 	const TARGET_FOLDER = 'DriveTest';
 
+	// Every helper below reads or mutates window.app, which only the main window
+	// has — the 1.13+ settings window is an app-less about:blank document.
 	async function state(): Promise<PluginState> {
+		await switchToMainWindow();
 		return browser.execute(() => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
 			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
@@ -59,6 +62,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 	// Command resolved by suffix (same id-agnostic pattern as helpers.ts) so the
 	// spec survives a manifest-id change.
 	async function openSettings(): Promise<void> {
+		await switchToMainWindow();
 		await browser.execute(() => {
 			const app = (window as unknown as { app: { commands: {
 				commands: Record<string, unknown>;
@@ -69,12 +73,18 @@ describe('Drive OAuth + sync against fake Google', function () {
 			app.commands.executeCommandById(id);
 		});
 		await browser.pause(800);
+		// 1.13+ hosts the settings UI in its own window; leave the driver there.
+		await focusSettingsUI();
 	}
 
-	// Patch window.open (in-spec only; afterEach restores it) and click the real
-	// Connect button in one page call so the patch is guaranteed in place when the
-	// click handler fires.
+	// Patch window.open (in-spec only; afterEach restores it), then click the real
+	// Connect button. The Connect handler is plugin code, which runs in the MAIN
+	// window's JS realm even when the button's DOM sits in the 1.13+ settings
+	// window — so the patch must land on the main window's global, and the click
+	// on whichever window hosts the settings UI. Both awaits complete before the
+	// handler can fire, so the patch is guaranteed in place for the click.
 	async function clickConnectWithPatchedOpen(): Promise<void> {
+		await switchToMainWindow();
 		await browser.execute(() => {
 			const w = window as unknown as { __psRealOpen?: typeof window.open };
 			if (!w.__psRealOpen) { w.__psRealOpen = window.open; }
@@ -86,11 +96,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 				if (url) { fetch(String(url), { mode: 'no-cors' }).catch(() => undefined); }
 				return null;
 			}) as typeof window.open;
-
-			const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Connect');
-			if (!btn) { throw new Error('Connect button not found in settings UI'); }
-			btn.click();
 		});
+		await focusSettingsUI();
+		await clickButtonWhenPresent('Connect');
 	}
 
 	// Re-establish the "connected with a valid refresh token" precondition from
@@ -99,6 +107,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 	// scenario clears the token, which used to make its own retry unrecoverable.
 	async function seedConnectedState(): Promise<void> {
 		const refreshToken = fake.issueRefreshToken();
+		await switchToMainWindow();
 		await browser.execute(async (token: string, secretId: string) => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
 			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
@@ -121,6 +130,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 	// for "the write landed", distinct from the in-memory oauthManager.refreshToken
 	// (which is set regardless of whether the secret-storage write succeeded).
 	async function persistedSecret(): Promise<string | null> {
+		await switchToMainWindow();
 		return browser.execute((secretId: string) => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
 			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
@@ -139,6 +149,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 	// Without the parking, the auto-started poll would race off toward real Google
 	// (egress, plus a real invalid_grant that would clear the seeded token).
 	async function reloadPlugin(): Promise<void> {
+		await switchToMainWindow();
 		await browser.execute(async (overrides: Record<string, string>) => {
 			const appPlugins = (window as unknown as { app: { plugins: {
 				plugins: Record<string, unknown>;
@@ -219,7 +230,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// poison the next test's token request.
 		fake.clearFaults();
 		// The window.open patch is scoped per Connect click — restore it here so no
-		// later test (or retry) runs under a stale patch.
+		// later test (or retry) runs under a stale patch. The patch lives on the
+		// MAIN window's global (where plugin code runs), so restore it there.
+		await switchToMainWindow();
 		await browser.execute(() => {
 			const w = window as unknown as { __psRealOpen?: typeof window.open };
 			if (w.__psRealOpen) { window.open = w.__psRealOpen; delete w.__psRealOpen; }
@@ -230,6 +243,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// Leave no drive/oauth state behind for later spec files: strip the endpoint
 		// seam and reset the connection baseline plus the folder/poll settings this
 		// suite customized (the vault's data.json is shared across spec files).
+		await closeSettings();
 		await browser.execute(async (secretId: string) => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
 			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
@@ -255,7 +269,6 @@ describe('Drive OAuth + sync against fake Google', function () {
 			delete plugin.settings.endpointOverrides;
 			await plugin.saveSettings();
 		}, OAUTH_TOKEN_SECRET_ID);
-		await browser.keys('Escape');
 		await fake.stop();
 	});
 
@@ -318,6 +331,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		fake.clearRequests();
 
 		// Normalize to disconnected in case of a mocha retry mid-suite.
+		await switchToMainWindow();
 		await browser.execute(async () => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
 			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
@@ -372,12 +386,14 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(exchange!.params.get('client_secret')).toBe(GOOGLE_CLIENT_SECRET); // desktop-app clients still send it
 		expect(exchange!.params.get('code_verifier')).toBeTruthy();
 
-		// The settings UI re-rendered into the connected state.
+		// The settings UI re-rendered into the connected state. state() above moved
+		// the driver to the main window; the settings DOM is elsewhere on 1.13+.
+		await focusSettingsUI();
 		await browser.waitUntil(async () => (await (await browser.$('body')).getText()).includes('Change Storage'), {
 			timeout: 5000, interval: 250,
 			timeoutMsg: 'Settings UI never showed the connected (Change Storage) state',
 		});
-		await browser.keys('Escape');
+		await closeSettings();
 	});
 
 	it('syncs a seeded Drive scan into the vault and PATCHes it back synced with all fields intact', async function () {
@@ -515,7 +531,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		const text = await (await browser.$('body')).getText();
 		expect(text).toContain('Connect');
 		expect(text).not.toContain('Change Storage');
-		await browser.keys('Escape');
+		await closeSettings();
 	});
 
 	it('revokes the refresh token at Google when the user disconnects via Change Storage', async function () {
@@ -536,11 +552,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// button (the handler returns before the folder branch), so clicking it exercises
 		// the plugin's genuine disconnect path — no direct oauthManager call.
 		await openSettings();
-		await browser.execute(() => {
-			const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === 'Change Storage');
-			if (!btn) { throw new Error('Change Storage button not found in the connected settings UI'); }
-			btn.click();
-		});
+		await clickButtonWhenPresent('Change Storage');
 
 		// The disconnect POSTed the refresh token to the fake /revoke endpoint — a real
 		// server-side sign-out, fired BEFORE the local clear.
@@ -565,13 +577,30 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(new URLSearchParams(revokeReq!.body).get('token')).toBe(refreshToken);
 		expect(revokeReq!.responseStatus).toBe(200);
 
-		await browser.keys('Escape');
+		await closeSettings();
 	});
 
 	it('surfaces a Connection failed notice when the token exchange fails mid-flow', async function () {
 		// Flow-level error-surface for the PKCE-mismatch row: force the exchange leg of
 		// a real Connect click to fail with the same Google-shaped invalid_grant the
 		// PKCE guard emits, and assert the token_revoked path reaches the user.
+		// Normalize to disconnected first (same as the happy path): the Connect
+		// button only renders in the disconnected picker, so a leftover connected
+		// state — from a failed earlier test or a mocha retry — would fail the
+		// click on a missing button instead of testing the error surface.
+		await switchToMainWindow();
+		await browser.execute(async () => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
+			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
+				settings: Record<string, unknown>;
+				saveSettings: () => Promise<void>;
+				oauthManager: { disconnect: () => void } | null;
+			};
+			plugin.oauthManager?.disconnect();
+			plugin.settings.backendType = 'none';
+			plugin.settings.setupComplete = false;
+			await plugin.saveSettings();
+		});
 		fake.clearRequests();
 		fake.failNextTokenRequest(400, { error: 'invalid_grant', error_description: 'PKCE verification failed' });
 
@@ -588,12 +617,20 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(s.isAuthenticated).toBe(false);
 		expect(s.refreshToken).toBe('');
 
-		// The Notice carries the surfaced token_revoked message.
+		// The Notice carries the surfaced token_revoked message. Where it mounts
+		// differs by version (main-window document pre-1.13; possibly the settings
+		// window's own notice container on 1.13+), so poll every window for it.
 		await browser.waitUntil(async () => {
-			const text = await (await browser.$('body')).getText();
-			return text.includes('Connection failed') && text.includes('PKCE verification failed');
+			for (const handle of await browser.getWindowHandles()) {
+				try {
+					await browser.switchToWindow(handle);
+					const text = await (await browser.$('body')).getText();
+					if (text.includes('Connection failed') && text.includes('PKCE verification failed')) { return true; }
+				} catch { /* window closed mid-poll */ }
+			}
+			return false;
 		}, { timeout: 5000, interval: 250, timeoutMsg: 'Connection failed notice never surfaced' });
 
-		await browser.keys('Escape');
+		await closeSettings();
 	});
 });

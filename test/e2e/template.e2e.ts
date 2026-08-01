@@ -1,19 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { configureFolderBackend, vaultBasePath } from './helpers';
+import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSettings, clickSettingsTab as clickTab } from './helpers';
 
 // The Template tab only renders once a backend is connected, so this spec
 // connects the folder backend itself rather than skipping when it happens to
 // find one. It previously gated on `text.includes('Change Storage')` and called
 // this.skip() — a condition a clean test vault never satisfies, so all three
 // tests silently never ran while the suite still reported the file as passed.
-async function clickTab(label: string): Promise<void> {
-	await browser.execute((l: string) => {
-		const btn = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === l);
-		if (btn) { (btn as HTMLElement).click(); }
-	}, label);
-	await browser.pause(200);
-}
 
 describe('Template editor', function () {
 	const SCANS = 'Papersync-template-scans';
@@ -34,14 +27,12 @@ describe('Template editor', function () {
 	});
 
 	beforeEach(async function () {
-		await browser.executeObsidianCommand('papersync:open-settings');
-		await browser.pause(1000);
+		await openPluginSettings();
 		await clickTab('Template');
 	});
 
 	afterEach(async function () {
-		await browser.keys('Escape');
-		await browser.pause(300);
+		await closeSettings();
 	});
 
 	it('reaches the Template tab with a backend connected', async function () {

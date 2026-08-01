@@ -10,9 +10,122 @@ export const MINIMAL_JPEG = Buffer.from([
 	0x01, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0xFF, 0xD9,
 ]);
 
+// ---------------------------------------------------------------------------
+// Settings-window handling.
+//
+// Obsidian 1.13 moved Settings out of the main-window modal into a dedicated
+// window (a separate webContents, so a separate WebDriver window handle whose
+// document is about:blank and has NO `window.app`). Every DOM assertion against
+// the settings UI must therefore run in whichever window actually hosts it,
+// while everything that touches `window.app` (plugin state, commands) must run
+// in the main window. Pre-1.13 there is only the main window and these helpers
+// collapse to what the specs always did.
+// ---------------------------------------------------------------------------
+
+// The main window is the one that loaded Obsidian itself; the settings window
+// is about:blank. URL is the discriminator that needs no title parsing.
+export async function switchToMainWindow(): Promise<void> {
+	try {
+		if ((await browser.getUrl()).startsWith('app://obsidian.md')) { return; }
+	} catch { /* current window just closed; fall through to the scan */ }
+	for (const handle of await browser.getWindowHandles()) {
+		try {
+			await browser.switchToWindow(handle);
+			if ((await browser.getUrl()).startsWith('app://obsidian.md')) { return; }
+		} catch { /* window closed between listing and switching */ }
+	}
+	throw new Error('main Obsidian window not found');
+}
+
+async function findSettingsWindow(): Promise<string | null> {
+	for (const handle of await browser.getWindowHandles()) {
+		try {
+			await browser.switchToWindow(handle);
+			if ((await browser.getTitle()).startsWith('Settings')) { return handle; }
+		} catch { /* window closed between listing and switching */ }
+	}
+	return null;
+}
+
+// Leave the driver focused on whichever window hosts the settings UI: the
+// dedicated window on 1.13+, the main window (modal) before that. Returns
+// whether a settings UI is actually open.
+export async function focusSettingsUI(): Promise<boolean> {
+	if (await findSettingsWindow()) { return true; }
+	await switchToMainWindow();
+	return browser.execute(() => !!document.querySelector('.mod-settings'));
+}
+
+export async function openPluginSettings(): Promise<void> {
+	await switchToMainWindow();
+	await browser.executeObsidianCommand('papersync:open-settings');
+	await browser.waitUntil(() => focusSettingsUI(), {
+		timeout: 5000,
+		interval: 200,
+		timeoutMsg: 'settings UI never appeared',
+	});
+	// Let the plugin tab finish painting (template preview etc. render async).
+	await browser.pause(500);
+}
+
+export async function closeSettings(): Promise<void> {
+	// Close through the app API from the MAIN window, never by pressing Escape
+	// while focused on the settings window: if the driver's current window is
+	// the one being closed, wdio sees its handle vanish and tears the whole
+	// session down ("All window handles were removed").
+	const settingsHandle = await findSettingsWindow();
+	await switchToMainWindow();
+	await browser.execute(() => {
+		const setting = (window as unknown as { app?: { setting?: { close?: () => void } } }).app?.setting;
+		setting?.close?.();
+	});
+	if (settingsHandle) {
+		// 1.13+: wait for the dedicated window to actually go away, polling the
+		// handle list only — no switching to a window that is mid-teardown.
+		await browser.waitUntil(
+			async () => !(await browser.getWindowHandles()).includes(settingsHandle),
+			{ timeout: 3000, interval: 200, timeoutMsg: 'settings window never closed' }
+		);
+	} else {
+		await browser.pause(300); // modal teardown
+	}
+	await switchToMainWindow();
+}
+
+// Find a button by exact label in the CURRENT window and click it, waiting for
+// it to exist first: on 1.13+ a freshly opened settings window paints its tab
+// content asynchronously, so a one-shot querySelector right after open races
+// the render and fails deterministically under load.
+export async function clickButtonWhenPresent(label: string, timeoutMs = 5000): Promise<void> {
+	await browser.waitUntil(
+		() => browser.execute((l: string) => {
+			const btn = Array.from(document.querySelectorAll('button')).find((b) => b.textContent === l);
+			if (btn) { btn.click(); return true; }
+			return false;
+		}, label),
+		{ timeout: timeoutMs, interval: 200, timeoutMsg: `"${label}" button never appeared in the settings UI` }
+	);
+}
+
+// When the plugin renders its own tab bar (Sync | Template | Advanced) only the
+// active tab's content is in the DOM, so a spec must activate a tab before
+// asserting on it. When the bar is absent (a renderer that lays every section
+// out in one scroll) this is a no-op: the content is already present.
+export async function clickSettingsTab(label: string): Promise<void> {
+	const clicked = await browser.execute((l: string) => {
+		const btn = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === l);
+		if (btn) { (btn as HTMLElement).click(); return true; }
+		return false;
+	}, label);
+	if (clicked) { await browser.pause(200); }
+}
+
 // The plugin is keyed in app.plugins by its manifest id. Resolve id-agnostically
 // so a future rename does not silently break every spec's setup.
+// (Like every helper below that touches window.app, this pins itself to the
+// main window first — the 1.13+ settings window is an app-less about:blank.)
 export async function waitForPlugin(): Promise<void> {
+	await switchToMainWindow();
 	await browser.waitUntil(
 		async () => browser.execute(() => {
 			const ps = (window as unknown as { app?: { plugins?: { plugins?: Record<string, unknown> } } }).app?.plugins?.plugins;
@@ -23,6 +136,7 @@ export async function waitForPlugin(): Promise<void> {
 }
 
 export async function vaultBasePath(): Promise<string> {
+	await switchToMainWindow();
 	const p = await browser.execute(() => {
 		const app = (window as unknown as { app: { vault: { adapter: { getBasePath: () => string } } } }).app;
 		return app.vault.adapter.getBasePath();
@@ -72,6 +186,7 @@ export function writeScan(dir: string, id: string, scan: Record<string, unknown>
 // suffix so it works regardless of the plugin's manifest-id prefix (papersync vs
 // obsidian-papersync).
 export async function triggerSyncNow(): Promise<void> {
+	await switchToMainWindow();
 	await browser.execute(() => {
 		const app = (window as unknown as { app: { commands: {
 			commands: Record<string, unknown>;
@@ -90,6 +205,7 @@ export async function syncNow(): Promise<void> {
 
 // Concatenated bodies of every markdown note whose path contains `needle`.
 export async function readNotes(needle: string): Promise<string> {
+	await switchToMainWindow();
 	return browser.execute(async (n: string) => {
 		const app = (window as unknown as { app: { vault: {
 			getMarkdownFiles: () => Array<{ path: string }>;
