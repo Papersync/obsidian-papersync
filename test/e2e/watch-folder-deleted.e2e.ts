@@ -20,6 +20,12 @@ describe('Watched-folder deletion resilience', function () {
 	});
 
 	it('survives the watched folder being deleted mid-session', async function () {
+		// Retry-safe: this test deletes `dir` mid-flight and only recreates it on
+		// the success path, while before() runs once per describe — so a failed
+		// first attempt used to leave every mocha retry writing into a deleted
+		// folder (ENOENT from writeScan). Recreate up front, idempotently.
+		fs.mkdirSync(dir, { recursive: true });
+
 		// First a normal sync so the watcher is active on a real folder.
 		const stamp = isoStamp();
 		const id = `watch-${stamp}`;
