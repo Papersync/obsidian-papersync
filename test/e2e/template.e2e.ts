@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSettings, focusSettingsUI } from './helpers';
+import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSettings, focusSettingsUI, switchToMainWindow, writeScan, triggerSyncNow, waitForNotes, isoStamp } from './helpers';
 
 // The Template section only renders once a backend is connected, so this spec
 // connects the folder backend itself rather than skipping when it happens to
@@ -133,6 +133,62 @@ describe('Template editor', function () {
 
 		await toggleSaveImages(); // back on
 		await browser.waitUntil(async () => !(await warningShown()), { timeout: 10_000, interval: 250, timeoutMsg: 'the image warning row did not hide again' });
+	});
+
+	it('applies template and Notes folder edits to the next scan without restarting sync', async function () {
+		// startSync() used to hand the engine a COPY of these settings, so an edit in
+		// Settings changed the live preview but not the notes until Obsidian
+		// restarted. Edit both through the real UI, never call startSync(), then sync.
+		const stamp = isoStamp();
+		const marker = `LIVE_TEMPLATE_${stamp}`;
+		const folder = `TemplateLive${stamp.replace(/[^0-9]/g, '')}`;
+
+		const editor = await browser.$('.papersync-template-editor');
+		await editor.waitForExist({ timeout: 10_000 });
+		const original = await editor.getValue();
+		await editor.setValue(`## ${marker}\n\n{{ps_markdown}}`);
+
+		await focusSettingsUI();
+		const notesFolder = await browser.execute(() => {
+			const item = Array.from(document.querySelectorAll('.setting-item'))
+				.find((el) => el.querySelector('.setting-item-name')?.textContent?.trim() === 'Notes folder');
+			return !!item?.querySelector('input');
+		});
+		expect(notesFolder).toBe(true);
+		const input = await browser.$('.setting-item*=Notes folder').$('input');
+		await input.setValue(folder);
+
+		// Both edits persisted (the template after its 250 ms debounce).
+		await switchToMainWindow();
+		await browser.waitUntil(async () => browser.execute((f: string, m: string) => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: { targetFolder: string; templateString: string } }> } } }).app.plugins.plugins;
+			const s = (ps['papersync'] ?? ps['obsidian-papersync'])?.settings;
+			return s?.targetFolder === f && s.templateString.includes(m);
+		}, folder, marker), { timeout: 10_000, interval: 250, timeoutMsg: 'the settings edits never persisted' });
+
+		const id = `live-${stamp}`;
+		writeScan(dir, id, {
+			version: 1,
+			createdAt: new Date().toISOString(),
+			markdown: `Body for ${marker}`,
+			confidence: 90,
+			provider: 'claude',
+			model: 'claude-sonnet-4',
+			imageFileName: `${id}.jpg`,
+		});
+		await triggerSyncNow();
+		const notes = await waitForNotes(folder, marker, 30_000);
+		expect(notes).toContain(`## ${marker}`);
+
+		// Restore for the rest of the file.
+		await focusSettingsUI();
+		await (await browser.$('.papersync-template-editor')).setValue(original);
+		await (await browser.$('.setting-item*=Notes folder').$('input')).setValue('TemplateTest');
+		await switchToMainWindow();
+		await browser.waitUntil(async () => browser.execute(() => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: { targetFolder: string } }> } } }).app.plugins.plugins;
+			return (ps['papersync'] ?? ps['obsidian-papersync'])?.settings.targetFolder === 'TemplateTest';
+		}), { timeout: 10_000, interval: 250 });
 	});
 });
 

@@ -9,6 +9,7 @@ import { readSecret, writeSecret } from '@/auth/secret-store';
 import { DriveBackend } from '@/sync/drive-backend';
 import { FolderBackend } from '@/sync/folder-backend';
 import { SyncEngine } from '@/sync/sync-engine';
+import type { NoteCreatorConfig } from '@/notes/note-creator';
 import { SyncState } from '@/sync/sync-state';
 import type { SyncStateSnapshot } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
@@ -207,18 +208,25 @@ export default class PaperSyncPlugin extends Plugin {
 			this.onSyncStateChanged(snap);
 		});
 
-		const noteConfig = {
-			templateString: this.settings.templateString,
-			targetFolder: this.settings.targetFolder,
-			attachmentsFolder: this.settings.attachmentsFolder,
-			downloadImages: this.settings.downloadImages,
+		// A live view, not a copy: the engine reads these on every scan, so an edit in
+		// Settings (template, Notes folder, attachments folder, image saving) applies
+		// to the next scan without restarting sync. A snapshot here used to keep the
+		// old values until Obsidian restarted, while the live preview already showed
+		// the new template. `this.settings` is itself replaced by a reset, so the
+		// getters read it at call time.
+		const settings = (): PluginSettings => this.settings;
+		const noteConfig: NoteCreatorConfig = {
+			get templateString() { return settings().templateString; },
+			get targetFolder() { return settings().targetFolder; },
+			get attachmentsFolder() { return settings().attachmentsFolder; },
+			get downloadImages() { return settings().downloadImages; },
 		};
 
 		if (this.settings.backendType === 'drive' && this.oauthManager?.isAuthenticated) {
 			// Same call-time supplier as OAuthManager gets in initAsync, so the token and
 			// Drive legs of a sync can never resolve against two different snapshots of
 			// the endpoint seam.
-			const backend = new DriveBackend(this.oauthManager, this.settings.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
+			const backend = new DriveBackend(this.oauthManager, () => this.settings.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
 			this.startEngine(new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState));
 			logger.info('Drive sync started');
 		} else if (this.settings.backendType === 'folder' && this.settings.folderPath) {

@@ -25,7 +25,10 @@ interface DriveListResponse {
 
 export class DriveBackend implements SyncBackend {
 	private oauthManager: OAuthManager;
-	private pollIntervalMs: number;
+	// Seconds, read live: an interval changed in Settings takes effect from the next
+	// tick without restarting sync.
+	private pollIntervalSeconds: () => number;
+	private armedSeconds = 0;
 	private intervalId: number | null = null;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 	private lastSyncTimestamp: string;
@@ -36,12 +39,12 @@ export class DriveBackend implements SyncBackend {
 
 	constructor(
 		oauthManager: OAuthManager,
-		pollIntervalSeconds: number,
+		pollIntervalSeconds: number | (() => number),
 		lastSyncTimestamp?: string,
 		endpointsSupplier?: GoogleEndpointsSupplier
 	) {
 		this.oauthManager = oauthManager;
-		this.pollIntervalMs = pollIntervalSeconds * 1000;
+		this.pollIntervalSeconds = typeof pollIntervalSeconds === 'function' ? pollIntervalSeconds : () => pollIntervalSeconds;
 		this.lastSyncTimestamp = lastSyncTimestamp ?? '';
 		this.endpointsSupplier = endpointsSupplier;
 	}
@@ -81,16 +84,34 @@ export class DriveBackend implements SyncBackend {
 
 	start(): void {
 		void this.poll();
-		this.intervalId = window.setInterval(() => void this.poll(), this.pollIntervalMs);
-		logger.info(`Drive polling started (${this.pollIntervalMs / 1000}s interval)`);
+		this.arm();
+		logger.info(`Drive polling started (${this.armedSeconds}s interval)`);
 	}
 
 	stop(): void {
+		this.disarm();
+		logger.info('Drive polling stopped');
+	}
+
+	// Poll on the current interval; when the setting has changed by the time a tick
+	// fires, re-arm at the new rate so the change applies from the next check.
+	private arm(): void {
+		this.armedSeconds = this.pollIntervalSeconds();
+		this.intervalId = window.setInterval(() => {
+			void this.poll();
+			if (this.pollIntervalSeconds() !== this.armedSeconds) {
+				this.disarm();
+				this.arm();
+				logger.info(`Drive poll interval now ${this.armedSeconds}s`);
+			}
+		}, this.armedSeconds * 1000);
+	}
+
+	private disarm(): void {
 		if (this.intervalId !== null) {
 			window.clearInterval(this.intervalId);
 			this.intervalId = null;
 		}
-		logger.info('Drive polling stopped');
 	}
 
 	private async poll(): Promise<void> {
