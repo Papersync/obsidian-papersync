@@ -8,6 +8,16 @@ import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSetting
 // this.skip() — a condition a clean test vault never satisfies, so all three
 // tests silently never ran while the suite still reported the file as passed.
 
+// Leave a settings field the way a user does, by clicking elsewhere (its row's
+// label). A WebDriver Tab key does not move focus on the Electron 28 row, so it
+// cannot stand in for leaving the field.
+async function leaveField(name: string): Promise<void> {
+	await (await browser.$(`.setting-item*=${name}`).$('.setting-item-name')).click();
+	await browser.waitUntil(async () => browser.execute(() => document.activeElement?.tagName !== 'INPUT'), {
+		timeout: 3000, interval: 100, timeoutMsg: `focus never left the ${name} field`,
+	});
+}
+
 describe('Template editor', function () {
 	const SCANS = 'Papersync-template-scans';
 	let dir: string;
@@ -159,7 +169,7 @@ describe('Template editor', function () {
 		expect(notesFolder).toBe(true);
 		const input = await browser.$('.setting-item*=Notes folder').$('input');
 		await input.setValue(folder); // focusing this field left the template editor
-		await browser.keys(['Tab']);
+		await leaveField('Notes folder');
 
 		// Both edits persisted and reached the engine.
 		await switchToMainWindow();
@@ -189,7 +199,7 @@ describe('Template editor', function () {
 		await focusSettingsUI();
 		await (await browser.$('.papersync-template-editor')).setValue(original);
 		await (await browser.$('.setting-item*=Notes folder').$('input')).setValue('TemplateTest');
-		await browser.keys(['Tab']);
+		await leaveField('Notes folder');
 		await switchToMainWindow();
 		await browser.waitUntil(async () => browser.execute(() => {
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { engineConfig: { targetFolder: string } }> } } }).app.plugins.plugins;
