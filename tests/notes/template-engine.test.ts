@@ -38,18 +38,14 @@ describe('renderTemplate', () => {
 		expect(result).toContain('> ![[attachments/papersync/scan-001.jpg]]');
 	});
 
-	it('resolves legacy un-namespaced tokens via aliases', () => {
+	it('leaves un-prefixed names for Obsidian Templates to fill', () => {
 		const template =
 			'{{time}} | {{time_24h}} | {{date}} | {{date_short}} | {{confidence}} | {{provider}} | {{model}} | {{image_file}} | {{markdown}} | {{separator}}';
-		const result = renderTemplate(template, defaultContext);
-		expect(result).toContain('2:30 PM');
-		expect(result).toContain('14:30');
-		expect(result).toContain('2026-04-12T14:30:00.000Z');
-		expect(result).toContain('2026-04-12');
-		expect(result).toContain('87');
-		expect(result).toContain('claude-sonnet-4');
-		expect(result).toContain('attachments/papersync/scan-001.jpg');
-		expect(result).toContain('# Meeting Notes');
+		expect(renderTemplate(template, defaultContext)).toBe(template);
+	});
+
+	it('leaves inherited object keys literal', () => {
+		expect(renderTemplate('{{toString}} {{constructor}}', defaultContext)).toBe('{{toString}} {{constructor}}');
 	});
 
 	it('preserves unknown variables as-is', () => {

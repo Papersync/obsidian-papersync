@@ -22,7 +22,7 @@ function makeBackend(): SyncBackend & { startCalls: number; stopCalls: number } 
 }
 
 const noteConfig = {
-	templateString: '{{markdown}}',
+	templateString: '{{ps_markdown}}',
 	targetFolder: 'PaperSync',
 	attachmentsFolder: 'attachments/PaperSync',
 	downloadImages: false,

@@ -7,7 +7,7 @@ import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
-import { renderTemplate } from '@/notes/template-engine';
+import { renderTemplate, LEGACY_TOKENS } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsidian';
 import type { Setting } from 'obsidian';
@@ -41,7 +41,7 @@ const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
 // structure (two prose lines and the same four checkboxes with one done) but masks
 // the text as illegible handwriting. (The sample file is not a real vault
 // note, so a live embed would otherwise render as an unresolved "not found" box.)
-// True when a template embeds the scan image (canonical ps_image_file or its alias).
+// True when a template embeds the scan image.
 // Obsidian reads these as wikilink syntax, so an attachments folder containing
 // one saves the image but leaves the ![[ ]] embed unresolved.
 const RESERVED_WIKILINK_CHARS = /[#|[\]]/;
@@ -50,7 +50,7 @@ const RESERVED_WIKILINK_CHARS = /[#|[\]]/;
 const MIN_POLL_INTERVAL_S = 5;
 
 function templateEmbedsImage(template: string): boolean {
-	return /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(template);
+	return /\{\{\s*ps_image_file\s*\}\}/.test(template);
 }
 
 // True only for a path that exists AND is a directory. A folder backend whose
@@ -98,7 +98,7 @@ const DEFAULT_TEMPLATE = `{{ps_separator}}
 `;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-	settingsVersion: 3,
+	settingsVersion: 4,
 	setupComplete: false,
 	backendType: 'none',
 	drivePollInterval: 30,
@@ -135,6 +135,19 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 		// braces strip for an already-v3 data.json that still carries it.)
 		delete data.oauthRefreshToken;
 		data.settingsVersion = 3;
+	}
+
+	if (version < 4) {
+		// The un-prefixed template tokens ({{markdown}}, {{time}}, ...) stopped being
+		// rendered. Rewrite them to their ps_ names in a saved template so it keeps
+		// producing the same notes.
+		if (typeof data.templateString === 'string') {
+			data.templateString = data.templateString.replace(
+				new RegExp(`\\{\\{(${Object.keys(LEGACY_TOKENS).join('|')})\\}\\}`, 'g'),
+				(_match, name: string) => `{{${LEGACY_TOKENS[name]}}}`,
+			);
+		}
+		data.settingsVersion = 4;
 	}
 
 	return data;
@@ -459,7 +472,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		const previewEl = previewCol.createDiv({ cls: 'papersync-template-preview markdown-rendered' });
 
 		const embedsImage = (): boolean => templateEmbedsImage(textarea.value);
-		const embedsSeparator = (): boolean => /\{\{\s*(ps_separator|separator)\s*\}\}/.test(textarea.value);
+		const embedsSeparator = (): boolean => /\{\{\s*ps_separator\s*\}\}/.test(textarea.value);
 		const imageSavingOff = (): boolean => !this.plugin.settings.downloadImages;
 
 		const updateImageWarning = (): void => {

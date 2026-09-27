@@ -27,14 +27,14 @@ const mockVault = {
 };
 
 const defaultConfig = {
-	templateString: `{{separator}}
+	templateString: `{{ps_separator}}
 
-## {{time}}
+## {{ps_scan_time}}
 
-{{markdown}}
+{{ps_markdown}}
 
 > [!abstract]- Original scan
-> ![[{{image_file}}]]
+> ![[{{ps_image_file}}]]
 `,
 	targetFolder: 'PaperSync',
 	attachmentsFolder: 'attachments/papersync',

@@ -11,9 +11,11 @@ export interface TemplateContext {
 	ps_separator: string;
 }
 
-// Legacy un-namespaced tokens map to their ps_ replacements so templates written
-// before the namespace rename keep rendering. New templates should use ps_ tokens.
-const TOKEN_ALIASES: Record<string, keyof TemplateContext> = {
+// The pre-namespace token names, now only used to rewrite saved templates once
+// (settings migration v4). They are NOT rendered: a bare {{date}} or {{time}} is
+// left for Obsidian's own Templates plugin, which the ps_ namespace exists to
+// avoid clashing with.
+export const LEGACY_TOKENS: Record<string, keyof TemplateContext> = {
 	date: 'ps_scan_date',
 	date_short: 'ps_scan_date_short',
 	time: 'ps_scan_time',
@@ -29,11 +31,7 @@ const TOKEN_ALIASES: Record<string, keyof TemplateContext> = {
 export function renderTemplate(template: string, context: TemplateContext): string {
 	// Pure substitution: every newline the author wrote is preserved verbatim in the
 	// note file (Markdown rendering still collapses blank runs at display time).
-	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
-		const field = key in context ? (key as keyof TemplateContext) : TOKEN_ALIASES[key];
-		if (field !== undefined) {
-			return String(context[field]);
-		}
-		return match;
-	});
+	// Own properties only, so {{toString}} and friends stay literal.
+	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
+		Object.prototype.hasOwnProperty.call(context, key) ? String(context[key as keyof TemplateContext]) : match);
 }

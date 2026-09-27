@@ -56,7 +56,7 @@ const mockVault = {
 };
 
 const noteConfig = {
-	templateString: '{{separator}}\n\n## {{time}}\n\n{{markdown}}\n\n> [!abstract]- Original scan\n> ![[{{image_file}}]]',
+	templateString: '{{ps_separator}}\n\n## {{ps_scan_time}}\n\n{{ps_markdown}}\n\n> [!abstract]- Original scan\n> ![[{{ps_image_file}}]]',
 	targetFolder: 'PaperSync',
 	attachmentsFolder: 'attachments/papersync',
 	downloadImages: true,
