@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { openPluginSettings, closeSettings, configureFolderBackend, focusSettingsUI, switchToMainWindow, isoStamp } from './helpers';
+import { openPluginSettings, closeSettings, configureFolderBackend, focusSettingsUI, switchToMainWindow, clickSettingsTab, isoStamp } from './helpers';
 import { STRINGS } from '../../src/utils/strings';
 
 describe('Folder backend settings', function () {
@@ -98,6 +98,26 @@ describe('Missing Papersync folder', function () {
 		});
 	}
 
+	// Poll until the UI reaches a state, then hand it back for exact assertions:
+	// the 1.13+ settings window paints asynchronously, so a single read right
+	// after opening can land before the Papersync pane exists.
+	async function waitForUi(
+		ready: (ui: { warning: string | null; connectedRow: boolean; buttons: string[] }) => boolean,
+		what: string,
+		timeout = 10_000,
+	): Promise<{ warning: string | null; connectedRow: boolean; buttons: string[] }> {
+		let ui = await storageUi();
+		await browser.waitUntil(async () => ready(ui = await storageUi()), { timeout, interval: 250, timeoutMsg: what });
+		return ui;
+	}
+
+	async function statusBarText(): Promise<string> {
+		await switchToMainWindow();
+		return browser.execute(() => Array.from(document.querySelectorAll('.status-bar-item'))
+			.map((el) => (el.textContent ?? '').trim())
+			.find((t) => t.startsWith('Papersync')) ?? '');
+	}
+
 	function expectPicker(ui: { warning: string | null; connectedRow: boolean; buttons: string[] }): void {
 		expect(ui.warning).toContain(`"${path.basename(dir)}" is missing`);
 		expect(ui.warning).toContain(STRINGS.SETTINGS_FOLDER_MISSING_DESC);
@@ -111,12 +131,12 @@ describe('Missing Papersync folder', function () {
 	it('opens on the storage picker with a warning when the folder is already gone', async function () {
 		fs.rmSync(dir, { recursive: true, force: true });
 		await openPluginSettings();
-		expectPicker(await storageUi());
+		expectPicker(await waitForUi((ui) => ui.warning !== null, 'the missing-folder warning never appeared'));
 	});
 
 	it('switches open settings to the picker when a sync finds the folder gone', async function () {
 		await openPluginSettings();
-		expect((await storageUi()).connectedRow).toBe(true);
+		await waitForUi((ui) => ui.connectedRow, 'the connected row never appeared');
 
 		fs.rmSync(dir, { recursive: true, force: true });
 		// Polled: forceSyncNow() no-ops while another sync is in flight.
@@ -132,7 +152,7 @@ describe('Missing Papersync folder', function () {
 
 	it('switches open settings to the picker when the folder is deleted, without any sync', async function () {
 		await openPluginSettings();
-		expect((await storageUi()).connectedRow).toBe(true);
+		await waitForUi((ui) => ui.connectedRow, 'the connected row never appeared');
 
 		// Only the backend's watcher can notice this: nobody presses Sync now.
 		fs.rmSync(dir, { recursive: true, force: true });
@@ -162,5 +182,39 @@ describe('Missing Papersync folder', function () {
 			return (ps['papersync'] ?? ps['obsidian-papersync'])?.syncState?.status;
 		});
 		expect(state).toBe('synced');
+	});
+
+	it('clears the error from the status bar when a folder is picked again', async function () {
+		fs.rmSync(dir, { recursive: true, force: true });
+		await browser.waitUntil(async () => (await forceSyncStatus()).status === 'error', { timeout: 20_000, interval: 1000 });
+		expect(await statusBarText()).toBe(STRINGS.STATUS_ERROR);
+
+		// Picking a folder again starts a fresh engine on a fresh state. The status
+		// bar must follow it, not keep the previous engine's error.
+		fs.mkdirSync(dir, { recursive: true });
+		await configureFolderBackend({ folderPath: dir, targetFolder: 'MissingTest', attachmentsFolder: 'MissingTest/attachments' });
+		expect(await statusBarText()).not.toBe(STRINGS.STATUS_ERROR);
+	});
+
+	it('keeps the folder connection through "Reset settings"', async function () {
+		await openPluginSettings();
+		await clickSettingsTab('Advanced');
+		await browser.execute(() => {
+			const btn = Array.from(document.querySelectorAll('button')).find((b) => (b.textContent ?? '').trim() === 'Reset settings');
+			if (!btn) { throw new Error('Reset settings button not found'); }
+			btn.click();
+		});
+
+		await switchToMainWindow();
+		await browser.waitUntil(async () => browser.execute((expected: string) => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: { folderPath: string; backendType: string } }> } } }).app.plugins.plugins;
+			const p = ps['papersync'] ?? ps['obsidian-papersync'];
+			return p?.settings.backendType === 'folder' && p.settings.folderPath === expected;
+		}, dir), { timeout: 10_000, interval: 250, timeoutMsg: 'Reset settings dropped the folder connection' });
+
+		await focusSettingsUI();
+		await clickSettingsTab('Sync');
+		const ui = await waitForUi((u) => u.connectedRow, 'the connected row did not survive Reset settings');
+		expect(ui.warning).toBeNull();
 	});
 });

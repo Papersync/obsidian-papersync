@@ -13,7 +13,16 @@ import * as path from 'path';
 import { FolderBackend, FOLDER_CHECK_MS } from '@/sync/folder-backend';
 
 const CHECK = 40;
+// Negative assertions ("nothing happened") need a fixed wait; positive ones poll
+// until the condition holds, so a loaded machine costs time, not a false red.
 const settle = (ms = CHECK * 4): Promise<void> => new Promise((r) => setTimeout(r, ms));
+async function until(cond: () => boolean, what: string, timeoutMs = 8000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!cond()) {
+		if (Date.now() > deadline) {throw new Error(`timed out waiting for: ${what}`);}
+		await new Promise((r) => setTimeout(r, 10));
+	}
+}
 const watcherOf = (b: FolderBackend): fs.FSWatcher | null => (b as unknown as { watcher: fs.FSWatcher | null }).watcher;
 const monitorOf = (b: FolderBackend): number | null => (b as unknown as { monitorTimer: number | null }).monitorTimer;
 
@@ -58,7 +67,7 @@ describe('FolderBackend folder monitor', () => {
 		watcherOf(b)!.removeAllListeners('change');
 		fs.rmSync(dir, { recursive: true, force: true });
 
-		await settle();
+		await until(() => reported.length > 0, 'the monitor to report the folder gone');
 		expect(reported.map((e) => e.type)).toEqual(['folder_missing']);
 		expect(reported[0]!.message).toContain(dir);
 		expect(watcherOf(b)).toBeNull();
@@ -75,19 +84,16 @@ describe('FolderBackend folder monitor', () => {
 		expect(passes).toEqual([]);
 
 		fs.rmSync(dir, { recursive: true, force: true });
-		await settle();
-		expect(watcherOf(b)).toBeNull();
+		await until(() => watcherOf(b) === null, 'the dead watch to be dropped');
 
 		fs.mkdirSync(dir);
-		await settle();
-		expect(watcherOf(b)).not.toBeNull();
-		await settle(700); // past the debounce
+		await until(() => watcherOf(b) !== null, 'the watch to re-arm');
+		await until(() => passes.length > 0, 'the recovery pass'); // past the debounce
 		expect(passes).toEqual([0]);
 
 		// A second disappearance is reported again: the record resets on re-arm.
 		fs.rmSync(dir, { recursive: true, force: true });
-		await settle();
-		expect(reported).toHaveLength(2);
+		await until(() => reported.length === 2, 'the second disappearance report');
 	}, 15000);
 
 	it('reports a folder already missing at start(), and resumes when it appears', async () => {
@@ -103,8 +109,8 @@ describe('FolderBackend folder monitor', () => {
 		expect(reported).toHaveLength(1);
 
 		fs.mkdirSync(dir);
-		await settle(CHECK * 3 + 700);
-		expect(watcherOf(b)).not.toBeNull();
+		await until(() => watcherOf(b) !== null, 'the watch to arm once the folder exists');
+		await until(() => passes.length > 0, 'the recovery pass');
 		expect(passes).toEqual([0]);
 	}, 15000);
 
@@ -137,8 +143,7 @@ describe('FolderBackend folder monitor', () => {
 		expect(watcherOf(b)).toBeNull();
 		expect(reported).toEqual([]);
 
-		await settle();
-		expect(watcherOf(b)).not.toBeNull();
+		await until(() => watcherOf(b) !== null, 'the next check to re-arm the watch');
 	});
 
 	it('reports a watcher error as the folder being gone only when it actually is', () => {
@@ -156,7 +161,7 @@ describe('FolderBackend folder monitor', () => {
 		b.start();
 		watcherOf(b)!.removeAllListeners('change'); // only the debounced pass may notice
 		fs.rmSync(dir, { recursive: true, force: true });
-		await settle(700);
+		await until(() => reported.length > 0, 'the background pass to report');
 		expect(reported.map((e) => e.type)).toEqual(['folder_missing']);
 	});
 
