@@ -38,12 +38,13 @@ module.exports = {
 				strict: true,
 				module: 'ESNext',
 				target: 'ES2018',
-				moduleResolution: 'node',
+				// 'bundler' + relative paths rather than the legacy 'node' resolution
+				// and baseUrl: TypeScript 6 rejects both (TS5107 / TS5101).
+				moduleResolution: 'bundler',
 				allowSyntheticDefaultImports: true,
 				esModuleInterop: true,
-				baseUrl: '.',
 				paths: {
-					'@/*': ['src/*'],
+					'@/*': ['./src/*'],
 				},
 			},
 		}],

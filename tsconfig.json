@@ -18,6 +18,7 @@
 		"noUncheckedIndexedAccess": true,
 		"isolatedModules": true,
 		"allowSyntheticDefaultImports": true,
+		"types": ["node"],
 		"lib": [
 			"ES2021",
 			"DOM"
