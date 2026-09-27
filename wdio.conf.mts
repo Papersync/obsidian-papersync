@@ -40,6 +40,13 @@ export const config = {
 	mochaOpts: {
 		ui: 'bdd',
 		timeout: 60000,
-		retries: 2,
+		// No retries. A retry cannot tell a transient flake from a real intermittent
+		// defect, so it turns the latter into a green run; it also reruns in the
+		// state the failed attempt left behind, and a hang costs 3 x the timeout.
+		// A red is a red: find the mechanism and fix it (same policy as the app's
+		// E2E lanes). Tests that need longer than the timeout set it at SUITE level:
+		// wdio arms its per-test timer at test start, so an in-test this.timeout()
+		// cannot extend it.
+		retries: 0,
 	},
 };
