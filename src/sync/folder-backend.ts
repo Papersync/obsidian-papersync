@@ -4,12 +4,24 @@ import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
 import { createSyncError } from '@/errors/sync-error';
+import type { SyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
 import { isICloudPath, triggerICloudDownload, isDataless } from '@/sync/icloud-offload';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
 const DEBOUNCE_MS = 500;
+// How often a running folder backend checks that its folder is still there, and
+// whether a missing one (deleted, renamed, drive unplugged) has come back.
+export const FOLDER_CHECK_MS = 5000;
+
+function isDirectory(folderPath: string): boolean {
+	try {
+		return fs.statSync(folderPath).isDirectory();
+	} catch {
+		return false;
+	}
+}
 
 export function isENOENT(err: unknown): boolean {
 	return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
@@ -34,9 +46,19 @@ export class FolderBackend implements SyncBackend {
 	// window.setTimeout returns a DOM number (obsidianmd/prefer-window-timers);
 	// keep the field type in the DOM domain to match.
 	private debounceTimer: number | null = null;
+	private monitorTimer: number | null = null;
+	// Set when the watch is re-armed after the folder came back, so that pass
+	// reports even an empty discovery: the engine turns it into a completed sync,
+	// which is what clears the folder_missing error from the status bar and settings.
+	private recovering = false;
+	// One report per disappearance, however many paths notice it (the watch event,
+	// the monitor, a background pass). Cleared when the watch is armed again.
+	private goneReported = false;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
+	private onUnavailable: ((error: SyncError) => void) | null = null;
 
-	constructor(folderPath: string) {
+	// checkIntervalMs is injectable so tests can exercise the monitor without a 5 s wait.
+	constructor(folderPath: string, private readonly checkIntervalMs = FOLDER_CHECK_MS) {
 		this.folderPath = folderPath;
 	}
 
@@ -44,39 +66,110 @@ export class FolderBackend implements SyncBackend {
 		this.onScanDiscovered = callback;
 	}
 
+	setOnUnavailable(callback: (error: SyncError) => void): void {
+		this.onUnavailable = callback;
+	}
+
 	start(): void {
-		try {
-			this.watcher = fs.watch(this.folderPath, { recursive: false }, (eventType, filename) => {
-				if (filename && filename.endsWith('.json')) {
-					this.debouncedDiscovery();
-				}
-			});
-
-			// fs.watch emits 'error' (e.g. the watched folder is deleted or becomes
-			// unavailable) asynchronously; without a listener Node throws it uncaught.
-			// Log and tear the watcher down cleanly instead.
-			this.watcher.on('error', (err) => {
-				logger.error(`Folder watcher error: ${errorMessage(err)}`);
-				this.stop();
-			});
-
-			logger.info(`Folder watcher started on ${this.folderPath}`);
-			this.debouncedDiscovery();
-		} catch (err) {
-			logger.error(`Failed to start Folder watcher: ${errorMessage(err)}`);
-		}
+		this.startMonitor();
+		this.startWatch();
 	}
 
 	stop(): void {
-		if (this.watcher) {
-			this.watcher.close();
-			this.watcher = null;
-		}
+		this.closeWatcher();
 		if (this.debounceTimer) {
 			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
+		if (this.monitorTimer !== null) {
+			window.clearInterval(this.monitorTimer);
+			this.monitorTimer = null;
+		}
 		logger.info('Folder watcher stopped');
+	}
+
+	// Arms fs.watch on the folder and runs a discovery pass. start() calls it, and
+	// the monitor calls it again once a missing folder is back.
+	private startWatch(): void {
+		try {
+			this.watcher = fs.watch(this.folderPath, { recursive: false }, (eventType, filename) => {
+				if (filename && filename.endsWith('.json')) {
+					this.debouncedDiscovery();
+					return;
+				}
+				// Deleting, moving, or unmounting the watched folder itself arrives, where
+				// it arrives at all, as a plain 'rename'. The fast path; the monitor is
+				// the guarantee.
+				if (eventType === 'rename' && !isDirectory(this.folderPath)) {
+					this.folderGone();
+				}
+			});
+
+			// fs.watch emits 'error' asynchronously; without a listener Node throws it
+			// uncaught. Whatever broke the watch, drop it: the monitor re-arms it on
+			// its next tick if the folder is there.
+			this.watcher.on('error', (err) => {
+				logger.error(`Folder watcher error: ${errorMessage(err)}`);
+				this.closeWatcher();
+				if (!isDirectory(this.folderPath)) {
+					this.folderGone();
+				}
+			});
+
+			this.goneReported = false;
+			logger.info(`Folder watcher started on ${this.folderPath}`);
+			this.debouncedDiscovery();
+		} catch (err) {
+			// Typically the folder is missing (at startup, or it went away again).
+			// Say so now; the monitor resumes the watch once the folder exists.
+			logger.error(`Failed to start Folder watcher: ${errorMessage(err)}`);
+			if (!isDirectory(this.folderPath)) {
+				this.folderGone();
+			}
+		}
+	}
+
+	// fs.watch reports its own folder vanishing only on some platforms: Electron 28
+	// (Obsidian installer 1.5.8) on macOS never does, and its watch stays "live" on
+	// a deleted folder forever. So while the backend runs, check the folder on an
+	// interval: gone while watching means report it and drop the dead watch; back
+	// while not watching means re-arm. The watch event only makes the first faster.
+	private startMonitor(): void {
+		if (this.monitorTimer !== null) {return;}
+		this.monitorTimer = window.setInterval(() => this.checkFolder(), this.checkIntervalMs);
+	}
+
+	private checkFolder(): void {
+		const present = isDirectory(this.folderPath);
+		if (this.watcher && !present) {
+			this.folderGone();
+			return;
+		}
+		if (!this.watcher && present) {
+			logger.info(`Papersync folder is available again, resuming watch on ${this.folderPath}`);
+			this.recovering = true;
+			this.startWatch();
+		}
+	}
+
+	// The watched folder is gone: drop the dead watch and tell the engine (once),
+	// so the status bar and settings show it now rather than at the next sync.
+	private folderGone(): void {
+		this.closeWatcher();
+		if (this.goneReported) {return;}
+		this.goneReported = true;
+		this.onUnavailable?.(this.folderMissingError());
+	}
+
+	private folderMissingError(): SyncError {
+		return createSyncError('folder_missing', `Papersync folder not found: ${this.folderPath}`);
+	}
+
+	private closeWatcher(): void {
+		if (this.watcher) {
+			this.watcher.close();
+			this.watcher = null;
+		}
 	}
 
 	private debouncedDiscovery(): void {
@@ -86,11 +179,17 @@ export class FolderBackend implements SyncBackend {
 		this.debounceTimer = window.setTimeout(async () => {
 			try {
 				const refs = await this.discoverUnsynced();
-				if (refs.length > 0) {
+				if (refs.length > 0 || this.recovering) {
+					this.recovering = false;
 					this.onScanDiscovered?.(refs);
 				}
 			} catch (err) {
 				logger.warn(`Folder discovery failed: ${errorMessage(err)}`);
+				// A background pass has no caller to report to, so a missing folder is
+				// handed to the engine here.
+				if (isSyncError(err) && err.type === 'folder_missing') {
+					this.folderGone();
+				}
 			}
 		}, DEBOUNCE_MS);
 	}
@@ -101,7 +200,11 @@ export class FolderBackend implements SyncBackend {
 			entries = await fs.promises.readdir(this.folderPath);
 		} catch (err) {
 			if (isENOENT(err)) {
-				throw createSyncError('folder_missing', `Papersync folder not found: ${this.folderPath}`);
+				// Whoever asked (Sync now, or a background pass) reports the error. The
+				// backend only drops the dead watch; its monitor re-arms it once the
+				// folder is back.
+				this.closeWatcher();
+				throw this.folderMissingError();
 			}
 			throw err;
 		}

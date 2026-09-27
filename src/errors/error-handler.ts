@@ -22,6 +22,16 @@ const USER_MESSAGES: Record<SyncErrorType, string> = {
 	vault_write_failed: 'Failed to write note to vault',
 };
 
+// What the sync state records for a failed sync, which the error Notice and the
+// settings tab then show. Most types keep their real reason: a Drive API body or
+// a token failure is the most useful thing a user can read, or paste into a bug
+// report. A missing folder is the exception. Its raw message is an absolute local
+// path, and the settings tab already names the folder in its own warning, so the
+// plain-language guidance reads better than the internal detail.
+export function stateMessageFor(error: SyncError): string {
+	return error.type === 'folder_missing' ? USER_MESSAGES.folder_missing : error.message;
+}
+
 export class ErrorHandler {
 	private retryCountMap = new Map<string, number>();
 

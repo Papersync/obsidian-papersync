@@ -4,6 +4,7 @@ import * as path from 'path';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { configureFolderBackend, writeScan, syncNow, readNotes, waitForNotes, isoStamp, MINIMAL_JPEG } from './helpers';
+import { STRINGS } from '../../src/utils/strings';
 
 // End-to-end against a REAL iCloud Drive folder on macOS — the only place the
 // iCloud code paths actually execute. Everything else in the suite runs against
@@ -149,7 +150,8 @@ describe('Real iCloud Drive folder backend', function () {
 		}, { timeout: 20_000, interval: 1000 }).catch(() => undefined);
 
 		expect(status.status).toBe('error');
-		expect(String(status.lastError)).toContain('Papersync folder not found');
+		// Plain-language guidance, never the raw absolute-path message.
+		expect(status.lastError).toBe(STRINGS.NOTICE_FOLDER_MISSING);
 	});
 
 	it('skips a scan whose companion image has not arrived yet', async function () {

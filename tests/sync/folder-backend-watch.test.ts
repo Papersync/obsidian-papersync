@@ -92,7 +92,7 @@ describe('FolderBackend.start watcher error event (#6)', () => {
 		fs.rmSync(tmp, { recursive: true, force: true });
 	});
 
-	it('absorbs a watcher error event and stops cleanly instead of throwing uncaught', () => {
+	it('absorbs a watcher error event and drops the watcher instead of throwing uncaught', () => {
 		backend.start();
 		const watcher = (backend as unknown as { watcher: fs.FSWatcher | null }).watcher;
 		expect(watcher).not.toBeNull();
@@ -101,7 +101,8 @@ describe('FolderBackend.start watcher error event (#6)', () => {
 		// uncaught. Our handler must log and stop, absorbing it.
 		expect(() => watcher!.emit('error', new Error('watched folder vanished'))).not.toThrow();
 
-		// stop() ran inside the handler → the watcher field is cleared.
+		// The handler dropped the dead watcher (and now waits for the folder to come
+		// back; see folder-backend-rearm.test.ts).
 		expect((backend as unknown as { watcher: fs.FSWatcher | null }).watcher).toBeNull();
 	});
 });

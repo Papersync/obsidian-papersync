@@ -1,6 +1,7 @@
 import * as obsidian from 'obsidian';
 
-import { ErrorHandler } from '@/errors/error-handler';
+import { ErrorHandler, stateMessageFor } from '@/errors/error-handler';
+import { STRINGS } from '@/utils/strings';
 import { createSyncError } from '@/errors/sync-error';
 
 describe('ErrorHandler', () => {
@@ -200,6 +201,18 @@ describe('ErrorHandler', () => {
 			} finally {
 				jest.useRealTimers();
 			}
+		});
+	});
+
+	describe('stateMessageFor', () => {
+		it('replaces a missing folder\'s raw absolute-path message with the plain-language guidance', () => {
+			const err = createSyncError('folder_missing', 'Papersync folder not found: /Users/someone/Library/Mobile Documents/com~apple~CloudDocs/Papersync');
+			expect(stateMessageFor(err)).toBe(STRINGS.NOTICE_FOLDER_MISSING);
+		});
+
+		it('keeps the real reason for every other type (Drive API bodies stay informative)', () => {
+			const err = createSyncError('permission_denied', 'Drive request failed (403): API disabled');
+			expect(stateMessageFor(err)).toBe('Drive request failed (403): API disabled');
 		});
 	});
 });

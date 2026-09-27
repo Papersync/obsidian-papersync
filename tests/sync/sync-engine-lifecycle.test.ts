@@ -2,6 +2,7 @@ import { SyncEngine } from '@/sync/sync-engine';
 import { SyncState } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
 import { createSyncError } from '@/errors/sync-error';
+import { STRINGS } from '@/utils/strings';
 import type { SyncBackend } from '@/sync/sync-backend';
 
 function makeBackend(): SyncBackend & { startCalls: number; stopCalls: number } {
@@ -187,6 +188,48 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 
 		await engine.forceSyncNow();
 		expect(state.status).toBe('error');
+	});
+
+	it('forceSyncNow records plain-language guidance, not the raw path, when the folder is missing', async () => {
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockRejectedValue(
+			createSyncError('folder_missing', 'Papersync folder not found: /Volumes/Gone/Papersync')
+		);
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+		expect(state.status).toBe('error');
+		expect(state.lastError).toBe(STRINGS.NOTICE_FOLDER_MISSING);
+		expect(state.lastError).not.toContain('/Volumes/Gone');
+	});
+
+	it('forceSyncNow keeps the real reason for a non-folder failure', async () => {
+		const backend = makeBackend();
+		backend.discoverUnsynced = jest.fn().mockRejectedValue(new Error('boom'));
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		await engine.forceSyncNow();
+		expect(state.lastError).toBe('boom');
+	});
+
+	it('records a source the backend reports unavailable, in plain language', () => {
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & { setOnUnavailable: jest.Mock };
+		backend.setOnUnavailable = jest.fn();
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+		const report = backend.setOnUnavailable.mock.calls[0]![0] as (e: unknown) => void;
+		report(createSyncError('folder_missing', 'Papersync folder not found: /Volumes/Gone/Papersync'));
+		expect(state.status).toBe('error');
+		expect(state.lastError).toBe(STRINGS.NOTICE_FOLDER_MISSING);
 	});
 
 	it('forceSyncNow stringifies non-Error rejections in its error log path', async () => {

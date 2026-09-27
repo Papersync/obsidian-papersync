@@ -2,7 +2,7 @@ import { App, Notice } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import { NoteCreator } from '@/notes/note-creator';
 import type { NoteCreatorConfig } from '@/notes/note-creator';
-import { ErrorHandler, isSyncError } from '@/errors/error-handler';
+import { ErrorHandler, isSyncError, stateMessageFor } from '@/errors/error-handler';
 import { SyncState } from '@/sync/sync-state';
 import { isOnline } from '@/utils/platform';
 import { logger } from '@/utils/logger';
@@ -30,6 +30,10 @@ export class SyncEngine {
 		this.state = state;
 
 		backend.setOnScanDiscovered?.((refs) => this.processBatch(refs));
+		backend.setOnUnavailable?.((error) => {
+			logger.error(`Sync source unavailable: ${error.message}`);
+			this.state.recordError(stateMessageFor(error));
+		});
 	}
 
 	start(): void {
@@ -73,9 +77,11 @@ export class SyncEngine {
 		} catch (err) {
 			// Classify to surface the real reason (the Drive API body, a token issue,
 			// etc.) instead of a generic "error", both to the user and for debugging.
+			// The log always keeps the raw detail; stateMessageFor() decides what the
+			// user sees.
 			const syncError = this.errorHandler.classify(err);
 			logger.error(`Force sync failed: ${syncError.message}`);
-			this.state.recordError(syncError.message);
+			this.state.recordError(stateMessageFor(syncError));
 		}
 	}
 

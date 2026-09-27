@@ -1,4 +1,5 @@
 import type { ScanFile } from '@/validation/scan-file-schema';
+import type { SyncError } from '@/errors/sync-error';
 
 export interface ScanReference {
 	id: string;
@@ -20,4 +21,8 @@ export interface SyncBackend {
 	// Cursor-based backends (DriveBackend) persist the sync high-water mark so the
 	// next poll only re-queries newer scans; folder scanning does not use a cursor.
 	updateLastSyncTimestamp?(timestamp: string): void;
+	// Backends that notice their source disappearing on their own (FolderBackend's
+	// watcher sees its folder deleted) report it here, so the failure reaches the
+	// sync state instead of only a log line.
+	setOnUnavailable?(callback: (error: SyncError) => void): void;
 }
