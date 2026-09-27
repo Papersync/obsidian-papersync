@@ -105,7 +105,7 @@ npm run build
 Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particular:
 
 - Default to local/offline operation. Only make network requests when essential to the feature.
-- No hidden telemetry. If you collect optional analytics or call third-party services, require explicit opt-in and document clearly in `README.md` and in settings.
+- No telemetry or analytics, not even opt-in: Obsidian's directory policy bans client-side telemetry. Document any network call in `README.md`.
 - Never execute remote code, fetch and eval scripts, or auto-update plugin code outside of normal releases.
 - Minimize scope: read/write only what's necessary inside the vault. Do not access files outside the vault.
 - Clearly disclose any external services used, data sent, and risks.
