@@ -1,4 +1,15 @@
-# Papersync for Obsidian
+<h1 align="center">Papersync for Obsidian</h1>
+
+<p align="center">
+  <a href="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml"><img alt="CI" src="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml/badge.svg"></a>
+  <a href="https://github.com/Papersync/obsidian-papersync/releases/latest"><img alt="Version 0.1.2" src="https://img.shields.io/badge/version-0.1.2-blue"></a>
+  <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
+  <img alt="Obsidian 1.13.4+" src="https://img.shields.io/badge/Obsidian-1.13.4%2B-7c3aed">
+  <img alt="Desktop" src="https://img.shields.io/badge/platform-desktop-lightgrey">
+  <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-success">
+  <!-- After community-registry approval, add the official download count:
+  <img alt="Obsidian downloads" src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=7c3aed&label=downloads&query=$['papersync'].downloads&url=https://raw.githubusercontent.com/obsidianmd/obsidian-releases/master/community-plugin-stats.json"> -->
+</p>
 
 Snap a handwritten page with the Papersync phone app, and this plugin files it into that day's note as Markdown.
 
