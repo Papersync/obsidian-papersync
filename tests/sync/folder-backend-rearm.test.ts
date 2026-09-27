@@ -201,4 +201,31 @@ describe('FolderBackend folder monitor', () => {
 		expect(monitorOf(b)).toBeNull();
 		expect(reported).toEqual([]);
 	});
+
+	it('re-arms a watch that merely broke without a recovery pass (nothing to clear)', async () => {
+		fs.mkdirSync(dir);
+		const b = make();
+		b.start();
+		await settle(700); // initial pass: empty, not reported
+		watcherOf(b)!.emit('error', new Error('EMFILE'));
+		await until(() => watcherOf(b) !== null, 'the watch to re-arm');
+		await settle(700); // past the debounce
+		expect(passes).toEqual([]);
+		expect(reported).toEqual([]);
+	});
+
+	it('runs the recovery pass after a Sync now found the folder gone', async () => {
+		fs.mkdirSync(dir);
+		const b = make();
+		b.start();
+		fs.rmSync(dir, { recursive: true, force: true });
+		// The caller (the engine's Sync now) reports this one, not the backend.
+		await expect(b.discoverUnsynced()).rejects.toMatchObject({ type: 'folder_missing' });
+		expect(watcherOf(b)).toBeNull();
+
+		fs.mkdirSync(dir);
+		await until(() => passes.length > 0, 'the recovery pass once the folder is back');
+		expect(passes).toEqual([0]);
+	});
 });
+

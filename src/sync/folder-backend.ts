@@ -54,6 +54,12 @@ export class FolderBackend implements SyncBackend {
 	// One report per disappearance, however many paths notice it (the watch event,
 	// the monitor, a background pass). Cleared when the watch is armed again.
 	private goneReported = false;
+	// The folder has been seen missing since the watch was last armed, by anyone
+	// (including a Sync now whose discovery hit ENOENT). Only then is there an
+	// error to clear, so only then does a re-arm run the recovery pass. A watch
+	// that merely broke on a present folder re-arms quietly: no completed sync, no
+	// data.json write every 5 s if it keeps breaking.
+	private lost = false;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 	private onUnavailable: ((error: SyncError) => void) | null = null;
 
@@ -117,6 +123,7 @@ export class FolderBackend implements SyncBackend {
 			});
 
 			this.goneReported = false;
+			this.lost = false;
 			logger.info(`Folder watcher started on ${this.folderPath}`);
 			this.debouncedDiscovery();
 		} catch (err) {
@@ -146,8 +153,8 @@ export class FolderBackend implements SyncBackend {
 			return;
 		}
 		if (!this.watcher && present) {
-			logger.info(`Papersync folder is available again, resuming watch on ${this.folderPath}`);
-			this.recovering = true;
+			logger.info(`Resuming the watch on ${this.folderPath}`);
+			this.recovering = this.lost;
 			this.startWatch();
 		}
 	}
@@ -156,6 +163,7 @@ export class FolderBackend implements SyncBackend {
 	// so the status bar and settings show it now rather than at the next sync.
 	private folderGone(): void {
 		this.closeWatcher();
+		this.lost = true;
 		if (this.goneReported) {return;}
 		this.goneReported = true;
 		this.onUnavailable?.(this.folderMissingError());
@@ -201,9 +209,10 @@ export class FolderBackend implements SyncBackend {
 		} catch (err) {
 			if (isENOENT(err)) {
 				// Whoever asked (Sync now, or a background pass) reports the error. The
-				// backend only drops the dead watch; its monitor re-arms it once the
-				// folder is back.
+				// backend only drops the dead watch; its monitor re-arms it, and runs
+				// the recovery pass, once the folder is back.
 				this.closeWatcher();
+				this.lost = true;
 				throw this.folderMissingError();
 			}
 			throw err;
