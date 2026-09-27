@@ -279,6 +279,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private async connectGoogle(): Promise<void> {
+		// The picker (where Connect lives) also shows for a folder backend whose
+		// folder is missing, with that engine still running. Stop it first: a
+		// cancelled or failed sign-in leaves backendType 'none', and nothing may keep
+		// watching (and, once the folder is back, syncing from) the abandoned folder.
+		this.plugin.syncEngine?.stop();
 		try {
 			this.plugin.settings.backendType = 'drive';
 			await this.plugin.saveSettings();
@@ -297,9 +302,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private async resetSettings(): Promise<void> {
 		this.plugin.syncEngine?.stop();
-		const keepBackend = this.plugin.settings.backendType;
-		const keepSetup = this.plugin.settings.setupComplete;
-		this.plugin.settings = { ...DEFAULT_SETTINGS, backendType: keepBackend, setupComplete: keepSetup };
+		// "Account kept": the storage connection survives. For a folder backend that
+		// is the folder itself; resetting only backendType/setupComplete left a folder
+		// backend pointing at '' (and the settings reporting "Papersync" missing).
+		const { backendType, setupComplete, folderPath, folderType } = this.plugin.settings;
+		this.plugin.settings = { ...DEFAULT_SETTINGS, backendType, setupComplete, folderPath, folderType };
 		await this.plugin.saveSettings();
 		await this.plugin.resolveTargetFolder();
 		await this.plugin.startSync();
