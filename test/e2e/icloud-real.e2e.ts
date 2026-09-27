@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { configureFolderBackend, writeScan, syncNow, readNotes, waitForNotes, isoStamp, MINIMAL_JPEG } from './helpers';
 
 // End-to-end against a REAL iCloud Drive folder on macOS — the only place the
@@ -52,21 +53,28 @@ function isEvicted(filePath: string): boolean {
 // as "cannot evict" and the test that depends on it quietly skipped. Retry the
 // eviction itself against a deadline so a slow upload costs time rather than
 // coverage, and a genuine inability to evict still ends the loop.
-function evict(filePath: string, budgetMs = 90_000): boolean {
+//
+// Asynchronous on purpose. The previous execFileSync/`sleep` loop blocked the
+// wdio worker's event loop for up to the whole budget, so no timer (wdio's
+// per-test race, keepalives) could fire until it returned.
+const run = promisify(execFile);
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function evict(filePath: string, budgetMs = 90_000): Promise<boolean> {
 	const deadline = Date.now() + budgetMs;
 	while (Date.now() < deadline) {
 		try {
-			execFileSync('brctl', ['evict', filePath], { timeout: 15000, stdio: 'pipe' });
+			await run('brctl', ['evict', filePath], { timeout: 15000 });
 		} catch {
 			// Still uploading. Wait and ask again rather than giving up on the run.
-			execFileSync('sleep', ['1']);
+			await sleep(1000);
 			continue;
 		}
 		// The command was accepted, but eviction is asynchronous, so confirm it
 		// actually took instead of trusting the exit code.
 		for (let i = 0; i < 40 && Date.now() < deadline; i++) {
 			if (isEvicted(filePath)) {return true;}
-			execFileSync('sleep', ['0.25']);
+			await sleep(250);
 		}
 	}
 	return false;
@@ -105,48 +113,6 @@ describe('Real iCloud Drive folder backend', function () {
 		expect(await readNotes('ICloudTest')).toContain(marker);
 	});
 
-	it('recovers a scan whose content iCloud has evicted', async function () {
-		const stamp = isoStamp();
-		const id = `evicted-${stamp}`;
-		const marker = `EVICTED_${stamp}`;
-		const jsonPath = path.join(dir, `${id}.json`);
-		writeScan(dir, id, baseScan(marker, `${id}.jpg`));
-
-		// evict() now waits for the upload itself, so this only has to cover the
-		// window before the file is visible to brctl at all.
-		await browser.pause(1000);
-		if (!evict(jsonPath)) {
-			// Reachable only when iCloud cannot evict at all within the budget, which
-			// in practice means the machine is offline or signed out. Skipping still
-			// beats a red suite for a precondition we could not establish, but say so
-			// loudly: this is the assertion that covers the eviction recovery path,
-			// and a silent skip is how it went unverified before.
-			console.warn(
-				`[icloud-real] SKIPPED eviction recovery: brctl could not evict ${jsonPath} ` +
-				`within the budget. The evicted-content path was NOT verified on this run.`
-			);
-			this.skip();
-			return;
-		}
-
-		// The evicted file still lists normally and still reports its logical size —
-		// this is the exact trap that made the old `size === 0` check inert.
-		expect(fs.readdirSync(dir)).toContain(`${id}.json`);
-		expect(fs.statSync(jsonPath).size).toBeGreaterThan(0);
-
-		await configureFolderBackend({
-			folderPath: dir,
-			targetFolder: 'ICloudEvicted',
-			attachmentsFolder: 'ICloudEvicted/attachments',
-		});
-		await syncNow();
-
-		// Recovery has to download the content before the note can be written, which
-		// outlasts syncNow()'s fixed pause — wait for the note rather than for a guess.
-		expect(await waitForNotes('ICloudEvicted', marker)).toContain(marker);
-		expect(isEvicted(jsonPath)).toBe(false); // materialized by the read
-	});
-
 	it('reports the folder as missing when it is deleted underneath the plugin', async function () {
 		const gone = path.join(ICLOUD_ROOT, `Papersync-e2e-gone-${isoStamp()}`);
 		fs.mkdirSync(gone, { recursive: true });
@@ -160,17 +126,27 @@ describe('Real iCloud Drive folder backend', function () {
 
 		// Must degrade to the typed folder_missing state, never an uncaught ENOENT
 		// that takes the plugin (or Obsidian) down.
-		const status = await browser.execute(async () => {
-			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, {
-				syncEngine?: { forceSyncNow: () => Promise<void> };
-				syncState?: { status: string; lastError: string | null };
-			}> } } }).app.plugins.plugins;
-			// Neither id being present is a real failure mode, so reach for it optionally
-			// and let the assertions report it, rather than throwing a raw TypeError here.
-			const plugin = ps['papersync'] ?? ps['obsidian-papersync'];
-			await plugin?.syncEngine?.forceSyncNow();
-			return { status: plugin?.syncState?.status, lastError: plugin?.syncState?.lastError };
-		});
+		//
+		// Polled, not read once. forceSyncNow() returns immediately while a sync is
+		// already in flight (by design: no concurrent syncs), and configureFolderBackend()
+		// has just started one. Under host load that sync was still running at the
+		// single read, so it saw the stale 'synced' status and failed on a race.
+		type SyncStatus = { status?: string; lastError?: string | null };
+		let status: SyncStatus = {};
+		await browser.waitUntil(async () => {
+			status = await browser.execute(async () => {
+				const ps = (window as unknown as { app: { plugins: { plugins: Record<string, {
+					syncEngine?: { forceSyncNow: () => Promise<void> };
+					syncState?: { status: string; lastError: string | null };
+				}> } } }).app.plugins.plugins;
+				// Neither id being present is a real failure mode, so reach for it optionally
+				// and let the assertions report it, rather than throwing a raw TypeError here.
+				const plugin = ps['papersync'] ?? ps['obsidian-papersync'];
+				await plugin?.syncEngine?.forceSyncNow();
+				return { status: plugin?.syncState?.status, lastError: plugin?.syncState?.lastError };
+			});
+			return status.status === 'error';
+		}, { timeout: 20_000, interval: 1000 }).catch(() => undefined);
 
 		expect(status.status).toBe('error');
 		expect(String(status.lastError)).toContain('Papersync folder not found');
@@ -195,6 +171,75 @@ describe('Real iCloud Drive folder backend', function () {
 		fs.writeFileSync(path.join(dir, `${id}.jpg`), MINIMAL_JPEG);
 		await syncNow();
 		expect(await readNotes('ICloudPartial')).toContain(marker);
+	});
+
+	// Its own suite so it can carry a longer budget. The waits add up to more than
+	// the 60 s mochaOpts.timeout: up to 90 s for evict() to outlast a slow upload,
+	// the syncNow() pauses, and up to 60 s for waitForNotes(). An in-test
+	// this.timeout() cannot fix that under wdio: @wdio/utils executeAsync races
+	// every test against a timer armed ONCE at test start from the runnable's
+	// timeout, so only a suite-level timeout (inherited when the test is created)
+	// moves it. Before, a slow upload surfaced as a bare "Error: Timeout" from that
+	// race, not as this test's own verdict, and the orphaned poll ran on into the
+	// next test.
+	describe('evicted content', function () {
+		this.timeout(240_000);
+
+		it('recovers a scan whose content iCloud has evicted', async function () {
+			const stamp = isoStamp();
+			const id = `evicted-${stamp}`;
+			const marker = `EVICTED_${stamp}`;
+			// Its OWN folder, never the suite's shared `dir`. The other tests leave the
+			// plugin's folder watcher live on `dir`, so a scan written there is discovered
+			// and synced within about a second, before it can be evicted, and markSynced()
+			// rewrites the JSON with `synced: true`. That rewrite also restarts the iCloud
+			// upload, so brctl keeps refusing to evict. Either way the scan this test
+			// needs (evicted AND unsynced) never exists, and the backend it later points at
+			// ICloudEvicted skips it as already synced: the test could not pass. Nothing
+			// may watch evDir until configureFolderBackend() below.
+			const evDir = path.join(ICLOUD_ROOT, `Papersync-e2e-evicted-${stamp}`);
+			fs.mkdirSync(evDir, { recursive: true });
+			try {
+				const jsonPath = path.join(evDir, `${id}.json`);
+				writeScan(evDir, id, baseScan(marker, `${id}.jpg`));
+
+				// evict() waits for the upload itself, so this only has to cover the
+				// window before the file is visible to brctl at all.
+				await browser.pause(1000);
+				if (!(await evict(jsonPath))) {
+					// Reachable only when iCloud cannot evict at all within the budget, which
+					// in practice means the machine is offline or signed out. Skipping still
+					// beats a red suite for a precondition we could not establish, but say so
+					// loudly: this is the assertion that covers the eviction recovery path,
+					// and a silent skip is how it went unverified before.
+					console.warn(
+						`[icloud-real] SKIPPED eviction recovery: brctl could not evict ${jsonPath} ` +
+						`within the budget. The evicted-content path was NOT verified on this run.`
+					);
+					this.skip();
+					return;
+				}
+
+				// The evicted file still lists normally and still reports its logical size;
+				// this is the exact trap that made the old `size === 0` check inert.
+				expect(fs.readdirSync(evDir)).toContain(`${id}.json`);
+				expect(fs.statSync(jsonPath).size).toBeGreaterThan(0);
+
+				await configureFolderBackend({
+					folderPath: evDir,
+					targetFolder: 'ICloudEvicted',
+					attachmentsFolder: 'ICloudEvicted/attachments',
+				});
+				await syncNow();
+
+				// Recovery has to download the content before the note can be written, which
+				// outlasts syncNow()'s fixed pause; wait for the note rather than for a guess.
+				expect(await waitForNotes('ICloudEvicted', marker)).toContain(marker);
+				expect(isEvicted(jsonPath)).toBe(false); // materialized by the read
+			} finally {
+				try { fs.rmSync(evDir, { recursive: true, force: true }); } catch { /* best effort */ }
+			}
+		});
 	});
 });
 
