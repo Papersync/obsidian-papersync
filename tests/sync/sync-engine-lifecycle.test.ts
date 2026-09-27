@@ -288,6 +288,48 @@ describe('SyncEngine.processBatch', () => {
 		}
 	});
 
+	it('keeps the error when the source vanishes while a batch is still in flight', async () => {
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & { setOnUnavailable: jest.Mock };
+		backend.setOnUnavailable = jest.fn();
+		backend.discoverUnsynced = jest.fn().mockResolvedValue([{ id: 'r1', jsonPath: 'j1', imagePath: 'i1' }]);
+		let releaseFetch!: () => void;
+		backend.fetchScan = jest.fn(() => new Promise((resolve) => { releaseFetch = () => resolve({ ...validScan, synced: true }); }));
+
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+		const report = backend.setOnUnavailable.mock.calls[0]![0] as (e: unknown) => void;
+
+		const sync = engine.forceSyncNow();
+		await new Promise((r) => setTimeout(r, 0)); // discovery resolved, fetch still pending
+		expect(backend.fetchScan).toHaveBeenCalledTimes(1);
+		report(createSyncError('folder_missing', 'Papersync folder not found: /gone'));
+		releaseFetch();
+		await sync;
+
+		expect(state.status).toBe('error');
+		expect(state.lastError).toBe(STRINGS.NOTICE_FOLDER_MISSING);
+	});
+
+	it('clears that hold on the next pass the backend delivers (the folder is back)', async () => {
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & { setOnUnavailable: jest.Mock; setOnScanDiscovered: jest.Mock };
+		backend.setOnUnavailable = jest.fn();
+		backend.setOnScanDiscovered = jest.fn();
+		const state = new SyncState('');
+		const eh = new ErrorHandler(state);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+		const report = backend.setOnUnavailable.mock.calls[0]![0] as (e: unknown) => void;
+		const discovered = backend.setOnScanDiscovered.mock.calls[0]![0] as (refs: unknown[]) => Promise<void>;
+
+		report(createSyncError('folder_missing', 'Papersync folder not found: /gone'));
+		expect(state.status).toBe('error');
+		await discovered([]); // the recovery pass: empty, but proof the folder is readable again
+		expect(state.status).toBe('synced');
+		expect(state.lastError).toBeNull();
+	});
+
 	it('skips a ref whose fetched scanFile is already marked synced (no markSynced call)', async () => {
 		const backend = makeBackend();
 		const ref = { id: 'r1', jsonPath: 'j1', imagePath: 'i1', createdTime: '2026-04-12T14:30:00Z' };

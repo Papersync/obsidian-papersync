@@ -16,6 +16,11 @@ export class SyncEngine {
 	private errorHandler: ErrorHandler;
 	readonly state: SyncState;
 	private pendingNetwork = new Set<string>();
+	// Set when the backend reports its source gone, cleared by the next pass that
+	// can only run with the source present (a discovery that succeeded). A batch
+	// already in flight when the source went away must not finish by recording
+	// 'synced' over that error.
+	private sourceUnavailable = false;
 
 	constructor(
 		backend: SyncBackend,
@@ -29,8 +34,12 @@ export class SyncEngine {
 		this.errorHandler = errorHandler;
 		this.state = state;
 
-		backend.setOnScanDiscovered?.((refs) => this.processBatch(refs));
+		backend.setOnScanDiscovered?.((refs) => {
+			this.sourceUnavailable = false;
+			return this.processBatch(refs);
+		});
 		backend.setOnUnavailable?.((error) => {
+			this.sourceUnavailable = true;
 			logger.error(`Sync source unavailable: ${error.message}`);
 			this.state.recordError(stateMessageFor(error));
 		});
@@ -68,6 +77,7 @@ export class SyncEngine {
 
 		try {
 			const refs = await this.backend.discoverUnsynced();
+			this.sourceUnavailable = false;
 			if (refs.length > 0) {
 				await this.processBatch(refs);
 			} else {
@@ -120,7 +130,7 @@ export class SyncEngine {
 			let earliestFailureTime: string | null = null;
 			const processedTimes: string[] = [];
 
-			for (let i = 0; i < unsyncedRefs.length; i += BATCH_SIZE) {
+			batches: for (let i = 0; i < unsyncedRefs.length; i += BATCH_SIZE) {
 				const chunk = unsyncedRefs.slice(i, i + BATCH_SIZE);
 
 				for (const ref of chunk) {
@@ -169,6 +179,12 @@ export class SyncEngine {
 					if (result === 'synced') {
 						synced++;
 					}
+					// The source went away while this item was in flight: the rest cannot
+					// be fetched, and a progress update would overwrite the error the
+					// backend just reported. What finished still counts (cursor below).
+					if (this.sourceUnavailable) {
+						break batches;
+					}
 					remaining--;
 					this.state.setStatus('syncing', remaining);
 				}
@@ -194,7 +210,9 @@ export class SyncEngine {
 				new Notice(STRINGS.NOTICE_SYNC_COMPLETE(synced));
 			}
 
-			if (this.pendingNetwork.size > 0) {
+			if (this.sourceUnavailable) {
+				logger.info('Batch finished after the sync source went away; keeping its error');
+			} else if (this.pendingNetwork.size > 0) {
 				this.state.recordSyncCompleted(this.pendingNetwork.size);
 				new Notice(`${this.pendingNetwork.size} scan(s) waiting for download`);
 			} else {
