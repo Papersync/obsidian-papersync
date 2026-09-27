@@ -18,8 +18,8 @@ export const MINIMAL_JPEG = Buffer.from([
 // document is about:blank and has NO `window.app`). Every DOM assertion against
 // the settings UI must therefore run in whichever window actually hosts it,
 // while everything that touches `window.app` (plugin state, commands) must run
-// in the main window. Pre-1.13 there is only the main window and these helpers
-// collapse to what the specs always did.
+// in the main window. With Obsidian's "Open settings in a new window" turned
+// off, Settings stay in a main-window modal instead; these helpers handle both.
 // ---------------------------------------------------------------------------
 
 // The main window is the one that loaded Obsidian itself; the settings window
@@ -48,7 +48,8 @@ async function findSettingsWindow(): Promise<string | null> {
 }
 
 // Leave the driver focused on whichever window hosts the settings UI: the
-// dedicated window on 1.13+, the main window (modal) before that. Returns
+// dedicated settings window, or the main window when Settings open as a modal.
+// Returns
 // whether a settings UI is actually open.
 export async function focusSettingsUI(): Promise<boolean> {
 	if (await findSettingsWindow()) { return true; }
@@ -105,19 +106,6 @@ export async function clickButtonWhenPresent(label: string, timeoutMs = 5000): P
 		}, label),
 		{ timeout: timeoutMs, interval: 200, timeoutMsg: `"${label}" button never appeared in the settings UI` }
 	);
-}
-
-// When the plugin renders its own tab bar (Sync | Template | Advanced) only the
-// active tab's content is in the DOM, so a spec must activate a tab before
-// asserting on it. When the bar is absent (a renderer that lays every section
-// out in one scroll) this is a no-op: the content is already present.
-export async function clickSettingsTab(label: string): Promise<void> {
-	const clicked = await browser.execute((l: string) => {
-		const btn = Array.from(document.querySelectorAll('.papersync-tab')).find((b) => b.textContent === l);
-		if (btn) { (btn as HTMLElement).click(); return true; }
-		return false;
-	}, label);
-	if (clicked) { await browser.pause(200); }
 }
 
 // The plugin is keyed in app.plugins by its manifest id. Resolve id-agnostically

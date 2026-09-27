@@ -7,11 +7,11 @@ import { errorMessage } from '@/utils/error-message';
 // secretStorage access goes through these so an absent or throwing backend
 // (headless CI without a Secret Service, a locked keychain) degrades to
 // "not stored / not found" and never crashes plugin load or a token change —
-// Drive simply requires a re-connect. The 1.11.4+ API is synchronous and has no
+// Drive simply requires a re-connect. The SecretStorage API (1.11.4+) is synchronous and has no
 // deleteSecret: clear a secret by writing an empty string.
 
 // True when the backend read back exactly what we asked it to store. Clearing a
-// token (value === "") has no deleteSecret at the 1.11.4 floor, so an empty read OR
+// token (value === "") has no deleteSecret in the API, so an empty read OR
 // a null (absent) reading both count as a durable clear.
 export function isSecretPersisted(written: string, readBack: string | null): boolean {
 	return written === '' ? readBack === '' || readBack === null : readBack === written;

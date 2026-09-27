@@ -1,4 +1,4 @@
-import { openPluginSettings, closeSettings, clickSettingsTab } from './helpers';
+import { openPluginSettings, closeSettings } from './helpers';
 
 describe('Edge cases and error handling', function () {
 	it('survives rapid sync now clicks', async function () {
@@ -28,8 +28,6 @@ describe('Edge cases and error handling', function () {
 	it('handles settings reset without crashing', async function () {
 		await openPluginSettings();
 
-		// Reset lives under the Advanced tab (no-op where there is no tab bar).
-		await clickSettingsTab('Advanced');
 
 		// Find and click the "Reset settings" button (not full reset)
 		const buttons = await browser.$$('button');

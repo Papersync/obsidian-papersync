@@ -92,7 +92,7 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	private checkMinObsidianVersion(): boolean {
-		const MIN_VERSION = '1.11.4';
+		const MIN_VERSION = '1.13.4';
 		// requireApiVersion is an Obsidian global that checks minAppVersion
 		const requireApiVersion = (window as unknown as { requireApiVersion?: (version: string) => boolean }).requireApiVersion;
 		if (requireApiVersion && !requireApiVersion(MIN_VERSION)) {
@@ -147,7 +147,7 @@ export default class PaperSyncPlugin extends Plugin {
 		this.oauthManager = new OAuthManager(this, GOOGLE_CLIENT_ID, () => this.settings.endpointOverrides);
 		this.oauthManager.setOnTokenChange((token) => {
 			// The refresh token lives in OS secret storage, never data.json. An empty string
-			// (disconnect / revoke) clears it — there is no deleteSecret at the 1.11.4 floor.
+			// (disconnect / revoke) clears it — the SecretStorage API has no deleteSecret.
 			const ok = writeSecret(this.app, OAUTH_TOKEN_SECRET_ID, token);
 			// A non-empty token that could not persist means Drive works this session but
 			// won't survive a restart. Tell the user to reconnect — never fall back to

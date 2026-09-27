@@ -7,7 +7,7 @@
 //
 // Derived from the markdown rather than hand-drawn so the artwork cannot drift
 // out of sync with the sample text. Colors come from Obsidian theme variables
-// (never baked hex) so it adapts to light and dark, matching WORDMARK_SVG.
+// (never baked hex) so it adapts to light and dark.
 
 const VIEW_W = 300;
 const PAD_X = 26;

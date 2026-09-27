@@ -518,7 +518,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// Read-back symmetry with the Connect happy path's persistedSecret() assertion:
 		// prove the STORED secret was actually cleared to empty, not merely the in-memory
 		// oauthManager.refreshToken. A cleared secret reads back as "" (or absent) since
-		// there is no deleteSecret at the 1.11.4 floor.
+		// the SecretStorage API has no deleteSecret.
 		const persistedAfterRevoke = await persistedSecret();
 		expect(persistedAfterRevoke ?? '').toBe('');
 

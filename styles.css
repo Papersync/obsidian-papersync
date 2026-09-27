@@ -109,12 +109,6 @@
 	outline: none;
 }
 
-.papersync-sub-setting {
-	margin-left: 20px;
-	border-left: 2px solid var(--background-modifier-border);
-	padding-left: 12px;
-}
-
 .papersync-template-desc {
 	margin-bottom: 8px;
 }
@@ -146,81 +140,16 @@
 	padding-left: 12px;
 }
 
-/* Shown above the storage picker when the configured folder is gone. Same shape
-   as the connected row, in the warning colour the image warning already uses. */
-.papersync-folder-missing .setting-item-name {
+/* Warning rows: the missing-folder notice above the storage picker, and the
+   "template still embeds the image" notice. Same shape as the connected row, in
+   the warning colour the template editor's image warning already uses. */
+.papersync-folder-missing .setting-item-name,
+.papersync-warning-row .setting-item-name {
 	color: var(--color-orange);
 }
 
-.papersync-folder-missing {
+.papersync-folder-missing,
+.papersync-warning-row {
 	border-left: 3px solid var(--color-orange);
 	padding-left: 12px;
-}
-
-.papersync-logo-header {
-	display: flex;
-	justify-content: center;
-	padding: 4px 0 18px;
-	margin-bottom: 2px;
-}
-
-.papersync-logo {
-	display: inline-flex;
-	cursor: pointer;
-	border-radius: 6px;
-	transition: opacity 0.15s ease;
-}
-
-.papersync-logo:hover {
-	opacity: 0.7;
-}
-
-.papersync-logo:focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: 4px;
-}
-
-.papersync-logo svg {
-	width: 172px;
-	height: auto;
-	display: block;
-}
-
-.papersync-tab-bar {
-	display: flex;
-	gap: 4px;
-	margin: 12px 0 4px;
-	justify-content: center;
-	border-bottom: 1px solid var(--background-modifier-border);
-	overflow-x: auto;
-	scrollbar-width: none; /* Firefox */
-}
-
-.papersync-tab-bar::-webkit-scrollbar {
-	display: none; /* Chromium (Obsidian/Electron): hide the tab-bar scrollbar */
-}
-
-.papersync-tab {
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-	background: transparent;
-	border: none;
-	box-shadow: none;
-	border-bottom: 2px solid transparent;
-	border-radius: 6px 6px 0 0;
-	margin-bottom: -1px;
-	padding: 8px 12px;
-	cursor: pointer;
-	white-space: nowrap;
-}
-
-.papersync-tab:hover {
-	color: var(--text-normal);
-	background: var(--background-modifier-hover);
-}
-
-.papersync-tab.is-active {
-	color: var(--text-normal);
-	border-bottom-color: var(--interactive-accent);
-	font-weight: var(--font-semibold);
 }

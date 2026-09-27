@@ -6,11 +6,11 @@ import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
-import { WORDMARK_SVG, PAPERSYNC_WEBSITE } from '@/ui/wordmark';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
-import { App, Component, MarkdownRenderer, Notice, PluginSettingTab, Setting, requireApiVersion } from 'obsidian';
+import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsidian';
+import type { Setting } from 'obsidian';
 import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
 import { DEFAULT_POLL_INTERVAL_S } from '@/config';
@@ -43,8 +43,7 @@ const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
 // note, so a live embed would otherwise render as an unresolved "not found" box.)
 // True when a template embeds the scan image (canonical ps_image_file or its alias).
 // Obsidian reads these as wikilink syntax, so an attachments folder containing
-// one saves the image but leaves the ![[ ]] embed unresolved. Shared by both
-// render paths.
+// one saves the image but leaves the ![[ ]] embed unresolved.
 const RESERVED_WIKILINK_CHARS = /[#|[\]]/;
 
 // Below this, polling Drive is more likely to hit rate limits than to feel fast.
@@ -145,10 +144,6 @@ function asyncHandler(fn: () => Promise<void>): () => void {
 	return () => { fn().catch(console.error); };
 }
 
-function asyncValueHandler<T>(fn: (value: T) => Promise<void>): (value: T) => void {
-	return (value: T) => { fn(value).catch(console.error); };
-}
-
 export class PaperSyncSettingTab extends PluginSettingTab {
 	plugin: PaperSyncPlugin;
 	private syncButton: HTMLButtonElement | null = null;
@@ -157,7 +152,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// it was last hidden). A state update that disagrees means the folder just went
 	// missing or just came back, and the picker and connected row must swap.
 	private shownFolderMissing: boolean | null = null;
-	private activeTab: 'sync' | 'template' | 'advanced' = 'sync';
 	private previewComponent: Component | null = null;
 	private previewDebounce: number | null = null;
 
@@ -168,19 +162,18 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	updateSyncState(): void {
 		// The folder went missing (a sync or the backend reported it) or came back
-		// while the tab is open: re-render, so a missing folder shows the storage
-		// picker with its warning instead of a failure dressed in the connected
-		// row's success styling, and a returned folder gets its connected row back.
-		// Driven by state, never by which render callbacks ran: the 1.13+ renderer
-		// runs every row's render(), hidden rows included, so "rendered" does not
-		// mean "on screen". Recording the new state BEFORE refresh() is what stops
-		// render -> addSyncNowButton -> updateSyncState from looping.
+		// while the tab is open: swap the picker (with its missing-folder warning)
+		// and the connected row. The swap is a visibility change only
+		// (refreshDomState(), no re-render). It is driven by the folder state the tab
+		// last painted, which the missing-folder row's visible() records, never by
+		// which render callbacks ran: Obsidian runs every row's render(), hidden rows
+		// included, so "rendered" does not mean "on screen".
 		const { isFolderMissing } = this.getConnectionState();
 		if (this.shownFolderMissing !== null && this.shownFolderMissing !== isFolderMissing) {
 			this.shownFolderMissing = isFolderMissing;
 			this.swapFolderState();
-			// Fall through: on 1.13+ the rows were not re-rendered, so the connected
-			// row coming back still carries the status text from before the loss.
+			// Fall through: the rows were not re-rendered, so the connected row coming
+			// back still carries the status text from before the loss.
 		}
 		if (!this.syncButton || !this.syncDesc) {return;}
 		const { status, pendingCount } = this.plugin.syncState.snapshot;
@@ -212,8 +205,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		}
 	}
 
-	// A folder backend whose folder is gone counts as NOT connected, so both render
-	// paths fall back to the storage picker (with a warning naming the folder)
+	// A folder backend whose folder is gone counts as NOT connected, so the tab
+	// falls back to the storage picker (with a warning naming the folder)
 	// instead of a connected row that cannot sync. Read from disk on every call
 	// rather than from the last sync error: the disk is the truth at startup, before
 	// any sync has run, and after a drive is remounted, when a stale error would lie.
@@ -230,50 +223,24 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		return path.basename(this.plugin.settings.folderPath) || 'Papersync';
 	}
 
-	// Obsidian 1.13+ renders this tab from getSettingDefinitions() and never calls
-	// display(); older versions have neither that method nor update(). Every
-	// "re-render after a state change" therefore has to route through here rather
-	// than calling display() directly, or the declarative path silently stops
-	// refreshing and the imperative path throws on a method that does not exist.
-	private get isDeclarative(): boolean {
-		return requireApiVersion('1.13.0');
-	}
-
+	// Structural re-render: getSettingDefinitions() runs again and every row is
+	// re-rendered. For a change that only flips which rows show, use
+	// swapFolderState() instead.
 	private refresh(): void {
-		// update() only exists from 1.13.0, and the manifest floor is 1.11.4, so it is
-		// reached through an optional call rather than a direct one. That states the
-		// uncertainty in the code instead of asserting a method that may be absent,
-		// and it degrades to "no declarative re-render" rather than throwing if a
-		// version ever reports 1.13 without providing it.
-		const declarative = (this as unknown as { update?: () => void });
-		if (this.isDeclarative && typeof declarative.update === 'function') {
-			declarative.update();
-			return;
-		}
-		this.display();
+		this.update();
 	}
 
 	// Swap the picker and the connected row after the folder went missing or came
-	// back. On 1.13+ every row is already rendered, hidden or not, so this is only
-	// a visibility change: refreshDomState() re-runs the visible() predicates and
+	// back. Every row is already rendered, hidden or not, so this is only a
+	// visibility change: refreshDomState() re-runs the visible() predicates and
 	// touches nothing else. A full update() would re-render every row, the
-	// template editor included, and take focus from whatever the user is typing
-	// in. Before 1.13 only the Sync tab shows connection state: re-render when it
-	// is on screen, and otherwise let the tab switch paint it fresh.
+	// template editor included, and take focus from whatever the user is typing in.
 	private swapFolderState(): void {
-		const declarative = (this as unknown as { refreshDomState?: () => void });
-		if (this.isDeclarative && typeof declarative.refreshDomState === 'function') {
-			declarative.refreshDomState();
-			return;
-		}
-		if (this.activeTab === 'sync') {
-			this.refresh();
-		}
+		this.refreshDomState();
 	}
 
-	// The handlers below are shared by both render paths. Only the rendering is
-	// duplicated between display() and getSettingDefinitions(); the behaviour
-	// behind each control lives here once.
+	// The behaviour behind each control lives in these handlers; the definitions
+	// below only wire them to rows.
 
 	private async disconnectGoogle(): Promise<void> {
 		this.plugin.syncEngine?.stop();
@@ -348,25 +315,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.refresh();
 	}
 
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-		// Rebuilt from scratch; addSyncNowButton re-sets these if the connected row
-		// renders, so nothing keeps writing into the discarded DOM.
-		this.syncButton = null;
-		this.syncDesc = null;
-		this.shownFolderMissing = this.getConnectionState().isFolderMissing;
-
-		// The clickable wordmark anchors the top; everything else lives under tabs,
-		// with the storage connection (or picker) owned by the Sync tab.
-		this.renderLogoHeader(containerEl);
-		this.renderTabs(containerEl);
-	}
-
-	// Reopen the settings on the Sync tab each time (the storage/connection anchor)
-	// and tear down the template preview's render component.
+	// Tear down the template preview's render component when the tab closes.
 	hide(): void {
-		this.activeTab = 'sync';
 		// Closed: state updates must not re-render into (or write into) a hidden tab.
 		this.syncButton = null;
 		this.syncDesc = null;
@@ -374,7 +324,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.teardownPreview();
 	}
 
-	// Shared by hide() and the declarative template row's cleanup callback: the
+	// Shared by hide() and the template row's cleanup callback: the
 	// preview owns a loaded Component and a pending debounce, and both leak if the
 	// row goes away without them being released.
 	private teardownPreview(): void {
@@ -388,127 +338,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			// to leave that edit in memory only.
 			this.plugin.saveSettings().catch(console.error);
 		}
-	}
-
-	private renderLogoHeader(containerEl: HTMLElement): void {
-		const header = containerEl.createDiv({ cls: 'papersync-logo-header' });
-		const link = header.createEl('a', {
-			cls: 'papersync-logo',
-			href: PAPERSYNC_WEBSITE,
-			attr: { 'aria-label': 'Open the Papersync website', target: '_blank', rel: 'noopener' },
-		});
-		// Trusted static asset from our own press kit (no user input); parse into a
-		// node rather than assigning innerHTML so the DOM-safety lint stays happy.
-		const parsed = new DOMParser().parseFromString(WORDMARK_SVG, 'image/svg+xml');
-		link.appendChild(document.importNode(parsed.documentElement, true));
-	}
-
-	private renderSyncTab(containerEl: HTMLElement): void {
-		const { isGoogleConnected, isFolderConnected } = this.getConnectionState();
-		this.renderAccountSection(containerEl, isGoogleConnected, isFolderConnected);
-		if (isGoogleConnected || isFolderConnected) {
-			this.renderSyncSection(containerEl);
-		}
-	}
-
-	private renderTabs(containerEl: HTMLElement): void {
-		const tabs: Array<{ id: 'sync' | 'template' | 'advanced'; label: string; render: (el: HTMLElement) => void }> = [
-			{ id: 'sync', label: 'Sync', render: (el) => this.renderSyncTab(el) },
-			{ id: 'template', label: 'Template', render: (el) => this.renderTemplateSection(el) },
-			{ id: 'advanced', label: 'Advanced', render: (el) => this.renderAdvancedSection(el) },
-		];
-
-		const bar = containerEl.createDiv({ cls: 'papersync-tab-bar' });
-		const content = containerEl.createDiv({ cls: 'papersync-tab-content' });
-
-		const paint = (): void => {
-			content.empty();
-			const active = tabs.find((t) => t.id === this.activeTab) ?? tabs[0];
-			active?.render(content);
-		};
-
-		for (const tab of tabs) {
-			const btn = bar.createEl('button', { cls: 'papersync-tab', text: tab.label });
-			btn.setAttribute('type', 'button');
-			if (this.activeTab === tab.id) {btn.addClass('is-active');}
-			btn.addEventListener('click', () => {
-				this.activeTab = tab.id;
-				for (const child of Array.from(bar.children)) {child.removeClass('is-active');}
-				btn.addClass('is-active');
-				paint();
-			});
-		}
-
-		paint();
-	}
-
-	private renderAccountSection(containerEl: HTMLElement, isGoogleConnected: boolean, isFolderConnected: boolean): void {
-		if (isGoogleConnected) {
-			const gSetting = new Setting(containerEl)
-				.setName('\u2713 Google Drive')
-				.setClass('papersync-storage-active');
-			this.addSyncNowButton(gSetting);
-			gSetting.addButton((button) =>
-				button.setButtonText('Change Storage').onClick(asyncHandler(() => this.disconnectGoogle()))
-			);
-			return;
-		}
-
-		if (isFolderConnected) {
-			const displayName = this.getFolderDisplayName();
-			const fSetting = new Setting(containerEl)
-				.setName(`\u2713 ${displayName}`)
-				.setClass('papersync-storage-active');
-			this.addSyncNowButton(fSetting);
-			fSetting.addButton((button) =>
-				button.setButtonText('Change Storage').onClick(asyncHandler(() => this.disconnectFolder()))
-			);
-			return;
-		}
-
-		// Not connected — show both options as equal-weight choices. A configured
-		// folder that has gone missing lands here too, under a warning that names it.
-		if (this.getConnectionState().isFolderMissing) {
-			new Setting(containerEl)
-				.setName(STRINGS.SETTINGS_FOLDER_MISSING_TITLE(this.getMissingFolderName()))
-				.setDesc(STRINGS.SETTINGS_FOLDER_MISSING_DESC)
-				.setClass('papersync-folder-missing');
-		} else {
-			containerEl.createEl('p', {
-				text: 'Choose the same storage you used in the Papersync mobile app.',
-				cls: 'setting-item-description',
-			});
-		}
-
-		new Setting(containerEl)
-			.setName('Google Drive')
-			.setDesc('Sign in with your Google account')
-			.addButton((button) =>
-				button.setButtonText('Connect').onClick(asyncHandler(() => this.connectGoogle()))
-			);
-
-		// Folder — show detected locations inline + browse
-		const detected = detectSyncLocations();
-
-		for (const loc of detected) {
-			new Setting(containerEl)
-				.setName(loc.displayName)
-				.setDesc(loc.exists ? loc.path : `${loc.path} (will be created)`)
-				.addButton((button) =>
-					button
-						.setButtonText('Select')
-						.onClick(asyncHandler(async () => {
-							await this.selectDetectedLocation(loc);
-						}))
-				);
-		}
-
-		new Setting(containerEl)
-			.setName('Select your Papersync folder')
-			.setDesc('Browse to the folder your phone saves scans into. Papersync finds the right level from wherever you point it.')
-			.addButton((button) =>
-				button.setButtonText('Browse').onClick(asyncHandler(() => this.browseForFolder()))
-			);
 	}
 
 	private async browseForFolder(): Promise<void> {
@@ -586,64 +415,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.updateSyncState();
 	}
 
-	private renderSyncSection(containerEl: HTMLElement): void {
-		new Setting(containerEl)
-			.setName('Notes folder')
-			.setDesc('Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).')
-			.addText((text) =>
-				text
-					.setPlaceholder('Papersync')
-					.setValue(this.plugin.settings.targetFolder)
-					.onChange(asyncValueHandler(async (value) => {
-						this.plugin.settings.targetFolder = value;
-						await this.plugin.saveSettings();
-					}))
-			);
-
-		new Setting(containerEl)
-			.setName('Save scan images')
-			.setDesc('Download the original scan image into your vault. If off, remove {{ps_image_file}} from your template.')
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.downloadImages).onChange(
-					asyncValueHandler((value) => this.setDownloadImages(value))
-				)
-			);
-
-		// Warn right at the toggle (not only on the Template tab) when saving is off but
-		// the template still references the scan image, so its embed is silently dropped.
-		if (!this.plugin.settings.downloadImages && templateEmbedsImage(this.plugin.settings.templateString)) {
-			const warn = containerEl.createDiv({ cls: 'papersync-image-warning is-visible' });
-			warn.setText('Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template tab to make it explicit.');
-		}
-
-		if (this.plugin.settings.downloadImages) {
-			let attachWarn: HTMLElement | null = null;
-			const reservedWikilinkChars = RESERVED_WIKILINK_CHARS;
-
-			new Setting(containerEl)
-				.setName('Attachments folder')
-				.setDesc('Where scan images are saved. Leave empty to use Obsidian\'s own attachment folder.')
-				.setClass('papersync-sub-setting')
-				.addText((text) =>
-					text
-						.setPlaceholder('Obsidian default')
-						.setValue(this.plugin.settings.attachmentsFolder)
-						.onChange(asyncValueHandler(async (value) => {
-							this.plugin.settings.attachmentsFolder = value;
-							await this.plugin.saveSettings();
-							attachWarn?.toggleClass('is-visible', reservedWikilinkChars.test(value));
-						}))
-				);
-
-			// Warn on wikilink-reserved characters: Obsidian reads them as link syntax, so
-			// the image saves but the ![[ ]] embed never resolves.
-			attachWarn = containerEl.createDiv({ cls: 'papersync-image-warning' });
-			attachWarn.setText('Avoid # | [ ] in the attachments folder. Obsidian reads them as wikilink syntax, so the image embed will not resolve.');
-			attachWarn.toggleClass('is-visible', reservedWikilinkChars.test(this.plugin.settings.attachmentsFolder));
-		}
-
-	}
-
 	private renderTemplateSection(containerEl: HTMLElement): void {
 		const descContainer = containerEl.createDiv({ cls: 'setting-item-description papersync-template-desc' });
 		descContainer.createEl('p', { text: 'Template for synced notes. Available variables:' });
@@ -695,7 +466,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			const show = embedsImage() && imageSavingOff();
 			imageWarning.toggleClass('is-visible', show);
 			imageWarning.setText(show
-				? 'Save scan images is off, so the image embed will render empty. Remove the image line from your template, or turn Save scan images back on in the Sync tab.'
+				? 'Save scan images is off, so the image line is dropped from synced notes. Remove it from your template, or turn Save scan images back on under Sync.'
 				: '');
 		};
 
@@ -726,7 +497,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					if (box.getAttribute('src') !== PREVIEW_CONTEXT.ps_image_file) {return;}
 					box.empty();
 					if (imageSavingOff()) {
-						box.createDiv({ cls: 'papersync-preview-scan-off', text: 'Image saving is off, so this embed will be empty.' });
+						box.createDiv({ cls: 'papersync-preview-scan-off', text: 'Image saving is off, so this line is dropped from synced notes.' });
 					} else {
 						const figure = box.createDiv({ cls: 'papersync-preview-scan' });
 						// Trusted static asset (no user input); parsed into a node rather
@@ -745,61 +516,28 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				this.previewDebounce = null;
 				this.plugin.saveSettings().catch(console.error);
 				renderPreview();
+				// The Sync section's "Template still embeds the scan image" row reads
+				// the template in its visible(), and Obsidian cannot see this textarea
+				// (it is not a control), so re-run the predicates. A visibility toggle
+				// only: no re-render, so the editor keeps focus.
+				this.refreshDomState();
 			}, 250);
 		});
 
 		renderPreview();
 	}
 
-	private renderAdvancedSection(containerEl: HTMLElement): void {
-		const { isGoogleConnected } = this.getConnectionState();
-		if (isGoogleConnected) {
-			new Setting(containerEl)
-				.setName('Poll interval (seconds)')
-				.setDesc('How often to check Google Drive for new scans.')
-				.addText((text) =>
-					text
-						.setPlaceholder('30')
-						.setValue(String(this.plugin.settings.drivePollInterval))
-						.onChange(asyncValueHandler(async (value) => {
-							const parsed = parseInt(value, 10);
-							if (!isNaN(parsed) && parsed >= 5) {
-								this.plugin.settings.drivePollInterval = parsed;
-								await this.plugin.saveSettings();
-							}
-						}))
-				);
-		}
-
-		new Setting(containerEl)
-			.setName('Reset settings')
-			.setDesc('Reset preferences to defaults. Keeps your account connected.')
-			.addButton((button) =>
-				button.setButtonText('Reset settings').onClick(asyncHandler(() => this.resetSettings()))
-			)
-			.addButton((button) =>
-				button.setButtonText('Full reset').setWarning().onClick(asyncHandler(() => this.fullReset()))
-			);
-	}
-
 	// ---------------------------------------------------------------------------
-	// Declarative rendering (Obsidian 1.13+)
-	//
-	// Returning a non-empty array here means display() is never called on 1.13+;
-	// it stays as the renderer for 1.11.4-1.12.x, which is the floor SecretStorage
-	// forces us to keep. The two paths therefore both exist on purpose.
+	// Rendering (declarative, Obsidian 1.13+; the manifest floor is 1.13.4)
 	//
 	// Rows that are plain values use `control`, so the framework owns the binding
-	// through getControlValue/setControlValue. Everything bespoke uses `render` and
-	// calls the SAME method display() calls, so the two paths cannot drift apart in
-	// what they draw. A `render` row is still indexed for settings search, because
-	// search reads the definition's name/desc rather than the DOM — which is the
-	// whole reason for doing this.
+	// through getControlValue/setControlValue. Everything bespoke uses `render`. A
+	// `render` row is still indexed for settings search, because search reads the
+	// definition's name/desc rather than the DOM.
 	//
-	// One deliberate divergence: the custom tab bar has no declarative equivalent,
-	// so 1.13+ renders the three sections as headed groups in a single scroll.
-	// Groups keep every setting individually indexed; nesting them into pages would
-	// hide them from the search this exists to serve.
+	// The three sections are headed groups in a single scroll rather than pages:
+	// groups keep every setting individually indexed, and nesting them into pages
+	// would hide them from the search.
 	// ---------------------------------------------------------------------------
 
 	getSettingDefinitions(): SettingDefinitionItem[] {
@@ -859,7 +597,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			name: 'Papersync folder missing',
 			searchable: false,
 			// visible() runs on every paint (render() runs for hidden rows too), so
-			// this is where the declarative path records what it painted.
+			// this is where the tab records which folder state it painted.
 			visible: () => {
 				const { isFolderMissing } = this.getConnectionState();
 				this.shownFolderMissing = isFolderMissing;
@@ -940,8 +678,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			},
 		});
 
-		// Everything below only means anything once a backend is chosen, which is
-		// why display() renders it under the same condition.
+		// Everything below only means anything once a backend is chosen.
 		defs.push({
 			name: 'Notes folder',
 			desc: 'Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).',
@@ -963,7 +700,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				&& !this.plugin.settings.downloadImages
 				&& templateEmbedsImage(this.plugin.settings.templateString),
 			render: (setting) => {
-				setting.setClass('papersync-image-warning');
+				// Not 'papersync-image-warning': that class is display:none until the
+				// template editor adds is-visible, which left this row permanently
+				// hidden. visible() alone decides whether it shows.
+				setting.setClass('papersync-warning-row');
 				setting.setDesc('Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template section to make it explicit.');
 			},
 		});
@@ -994,12 +734,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			desc: 'Template for synced notes, with a live preview of a sample scan.',
 			aliases: ['template', 'preview', 'variables', 'ps_markdown', 'ps_image_file', 'ps_scan_time'],
 			render: (setting) => {
-				// Reuse the imperative renderer wholesale: the variable table, editor
-				// and live preview are identical on both paths by construction, and a
-				// declarative re-expression would be a second thing to keep in step.
+				// The variable table, editor and live preview are built imperatively
+				// inside the row.
 				setting.settingEl.addClass('papersync-template-row');
 				// The editor lives outside controlEl, which is all Setting.clear()
-				// empties before 1.13 re-renders a row. Remove it in the cleanup, or
+				// empties before Obsidian re-renders a row. Remove it in the cleanup, or
 				// every update() stacks another live editor (and its listeners) on top
 				// of the old one.
 				const host = setting.settingEl.createDiv();
@@ -1039,11 +778,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						button.setButtonText('Reset settings').onClick(asyncHandler(() => this.resetSettings()))
 					);
 					setting.addButton((button) =>
-						// setDestructive would be the modern spelling, but it needs 1.13
-						// and the manifest floor is 1.11.4. setWarning is deprecated yet
-						// present in both, so one call works on either path and there is
-						// no version branch to keep correct for a button style.
-						button.setButtonText('Full reset').setWarning().onClick(asyncHandler(() => this.fullReset()))
+						button.setButtonText('Full reset').setDestructive().onClick(asyncHandler(() => this.fullReset()))
 					);
 				},
 			},

@@ -1,4 +1,4 @@
-import { openPluginSettings, closeSettings, clickSettingsTab as clickTab, switchToMainWindow } from './helpers';
+import { openPluginSettings, closeSettings, switchToMainWindow } from './helpers';
 
 describe('Settings tab', function () {
 	let isConnected: boolean;
@@ -14,17 +14,16 @@ describe('Settings tab', function () {
 		await closeSettings();
 	});
 
-	it('shows the storage connection or picker in the Sync tab', async function () {
+	it('shows the storage connection or picker in the Sync section', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		// Storage lives in the Sync tab: a Change Storage button when connected (Drive
+		// Storage lives in the Sync section: a Change Storage button when connected (Drive
 		// OR a local folder), or a Browse option in the picker when not connected.
 		expect(text.includes('Change Storage') || text.includes('Browse')).toBe(true);
 	});
 
 	it('shows notes folder setting when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Sync');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Notes folder');
@@ -33,15 +32,13 @@ describe('Settings tab', function () {
 
 	it('shows save scan images toggle when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Sync');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Save scan images');
 	});
 
-	it('shows the template tab variables when connected', async function () {
+	it('shows the template variables when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Template');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('{{ps_markdown}}');
@@ -51,7 +48,6 @@ describe('Settings tab', function () {
 
 	it('shows template editor textarea when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Template');
 		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });
 		const value = await textarea.getValue();
@@ -59,7 +55,6 @@ describe('Settings tab', function () {
 	});
 
 	it('renders a live preview of the template with sample values', async function () {
-		await clickTab('Template');
 		const editor = await browser.$('.papersync-template-editor');
 		await editor.waitForExist({ timeout: 3000 });
 		const original = await editor.getValue();
@@ -105,15 +100,13 @@ describe('Settings tab', function () {
 
 	it('shows sync now button when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Sync');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Sync now');
 	});
 
-	it('shows reset buttons in the Advanced tab when connected', async function () {
+	it('shows reset buttons in the Advanced section when connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Advanced');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		expect(text).toContain('Reset settings');
@@ -175,9 +168,8 @@ describe('Settings tab', function () {
 		expect(text).not.toContain('Sync now');
 	});
 
-	it('shows poll interval in the Advanced tab when Drive connected', async function () {
+	it('shows poll interval in the Advanced section when Drive connected', async function () {
 		if (!isConnected) {return;}
-		await clickTab('Advanced');
 		const body = await browser.$('body');
 		const text = await body.getText();
 		// Poll interval is Drive-only; folder backends watch the filesystem, so only

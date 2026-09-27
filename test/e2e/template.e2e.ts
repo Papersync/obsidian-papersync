@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSettings, clickSettingsTab as clickTab } from './helpers';
+import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSettings, focusSettingsUI } from './helpers';
 
-// The Template tab only renders once a backend is connected, so this spec
+// The Template section only renders once a backend is connected, so this spec
 // connects the folder backend itself rather than skipping when it happens to
 // find one. It previously gated on `text.includes('Change Storage')` and called
 // this.skip() — a condition a clean test vault never satisfies, so all three
@@ -28,15 +28,14 @@ describe('Template editor', function () {
 
 	beforeEach(async function () {
 		await openPluginSettings();
-		await clickTab('Template');
 	});
 
 	afterEach(async function () {
 		await closeSettings();
 	});
 
-	it('reaches the Template tab with a backend connected', async function () {
-		// Guards the setup itself: if connecting ever stops surfacing the tab, this
+	it('reaches the Template section with a backend connected', async function () {
+		// Guards the setup itself: if connecting ever stops surfacing the section, this
 		// fails loudly instead of the suite quietly skipping as it used to.
 		const editor = await browser.$('.papersync-template-editor');
 		expect(await editor.isExisting()).toBe(true);
@@ -93,4 +92,47 @@ describe('Template editor', function () {
 		const previewText = await preview.getText();
 		expect(previewText).not.toContain('~~~~');
 	});
+
+	it('warns under Sync when saving is off but the template still embeds the image', async function () {
+		// The warning row used to carry the template editor's `papersync-image-warning`
+		// class, which is display:none until the editor adds is-visible, so it never
+		// showed. The default template embeds the image, so turning saving off must
+		// surface it; turning saving back on must hide it again.
+		const warningShown = async (): Promise<boolean> => {
+			await focusSettingsUI();
+			return browser.execute(() => {
+				const row = document.querySelector('.papersync-warning-row') as HTMLElement | null;
+				return !!row && row.getClientRects().length > 0 && (row.textContent ?? '').includes('still embeds the scan image');
+			});
+		};
+		const toggleSaveImages = async (): Promise<void> => {
+			await focusSettingsUI();
+			const clicked = await browser.execute(() => {
+				const item = Array.from(document.querySelectorAll('.setting-item'))
+					.find((el) => el.querySelector('.setting-item-name')?.textContent?.trim() === 'Save scan images');
+				const toggle = item?.querySelector('.checkbox-container') as HTMLElement | null;
+				toggle?.click();
+				return !!toggle;
+			});
+			expect(clicked).toBe(true);
+		};
+
+		expect(await warningShown()).toBe(false);
+		await toggleSaveImages(); // off
+		await browser.waitUntil(warningShown, { timeout: 10_000, interval: 250, timeoutMsg: 'the image warning row never became visible' });
+
+		// Editing the template follows the row too: Obsidian cannot see the
+		// template textarea, so the row only tracks it because the editor re-runs
+		// the visibility predicates after each (debounced) edit.
+		const editor = await browser.$('.papersync-template-editor');
+		const original = await editor.getValue();
+		await editor.setValue(original.split('\n').filter((l) => !l.includes('{{ps_image_file}}')).join('\n'));
+		await browser.waitUntil(async () => !(await warningShown()), { timeout: 10_000, interval: 250, timeoutMsg: 'the row stayed up after the image line was removed' });
+		await editor.setValue(original);
+		await browser.waitUntil(warningShown, { timeout: 10_000, interval: 250, timeoutMsg: 'the row did not come back when the image line was restored' });
+
+		await toggleSaveImages(); // back on
+		await browser.waitUntil(async () => !(await warningShown()), { timeout: 10_000, interval: 250, timeoutMsg: 'the image warning row did not hide again' });
+	});
 });
+
