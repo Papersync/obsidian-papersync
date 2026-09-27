@@ -186,8 +186,11 @@ export default class PaperSyncPlugin extends Plugin {
 	async resolveTargetFolder(): Promise<void> {
 		if (this.settings.targetFolder) {return;}
 
+		// With Daily Notes on, scans append to the real daily note wherever it lives,
+		// including the vault root ('/': '' already means "not resolved yet"). With it
+		// off there is no daily note to join, so scans get their own folder.
 		const dailyConfig = getDailyNotesConfig(this.app);
-		this.settings.targetFolder = dailyConfig.folder || 'Papersync';
+		this.settings.targetFolder = dailyConfig.enabled ? dailyConfig.folder || '/' : 'Papersync';
 		await this.saveSettings();
 		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
 	}

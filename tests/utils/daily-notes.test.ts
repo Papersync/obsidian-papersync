@@ -70,7 +70,7 @@ describe('getDailyNotesConfig', () => {
 		// `'internalPlugins' in app` is true, but the value is null, so
 		// `internalPlugins?.getPluginById(...)` must short-circuit to defaults.
 		const config = getDailyNotesConfig({ internalPlugins: null } as any);
-		expect(config).toEqual({ folder: '', format: 'YYYY-MM-DD' });
+		expect(config).toEqual({ enabled: false, folder: '', format: 'YYYY-MM-DD' });
 	});
 
 	it('reads folder and format from daily notes plugin', () => {
@@ -83,8 +83,7 @@ describe('getDailyNotesConfig', () => {
 			},
 		};
 		const config = getDailyNotesConfig(mockApp as any);
-		expect(config.folder).toBe('Journal');
-		expect(config.format).toBe('YYYY/MM/DD');
+		expect(config).toEqual({ enabled: true, folder: 'Journal', format: 'YYYY/MM/DD' });
 	});
 
 	it('strips trailing slashes from folder', () => {
@@ -120,6 +119,7 @@ describe('getDailyNotesConfig', () => {
 			},
 		};
 		const config = getDailyNotesConfig(mockApp as any);
+		expect(config.enabled).toBe(false);
 		expect(config.folder).toBe('');
 	});
 
@@ -132,17 +132,17 @@ describe('getDailyNotesConfig', () => {
 			},
 		};
 		const config = getDailyNotesConfig(mockApp as any);
-		expect(config).toEqual({ folder: '', format: 'YYYY-MM-DD' });
+		expect(config).toEqual({ enabled: false, folder: '', format: 'YYYY-MM-DD' });
 	});
 
-	it('returns defaults when options.instance is missing', () => {
+	it('reports Obsidian\'s own defaults (vault root) when enabled without options', () => {
 		const mockApp = {
 			internalPlugins: {
 				getPluginById: () => ({ enabled: true }), // no instance
 			},
 		};
 		const config = getDailyNotesConfig(mockApp as any);
-		expect(config).toEqual({ folder: '', format: 'YYYY-MM-DD' });
+		expect(config).toEqual({ enabled: true, folder: '', format: 'YYYY-MM-DD' });
 	});
 
 	it('falls back to default folder when options.folder is not a string', () => {

@@ -2,6 +2,8 @@ import { App } from 'obsidian';
 import { logger } from '@/utils/logger';
 
 export interface DailyNotesConfig {
+	// Whether the core Daily Notes plugin is on. When it is, folder '' is the vault root.
+	enabled: boolean;
 	folder: string;
 	format: string;
 }
@@ -18,6 +20,7 @@ interface InternalPlugins {
 }
 
 const DEFAULT_CONFIG: DailyNotesConfig = {
+	enabled: false,
 	folder: '',
 	format: 'YYYY-MM-DD',
 };
@@ -32,14 +35,15 @@ export function getDailyNotesConfig(app: App): DailyNotesConfig {
 			return DEFAULT_CONFIG;
 		}
 
+		// Enabled without saved options means Obsidian's own defaults: vault root, YYYY-MM-DD.
 		const options = dailyNotes.instance?.options;
-		if (!options) {return DEFAULT_CONFIG;}
+		if (!options) {return { ...DEFAULT_CONFIG, enabled: true };}
 
 		const folder = (typeof options.folder === 'string' ? options.folder : DEFAULT_CONFIG.folder).replace(/\/+$/, '');
 		const format = typeof options.format === 'string' && options.format ? options.format : DEFAULT_CONFIG.format;
 
 		logger.info(`Daily notes config — folder: "${folder}", format: "${format}"`);
-		return { folder, format };
+		return { enabled: true, folder, format };
 	} catch {
 		logger.warn('Failed to read daily notes config');
 		return DEFAULT_CONFIG;

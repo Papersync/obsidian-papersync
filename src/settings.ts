@@ -694,7 +694,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		// Everything below only means anything once a backend is chosen.
 		defs.push({
 			name: 'Notes folder',
-			desc: 'Subfolder for synced notes. Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).',
+			desc: 'Folder for synced notes (/ is the vault root). Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).',
 			visible: () => this.isConnected(),
 			control: { type: 'text', key: 'targetFolder', placeholder: 'Papersync' },
 		});

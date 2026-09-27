@@ -381,6 +381,18 @@ describe('NoteCreator', () => {
 		expect(folderCalls).not.toContain('PaperSync');
 	});
 
+	it('places the note at the root when the Notes folder is / (Daily Notes at the vault root)', async () => {
+		const rootCreator = new NoteCreator(
+			{ ...mockApp, vault: mockVault } as any,
+			mockVault as any,
+			{ ...defaultConfig, targetFolder: '/' }
+		);
+
+		await rootCreator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-root');
+
+		expect(mockVault.create).toHaveBeenCalledWith('2026-04-12.md', expect.any(String));
+	});
+
 	it('writes rendered content directly when existing file is empty (no leading separator)', async () => {
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
 			if (path === 'PaperSync/2026-04-12.md') return asTFile(path);
