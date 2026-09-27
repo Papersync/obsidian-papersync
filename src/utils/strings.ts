@@ -24,6 +24,8 @@ export const STRINGS = {
 	NOTICE_DRIVE_403_SCOPE_DENIED: 'Your Drive permissions changed. Disconnect and reconnect Google Drive in settings to re-authorize the Papersync scope.',
 	NOTICE_DRIVE_403_UNKNOWN: 'Drive returned permission denied. Open Google Drive and verify the Papersync folder exists and is accessible to your account.',
 	NOTICE_FOLDER_MISSING: 'Your Papersync folder is missing. Re-select or recreate it from the plugin settings.',
+	SETTINGS_FOLDER_MISSING_TITLE: (name: string) => `\u26A0 Your Papersync folder "${name}" is missing`,
+	SETTINGS_FOLDER_MISSING_DESC: 'Pick it again below, or reconnect the drive it lives on.',
 	NOTICE_SCAN_REMOVED: 'A scan was removed from your Papersync folder before it synced.',
 	NOTICE_PROVIDER_UNAVAILABLE: (name: string) => `${name} is not available on this computer. Sign in and enable it, then select it again.`,
 	NOTICE_FOLDER_CREATE_FAILED: (folderPath: string) => `Could not create ${folderPath}. Check the folder permissions and try again.`,

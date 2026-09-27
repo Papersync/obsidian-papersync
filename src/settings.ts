@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+import * as path from 'path';
 import type PaperSyncPlugin from '@/main';
 import { detectSyncLocations, resolvePickedFolder } from '@/utils/platform';
 import type { SyncLocation } from '@/utils/platform';
@@ -51,6 +52,17 @@ const MIN_POLL_INTERVAL_S = 5;
 
 function templateEmbedsImage(template: string): boolean {
 	return /\{\{\s*(ps_image_file|image_file)\s*\}\}/.test(template);
+}
+
+// True only for a path that exists AND is a directory. A folder backend whose
+// folder fails this is "missing": deleted, renamed, or on a drive that is not
+// mounted right now.
+function isExistingDirectory(folderPath: string): boolean {
+	try {
+		return fs.statSync(folderPath).isDirectory();
+	} catch {
+		return false;
+	}
 }
 
 export type BackendType = 'drive' | 'folder' | 'none';
@@ -141,6 +153,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	plugin: PaperSyncPlugin;
 	private syncButton: HTMLButtonElement | null = null;
 	private syncDesc: HTMLElement | null = null;
+	// The folder state the open tab was last painted for (null = not painted since
+	// it was last hidden). A state update that disagrees means the folder just went
+	// missing or just came back, and the picker and connected row must swap.
+	private shownFolderMissing: boolean | null = null;
 	private activeTab: 'sync' | 'template' | 'advanced' = 'sync';
 	private previewComponent: Component | null = null;
 	private previewDebounce: number | null = null;
@@ -151,6 +167,20 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	updateSyncState(): void {
+		// The folder went missing (a sync or the backend reported it) or came back
+		// while the tab is open: re-render, so a missing folder shows the storage
+		// picker with its warning instead of a failure dressed in the connected
+		// row's success styling, and a returned folder gets its connected row back.
+		// Driven by state, never by which render callbacks ran: the 1.13+ renderer
+		// runs every row's render(), hidden rows included, so "rendered" does not
+		// mean "on screen". Recording the new state BEFORE refresh() is what stops
+		// render -> addSyncNowButton -> updateSyncState from looping.
+		const { isFolderMissing } = this.getConnectionState();
+		if (this.shownFolderMissing !== null && this.shownFolderMissing !== isFolderMissing) {
+			this.shownFolderMissing = isFolderMissing;
+			this.refresh();
+			return;
+		}
 		if (!this.syncButton || !this.syncDesc) {return;}
 		const { status, pendingCount } = this.plugin.syncState.snapshot;
 		const isBusy = status === 'syncing';
@@ -181,11 +211,22 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		}
 	}
 
-	private getConnectionState(): { isGoogleConnected: boolean; isFolderConnected: boolean } {
-		const { backendType } = this.plugin.settings;
+	// A folder backend whose folder is gone counts as NOT connected, so both render
+	// paths fall back to the storage picker (with a warning naming the folder)
+	// instead of a connected row that cannot sync. Read from disk on every call
+	// rather than from the last sync error: the disk is the truth at startup, before
+	// any sync has run, and after a drive is remounted, when a stale error would lie.
+	private getConnectionState(): { isGoogleConnected: boolean; isFolderConnected: boolean; isFolderMissing: boolean } {
+		const { backendType, setupComplete, folderPath } = this.plugin.settings;
 		const isGoogleConnected = backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
-		const isFolderConnected = backendType === 'folder' && this.plugin.settings.setupComplete;
-		return { isGoogleConnected, isFolderConnected };
+		const folderConfigured = backendType === 'folder' && setupComplete;
+		const isFolderMissing = folderConfigured && !isExistingDirectory(folderPath);
+		const isFolderConnected = folderConfigured && !isFolderMissing;
+		return { isGoogleConnected, isFolderConnected, isFolderMissing };
+	}
+
+	private getMissingFolderName(): string {
+		return path.basename(this.plugin.settings.folderPath) || 'Papersync';
 	}
 
 	// Obsidian 1.13+ renders this tab from getSettingDefinitions() and never calls
@@ -284,6 +325,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+		// Rebuilt from scratch; addSyncNowButton re-sets these if the connected row
+		// renders, so nothing keeps writing into the discarded DOM.
+		this.syncButton = null;
+		this.syncDesc = null;
+		this.shownFolderMissing = this.getConnectionState().isFolderMissing;
 
 		// The clickable wordmark anchors the top; everything else lives under tabs,
 		// with the storage connection (or picker) owned by the Sync tab.
@@ -295,6 +341,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// and tear down the template preview's render component.
 	hide(): void {
 		this.activeTab = 'sync';
+		// Closed: state updates must not re-render into (or write into) a hidden tab.
+		this.syncButton = null;
+		this.syncDesc = null;
+		this.shownFolderMissing = null;
 		this.teardownPreview();
 	}
 
@@ -386,11 +436,19 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			return;
 		}
 
-		// Not connected — show both options as equal-weight choices
-		containerEl.createEl('p', {
-			text: 'Choose the same storage you used in the Papersync mobile app.',
-			cls: 'setting-item-description',
-		});
+		// Not connected — show both options as equal-weight choices. A configured
+		// folder that has gone missing lands here too, under a warning that names it.
+		if (this.getConnectionState().isFolderMissing) {
+			new Setting(containerEl)
+				.setName(STRINGS.SETTINGS_FOLDER_MISSING_TITLE(this.getMissingFolderName()))
+				.setDesc(STRINGS.SETTINGS_FOLDER_MISSING_DESC)
+				.setClass('papersync-folder-missing');
+		} else {
+			containerEl.createEl('p', {
+				text: 'Choose the same storage you used in the Papersync mobile app.',
+				cls: 'setting-item-description',
+			});
+		}
 
 		new Setting(containerEl)
 			.setName('Google Drive')
@@ -763,6 +821,26 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private syncDefinitions(): SettingDefinition[] {
 		const defs: SettingDefinition[] = [];
+
+		// Above the storage picker when the configured folder is gone. Everything
+		// connection-dependent reads it from getConnectionState() at paint time,
+		// like every other row here.
+		defs.push({
+			name: 'Papersync folder missing',
+			searchable: false,
+			// visible() runs on every paint (render() runs for hidden rows too), so
+			// this is where the declarative path records what it painted.
+			visible: () => {
+				const { isFolderMissing } = this.getConnectionState();
+				this.shownFolderMissing = isFolderMissing;
+				return isFolderMissing;
+			},
+			render: (setting) => {
+				setting.setClass('papersync-folder-missing');
+				setting.setName(STRINGS.SETTINGS_FOLDER_MISSING_TITLE(this.getMissingFolderName()));
+				setting.setDesc(STRINGS.SETTINGS_FOLDER_MISSING_DESC);
+			},
+		});
 
 		// Every row is ALWAYS in the list, with connection state expressed only
 		// through visible()/render(). Obsidian 1.13 computes this list once (at

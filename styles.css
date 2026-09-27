@@ -146,6 +146,17 @@
 	padding-left: 12px;
 }
 
+/* Shown above the storage picker when the configured folder is gone. Same shape
+   as the connected row, in the warning colour the image warning already uses. */
+.papersync-folder-missing .setting-item-name {
+	color: var(--color-orange);
+}
+
+.papersync-folder-missing {
+	border-left: 3px solid var(--color-orange);
+	padding-left: 12px;
+}
+
 .papersync-logo-header {
 	display: flex;
 	justify-content: center;

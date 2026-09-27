@@ -24,4 +24,8 @@ describe('STRINGS template functions', () => {
 			'Could not create /x/PaperSync/scans. Check the folder permissions and try again.'
 		);
 	});
+
+	it('SETTINGS_FOLDER_MISSING_TITLE names the missing folder, not its path', () => {
+		expect(STRINGS.SETTINGS_FOLDER_MISSING_TITLE('Papersync')).toBe('\u26A0 Your Papersync folder "Papersync" is missing');
+	});
 });
