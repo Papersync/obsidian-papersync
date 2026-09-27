@@ -193,8 +193,10 @@ describe('Sync pipeline E2E', function () {
 			return app.vault.adapter.read(syncFile.path);
 		});
 
-		// The PNG scan must have been picked up and its markdown surfaced in the note.
+		// The PNG scan must have been picked up and its markdown surfaced in the note,
+		// with the image saved under its real extension.
 		expect(noteContent).toContain('PNG Companion Scan');
+		expect(noteContent).toContain(`papersync-${pngId}.png]]`);
 
 		// And the JSON must have been marked synced (round-trip contract).
 		const updatedJson = JSON.parse(
