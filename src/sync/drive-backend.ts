@@ -8,7 +8,7 @@ import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
-import { GOOGLE_SCANS_FOLDER } from '@/config';
+import { GOOGLE_SCANS_FOLDER, MAX_POLL_INTERVAL_S } from '@/config';
 import { resolveGoogleEndpoint } from '@/google-endpoints';
 import type { GoogleEndpointsSupplier } from '@/google-endpoints';
 
@@ -93,18 +93,22 @@ export class DriveBackend implements SyncBackend {
 		logger.info('Drive polling stopped');
 	}
 
-	// Poll on the current interval; when the setting has changed by the time a tick
-	// fires, re-arm at the new rate so the change applies from the next check.
+	// Called when a new poll interval is committed in Settings: re-arm now, so a
+	// shorter interval does not first wait out the old one. No-op when stopped.
+	reschedule(): void {
+		if (this.intervalId === null || this.intervalSeconds() === this.armedSeconds) {return;}
+		this.disarm();
+		this.arm();
+		logger.info(`Drive poll interval now ${this.armedSeconds}s`);
+	}
+
+	private intervalSeconds(): number {
+		return Math.min(this.pollIntervalSeconds(), MAX_POLL_INTERVAL_S);
+	}
+
 	private arm(): void {
-		this.armedSeconds = this.pollIntervalSeconds();
-		this.intervalId = window.setInterval(() => {
-			void this.poll();
-			if (this.pollIntervalSeconds() !== this.armedSeconds) {
-				this.disarm();
-				this.arm();
-				logger.info(`Drive poll interval now ${this.armedSeconds}s`);
-			}
-		}, this.armedSeconds * 1000);
+		this.armedSeconds = this.intervalSeconds();
+		this.intervalId = window.setInterval(() => { void this.poll(); }, this.armedSeconds * 1000);
 	}
 
 	private disarm(): void {

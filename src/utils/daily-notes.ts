@@ -54,6 +54,13 @@ type DateToken = 'YYYY' | 'YY' | 'MM' | 'DD' | 'M' | 'D';
 const DATE_TOKEN = /YYYY|YY|MM|DD|M|D/g;
 const ALL_DATE_TOKENS = /^(?:YYYY|YY|MM|DD|M|D)+$/;
 
+// The Notes folder when none is set: the Daily Notes folder when Daily Notes is on,
+// so scans join the real daily note ('/' for the vault root, since '' means "not
+// set"); with Daily Notes off there is no daily note to join, so a Papersync folder.
+export function defaultNotesFolder(config: DailyNotesConfig): string {
+	return config.enabled ? config.folder || '/' : 'Papersync';
+}
+
 export function formatDateWithPattern(date: Date, pattern: string): string {
 	const year = String(date.getFullYear());
 	const values: Record<DateToken, string> = {
@@ -67,7 +74,11 @@ export function formatDateWithPattern(date: Date, pattern: string): string {
 
 	// Only a run of letters made entirely of tokens is a date ("YYYY", "YYYYMMDD");
 	// any other word is a literal folder name, so "SUMMARY" and "ADDRESS" survive.
-	// The alternation lists longer tokens first (YYYY before YY, MM before M).
+	// Single-letter tokens only count alone or beside a longer token ("M" or
+	// "YYYYMD"), so a folder named "MD" or "DM" stays a folder name. The
+	// alternation lists longer tokens first (YYYY before YY, MM before M).
 	return pattern.replace(/[A-Za-z]+/g, (run) =>
-		ALL_DATE_TOKENS.test(run) ? run.replace(DATE_TOKEN, (token) => values[token as DateToken]) : run);
+		ALL_DATE_TOKENS.test(run) && (run.length === 1 || /YY|MM|DD/.test(run))
+			? run.replace(DATE_TOKEN, (token) => values[token as DateToken])
+			: run);
 }

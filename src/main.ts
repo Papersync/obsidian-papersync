@@ -15,13 +15,29 @@ import type { SyncStateSnapshot } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
 
 import { GOOGLE_CLIENT_ID, DEV_MODE, OAUTH_TOKEN_SECRET_ID } from '@/config';
-import { getDailyNotesConfig } from '@/utils/daily-notes';
+import { getDailyNotesConfig, defaultNotesFolder } from '@/utils/daily-notes';
 import { createFakeScanOnDrive } from '@/utils/dev-tools';
+
+// A read-through view of the committed settings, so the engine always sees the
+// latest commit without being handed a new object.
+function committedView(read: () => PluginSettings): NoteCreatorConfig {
+	return {
+		get templateString() { return read().templateString; },
+		get targetFolder() { return read().targetFolder; },
+		get attachmentsFolder() { return read().attachmentsFolder; },
+		get downloadImages() { return read().downloadImages; },
+	};
+}
 
 export default class PaperSyncPlugin extends Plugin {
 	settings: PluginSettings = DEFAULT_SETTINGS;
 	oauthManager: OAuthManager | null = null;
 	syncEngine: SyncEngine | null = null;
+	// What the sync engine reads. Settings edits land in `settings` on every
+	// keystroke; the engine sees them only once committed (see commitSettings).
+	private committed: PluginSettings = { ...DEFAULT_SETTINGS };
+	readonly engineConfig: NoteCreatorConfig = committedView(() => this.committed);
+	private driveBackend: DriveBackend | null = null;
 	syncState: SyncState = new SyncState('');
 	errorHandler: ErrorHandler = new ErrorHandler();
 	private statusBarEl: HTMLElement | null = null;
@@ -136,6 +152,17 @@ export default class PaperSyncPlugin extends Plugin {
 		} else {
 			this.settings = { ...DEFAULT_SETTINGS };
 		}
+		this.commitSettings();
+	}
+
+	// Hand the current settings to the sync engine. Called for finished edits only
+	// (a field left or Enter pressed, a toggle, Settings closing, sync starting),
+	// never per keystroke: a sync that lands mid-typing would otherwise file a
+	// note with a half-typed template or into a half-typed folder, then mark the
+	// scan synced for good.
+	commitSettings(): void {
+		this.committed = { ...this.settings };
+		this.driveBackend?.reschedule();
 	}
 
 	async saveSettings(): Promise<void> {
@@ -186,11 +213,7 @@ export default class PaperSyncPlugin extends Plugin {
 	async resolveTargetFolder(): Promise<void> {
 		if (this.settings.targetFolder) {return;}
 
-		// With Daily Notes on, scans append to the real daily note wherever it lives,
-		// including the vault root ('/': '' already means "not resolved yet"). With it
-		// off there is no daily note to join, so scans get their own folder.
-		const dailyConfig = getDailyNotesConfig(this.app);
-		this.settings.targetFolder = dailyConfig.enabled ? dailyConfig.folder || '/' : 'Papersync';
+		this.settings.targetFolder = defaultNotesFolder(getDailyNotesConfig(this.app));
 		await this.saveSettings();
 		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
 	}
@@ -211,30 +234,23 @@ export default class PaperSyncPlugin extends Plugin {
 			this.onSyncStateChanged(snap);
 		});
 
-		// A live view, not a copy: the engine reads these on every scan, so an edit in
-		// Settings (template, Notes folder, attachments folder, image saving) applies
-		// to the next scan without restarting sync. A snapshot here used to keep the
-		// old values until Obsidian restarted, while the live preview already showed
-		// the new template. `this.settings` is itself replaced by a reset, so the
-		// getters read it at call time.
-		const settings = (): PluginSettings => this.settings;
-		const noteConfig: NoteCreatorConfig = {
-			get templateString() { return settings().templateString; },
-			get targetFolder() { return settings().targetFolder; },
-			get attachmentsFolder() { return settings().attachmentsFolder; },
-			get downloadImages() { return settings().downloadImages; },
-		};
+		// The engine reads committed settings through engineConfig on every scan, so
+		// a finished edit in Settings applies to the next scan without restarting
+		// sync (a copy taken here used to hold the old values until restart).
+		this.driveBackend = null;
+		this.commitSettings();
 
 		if (this.settings.backendType === 'drive' && this.oauthManager?.isAuthenticated) {
 			// Same call-time supplier as OAuthManager gets in initAsync, so the token and
 			// Drive legs of a sync can never resolve against two different snapshots of
 			// the endpoint seam.
-			const backend = new DriveBackend(this.oauthManager, () => this.settings.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
-			this.startEngine(new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState));
+			const backend = new DriveBackend(this.oauthManager, () => this.committed.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
+			this.driveBackend = backend;
+			this.startEngine(new SyncEngine(backend, this.app, this.engineConfig, this.errorHandler, this.syncState));
 			logger.info('Drive sync started');
 		} else if (this.settings.backendType === 'folder' && this.settings.folderPath) {
 			const backend = new FolderBackend(this.settings.folderPath);
-			this.startEngine(new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState));
+			this.startEngine(new SyncEngine(backend, this.app, this.engineConfig, this.errorHandler, this.syncState));
 			logger.info('Folder sync started');
 		} else {
 			logger.info('No backend configured or authenticated — sync not started');

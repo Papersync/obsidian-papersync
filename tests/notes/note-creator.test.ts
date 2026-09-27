@@ -290,6 +290,20 @@ describe('NoteCreator', () => {
 		);
 	});
 
+	it('saves images at the vault root when the attachments folder is /', async () => {
+		const getAvailablePathForAttachment = jest.fn();
+		const c = new NoteCreator(
+			{ ...mockApp, fileManager: { getAvailablePathForAttachment }, vault: mockVault } as any,
+			mockVault as any,
+			{ ...defaultConfig, attachmentsFolder: ' / ' }
+		);
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-slash-root');
+
+		expect(getAvailablePathForAttachment).not.toHaveBeenCalled();
+		expect(mockVault.createBinary).toHaveBeenCalledWith('papersync-scan-slash-root.jpg', expect.any(ArrayBuffer));
+	});
+
 	it('strips a trailing slash from an attachments override so the embed has no // (#9)', async () => {
 		const c = new NoteCreator(
 			{ ...mockApp, vault: mockVault } as any,
@@ -363,22 +377,47 @@ describe('NoteCreator', () => {
 		expect(content).toContain('[!abstract]- Original scan');
 	});
 
-	it('places the note at the root when targetFolder is empty and daily-notes has no folder', async () => {
-		const rootConfig = { ...defaultConfig, targetFolder: '' };
-		const rootCreator = new NoteCreator(
+	it('uses a Papersync folder when the Notes folder is empty and Daily Notes is off', async () => {
+		// Same rule as first-run resolution, so a cleared field files notes where
+		// they will also go after a restart.
+		const emptyCreator = new NoteCreator(
 			{ ...mockApp, vault: mockVault } as any,
 			mockVault as any,
-			rootConfig
+			{ ...defaultConfig, targetFolder: '' }
 		);
 
-		const scan = makeScanFile();
-		await rootCreator.createOrAppend(scan, new ArrayBuffer(10), 'scan-root');
+		await emptyCreator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-empty');
 
-		// Note path has no folder prefix
+		expect(mockVault.create).toHaveBeenCalledWith('Papersync/2026-04-12.md', expect.any(String));
+	});
+
+	it('places the note at the root when the Notes folder is empty and Daily Notes is at the root', async () => {
+		const c = creatorWithDailyFormat('YYYY-MM-DD', '', { ...defaultConfig, targetFolder: '' });
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-root');
+
+		// Note path has no folder prefix, and no note folder is created.
 		expect(mockVault.create).toHaveBeenCalledWith('2026-04-12.md', expect.any(String));
-		// Only the attachments folder (from saveImageToVault) should be created — no note folder
 		const folderCalls = mockVault.createFolder.mock.calls.map((c) => c[0]);
 		expect(folderCalls).not.toContain('PaperSync');
+	});
+
+	it('uses one set of settings for the whole scan even if they change mid-write', async () => {
+		let template = '{{ps_markdown}} FIRST';
+		const live = {
+			get templateString() { return template; },
+			targetFolder: 'PaperSync',
+			attachmentsFolder: 'attachments',
+			downloadImages: true,
+		};
+		const c = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, live);
+		mockVault.createBinary.mockImplementationOnce(() => { template = 'CHANGED'; return Promise.resolve(); });
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-mid');
+
+		const content = mockVault.create.mock.calls[0]?.[1] as string;
+		expect(content).toContain('FIRST');
+		expect(content).not.toContain('CHANGED');
 	});
 
 	it('places the note at the root when the Notes folder is / (Daily Notes at the vault root)', async () => {

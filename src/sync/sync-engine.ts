@@ -99,10 +99,13 @@ export class SyncEngine {
 		if (!this.state.tryStartSync()) {return;}
 
 		try {
+			// Read once per batch: flipping image saving mid-batch must not fetch an
+			// image for a scan the filter below let through because it had none.
+			const downloadImages = this.noteCreator.config.downloadImages;
 			// When image download is off, image-less scans still produce notes, so the
 			// empty-imagePath drop only applies when we actually need the image.
 			const unsyncedRefs = refs
-				.filter((r) => this.noteCreator.config.downloadImages ? r.imagePath !== '' : true)
+				.filter((r) => downloadImages ? r.imagePath !== '' : true)
 				.sort((a, b) => {
 					// Order by createdTime so the persisted cursor can advance as a
 					// contiguous high-water mark (see earliestFailureTime below). Refs
@@ -143,7 +146,7 @@ export class SyncEngine {
 								return 'skipped';
 							}
 
-							const imageData = this.noteCreator.config.downloadImages
+							const imageData = downloadImages
 								? await this.backend.fetchImage(ref)
 								: null;
 							await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);

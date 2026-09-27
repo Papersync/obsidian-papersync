@@ -139,6 +139,8 @@ describe('Template editor', function () {
 		// startSync() used to hand the engine a COPY of these settings, so an edit in
 		// Settings changed the live preview but not the notes until Obsidian
 		// restarted. Edit both through the real UI, never call startSync(), then sync.
+		// The engine takes an edit once the field is left (not per keystroke), so
+		// each edit ends by moving focus on, as a user would.
 		const stamp = isoStamp();
 		const marker = `LIVE_TEMPLATE_${stamp}`;
 		const folder = `TemplateLive${stamp.replace(/[^0-9]/g, '')}`;
@@ -156,15 +158,18 @@ describe('Template editor', function () {
 		});
 		expect(notesFolder).toBe(true);
 		const input = await browser.$('.setting-item*=Notes folder').$('input');
-		await input.setValue(folder);
+		await input.setValue(folder); // focusing this field left the template editor
+		await browser.keys(['Tab']);
 
-		// Both edits persisted (the template after its 250 ms debounce).
+		// Both edits persisted and reached the engine.
 		await switchToMainWindow();
 		await browser.waitUntil(async () => browser.execute((f: string, m: string) => {
-			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: { targetFolder: string; templateString: string } }> } } }).app.plugins.plugins;
-			const s = (ps['papersync'] ?? ps['obsidian-papersync'])?.settings;
-			return s?.targetFolder === f && s.templateString.includes(m);
-		}, folder, marker), { timeout: 10_000, interval: 250, timeoutMsg: 'the settings edits never persisted' });
+			type Cfg = { targetFolder: string; templateString: string };
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Cfg; engineConfig: Cfg }> } } }).app.plugins.plugins;
+			const p = ps['papersync'] ?? ps['obsidian-papersync'];
+			return p?.settings.targetFolder === f && p.settings.templateString.includes(m)
+				&& p.engineConfig.targetFolder === f && p.engineConfig.templateString.includes(m);
+		}, folder, marker), { timeout: 10_000, interval: 250, timeoutMsg: 'the settings edits never reached the sync engine' });
 
 		const id = `live-${stamp}`;
 		writeScan(dir, id, {
@@ -184,10 +189,11 @@ describe('Template editor', function () {
 		await focusSettingsUI();
 		await (await browser.$('.papersync-template-editor')).setValue(original);
 		await (await browser.$('.setting-item*=Notes folder').$('input')).setValue('TemplateTest');
+		await browser.keys(['Tab']);
 		await switchToMainWindow();
 		await browser.waitUntil(async () => browser.execute(() => {
-			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: { targetFolder: string } }> } } }).app.plugins.plugins;
-			return (ps['papersync'] ?? ps['obsidian-papersync'])?.settings.targetFolder === 'TemplateTest';
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { engineConfig: { targetFolder: string } }> } } }).app.plugins.plugins;
+			return (ps['papersync'] ?? ps['obsidian-papersync'])?.engineConfig.targetFolder === 'TemplateTest';
 		}), { timeout: 10_000, interval: 250 });
 	});
 });

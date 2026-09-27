@@ -39,14 +39,15 @@ Also uncomment the trademark line above "## License".
 
 - **This plugin never sees your AI key and does no AI processing.** The key stays in the phone app, which sends each scan directly to the provider you picked.
 - **Folder sync makes no network requests.**
-- **Google Drive sync talks only to Google:** `accounts.google.com` to sign in, and `oauth2.googleapis.com` and `www.googleapis.com` to read the scans the app uploaded and mark them as synced. Access uses the `drive.file` scope: only the Papersync folder and files Papersync created, never the rest of your Drive. The sign-in token is kept in your OS credential vault through Obsidian's secret storage, not in the plugin's settings. Details in [SECURITY.md](SECURITY.md).
+- **Google Drive sync talks only to Google:** `accounts.google.com` and `oauth2.googleapis.com` to sign in and keep you signed in, and `www.googleapis.com` to read the scans the app uploaded and mark them as synced. Access uses the `drive.file` scope: only the Papersync folder and files Papersync created, never the rest of your Drive. The sign-in token is kept in your OS credential vault through Obsidian's secret storage, not in the plugin's settings. Details in [SECURITY.md](SECURITY.md).
 - **No telemetry, no analytics, no Papersync server.** This plugin collects nothing. For the mobile app, see the [Papersync privacy policy](https://papersync.ai/privacy).
 
 ## Installation
 
+<!-- GO PUBLIC: once the plugin is listed, replace the first sentence with:
 In Obsidian, open **Settings → Community plugins → Browse** and search for **Papersync**.
-
-To install manually, download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersync/releases/latest) into `<vault>/.obsidian/plugins/papersync/`.
+and start the next one with "To install manually, download". -->
+Papersync is not in Obsidian's community plugin directory yet. To install it, download `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersync/releases/latest) into `<vault>/.obsidian/plugins/papersync/`.
 
 ## Setup
 
@@ -58,7 +59,7 @@ To install manually, download `main.js`, `manifest.json` and `styles.css` from t
    - **Folder sync:** pick a detected location (iCloud Drive on macOS, or a Dropbox, OneDrive, Syncthing or macOS cloud-storage folder that already holds a Papersync folder), or **Browse** to the folder your phone saves into. The plugin watches it for new scans.
 5. Notes go to the **Notes folder** shown under Sync. With Daily Notes on, it starts as your Daily Notes folder (`/` when that is the vault root), so scans are appended to your daily note, named in your Daily Notes date format. With Daily Notes off, it starts as `Papersync`.
 
-Settings changes apply from the next scan on, with no restart.
+Settings changes apply from the next scan on, with no restart. A field you are still typing in counts once you leave it or close Settings.
 
 ## Template variables
 

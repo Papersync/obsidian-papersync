@@ -3,7 +3,7 @@ import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
-import { getDailyNotesConfig, formatDateWithPattern } from '@/utils/daily-notes';
+import { getDailyNotesConfig, formatDateWithPattern, defaultNotesFolder } from '@/utils/daily-notes';
 import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
 
@@ -37,6 +37,9 @@ export class NoteCreator {
 		imageData: ArrayBuffer | null,
 		scanId: string
 	): Promise<string> {
+		// One set of values for the whole scan, even if Settings commits an edit
+		// while this note is being written.
+		const config = { ...this.config };
 		const createdDate = new Date(scanFile.createdAt);
 		const dailyConfig = getDailyNotesConfig(this.app);
 
@@ -54,7 +57,7 @@ export class NoteCreator {
 		// The folder pattern keeps the Y/M/D replacer: it can contain literal folder names
 		// (e.g. "Journal") that moment would mangle. Strip a trailing slash so it never
 		// produces a "//" path. normalizePath keeps the existence check and create in sync.
-		const rawFolder = (this.config.targetFolder || dailyConfig.folder).replace(/\/+$/, '');
+		const rawFolder = (config.targetFolder || defaultNotesFolder(dailyConfig)).replace(/\/+$/, '');
 		const noteFolder = rawFolder ? formatDateWithPattern(createdDate, rawFolder) : '';
 
 		const notePath = normalizePath(noteFolder ? `${noteFolder}/${dateShort}.md` : `${dateShort}.md`);
@@ -73,8 +76,8 @@ export class NoteCreator {
 		// Save the scan image now that notePath is known (Obsidian's note-relative
 		// attachment mode needs it). Empty imagePath => no embed (stripped below).
 		let imagePath = '';
-		if (this.config.downloadImages && imageData) {
-			const attachmentsFolder = await this.resolveAttachmentsFolder(scanId, notePath);
+		if (config.downloadImages && imageData) {
+			const attachmentsFolder = await this.resolveAttachmentsFolder(config.attachmentsFolder, scanId, notePath);
 			imagePath = await saveImageToVault(this.vault, imageData, attachmentsFolder, scanId);
 		}
 
@@ -94,7 +97,7 @@ export class NoteCreator {
 			ps_separator: isAppend ? '***' : '',
 		};
 
-		let rendered = renderTemplate(this.config.templateString, context);
+		let rendered = renderTemplate(config.templateString, context);
 
 		if (imagePath === '') {
 			// No image was saved (saving off, or none attached), so {{ps_image_file}}
@@ -125,10 +128,14 @@ export class NoteCreator {
 	// Obsidian's own attachment location (via the public FileManager API — sanitized and
 	// cross-platform). We reuse our own stable filename below, so take only the directory;
 	// '' means the vault root.
-	private async resolveAttachmentsFolder(scanId: string, notePath: string): Promise<string> {
+	private async resolveAttachmentsFolder(setting: string, scanId: string, notePath: string): Promise<string> {
+		// '/' is the vault root, as in the Notes folder (empty means Obsidian's own folder).
+		if (/^\s*\/+\s*$/.test(setting)) {
+			return '';
+		}
 		// Strip a trailing slash for parity with targetFolder, so 'Attachments/' does not
 		// become 'Attachments//papersync-<id>.jpg' and a broken embed.
-		const override = this.config.attachmentsFolder.trim().replace(/\/+$/, '');
+		const override = setting.trim().replace(/\/+$/, '');
 		if (override) {
 			return override;
 		}

@@ -1,5 +1,6 @@
-// The Drive poll interval is read live, so changing it in Settings takes effect
-// from the next tick without restarting sync (it used to be fixed at startSync).
+// The Drive poll interval is read from a supplier, and reschedule() re-arms at a
+// newly committed value at once, without restarting sync (it used to be fixed at
+// startSync).
 import { DriveBackend } from '@/sync/drive-backend';
 import type { OAuthManager } from '@/auth/oauth-manager';
 
@@ -28,17 +29,43 @@ describe('DriveBackend poll interval', () => {
 		expect(polls()).toBe(3);
 	});
 
-	it('re-arms at a new interval from the next tick when the setting changes', () => {
-		let seconds = 30;
+	it('reschedule() re-arms at a new interval at once, not after the old one', () => {
+		let seconds = 600;
 		const { backend, polls } = makeBackend(() => seconds);
 		backend.start();
 		seconds = 10;
-		jest.advanceTimersByTime(30_000); // old rate still due once, then re-armed
+		backend.reschedule();
+		jest.advanceTimersByTime(10_000);
 		expect(polls()).toBe(2);
 		jest.advanceTimersByTime(10_000);
 		expect(polls()).toBe(3);
-		jest.advanceTimersByTime(10_000);
-		expect(polls()).toBe(4);
+		backend.stop();
+	});
+
+	it('reschedule() keeps the running timer when the interval is unchanged', () => {
+		const { backend, polls } = makeBackend(30);
+		backend.start();
+		jest.advanceTimersByTime(20_000);
+		backend.reschedule();
+		jest.advanceTimersByTime(10_000); // still due at 30 s, not pushed to 50 s
+		expect(polls()).toBe(2);
+		backend.stop();
+	});
+
+	it('reschedule() does not start a stopped backend', () => {
+		const { backend, polls } = makeBackend(30);
+		backend.reschedule();
+		jest.advanceTimersByTime(120_000);
+		expect(polls()).toBe(0);
+	});
+
+	it('caps the interval at one day so the timer cannot overflow', () => {
+		const { backend, polls } = makeBackend(99_999_999);
+		backend.start();
+		jest.advanceTimersByTime(1_000);
+		expect(polls()).toBe(1); // no 1 ms overflow loop
+		jest.advanceTimersByTime(86_400_000);
+		expect(polls()).toBe(2);
 		backend.stop();
 	});
 

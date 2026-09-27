@@ -13,7 +13,7 @@ import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsi
 import type { Setting } from 'obsidian';
 import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
-import { DEFAULT_POLL_INTERVAL_S } from '@/config';
+import { DEFAULT_POLL_INTERVAL_S, MAX_POLL_INTERVAL_S } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
 // so the preview is stable and never depends on real vault state.
@@ -171,6 +171,13 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+		// Edits are saved per keystroke, but the sync engine only sees finished ones
+		// (see PaperSyncPlugin.commitSettings). 'change' fires when a text field or the
+		// template editor is left or Enter is pressed; focusout also covers leaving a
+		// field unchanged-looking, e.g. by switching windows. hide() commits the rest.
+		const commit = (): void => { this.plugin.commitSettings(); };
+		plugin.registerDomEvent(this.containerEl, 'change', commit);
+		plugin.registerDomEvent(this.containerEl, 'focusout', commit);
 	}
 
 	updateSyncState(): void {
@@ -325,6 +332,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private async setDownloadImages(value: boolean): Promise<void> {
 		this.plugin.settings.downloadImages = value;
 		await this.plugin.saveSettings();
+		this.plugin.commitSettings(); // a toggle is a finished edit
 		this.refresh();
 	}
 
@@ -335,6 +343,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.syncDesc = null;
 		this.shownFolderMissing = null;
 		this.teardownPreview();
+		// Settings closed: whatever is in the fields now is final.
+		this.plugin.commitSettings();
 	}
 
 	// Shared by hide() and the template row's cleanup callback: the
@@ -583,7 +593,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				// validate() already rejects anything out of range, so by here the
 				// value parses; guard anyway rather than persist a NaN.
 				const parsed = parseInt(String(value), 10);
-				if (isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S) {return;}
+				if (isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S || parsed > MAX_POLL_INTERVAL_S) {return;}
 				s.drivePollInterval = parsed;
 				break;
 			}
@@ -723,7 +733,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 		defs.push({
 			name: 'Attachments folder',
-			desc: 'Where scan images are saved. Leave empty to use Obsidian\'s own attachment folder.',
+			desc: 'Where scan images are saved (/ is the vault root). Leave empty to use Obsidian\'s own attachment folder.',
 			visible: () => this.isConnected() && this.plugin.settings.downloadImages,
 			control: {
 				type: 'text',
@@ -776,8 +786,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 					placeholder: String(DEFAULT_POLL_INTERVAL_S),
 					validate: (value) => {
 						const parsed = parseInt(value, 10);
-						return isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S
-							? `Enter a whole number of seconds, ${MIN_POLL_INTERVAL_S} or more.`
+						return isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S || parsed > MAX_POLL_INTERVAL_S
+							? `Enter a whole number of seconds, from ${MIN_POLL_INTERVAL_S} to ${MAX_POLL_INTERVAL_S}.`
 							: undefined;
 					},
 				},

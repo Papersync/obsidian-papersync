@@ -1,4 +1,4 @@
-import { formatDateWithPattern, getDailyNotesConfig } from '@/utils/daily-notes';
+import { defaultNotesFolder, formatDateWithPattern, getDailyNotesConfig } from '@/utils/daily-notes';
 
 describe('formatDateWithPattern', () => {
 	const date = new Date('2026-04-12T14:30:00.000Z');
@@ -48,6 +48,28 @@ describe('formatDateWithPattern', () => {
 
 	it('treats digits and punctuation as token boundaries', () => {
 		expect(formatDateWithPattern(date, 'Q1_YYYY.MM')).toBe('Q1_2026.04');
+	});
+
+	it('keeps folder names made only of single-letter tokens (MD, DM)', () => {
+		expect(formatDateWithPattern(date, 'Notes/MD/DM/MDM')).toBe('Notes/MD/DM/MDM');
+	});
+
+	it('still formats single-letter tokens beside a longer one', () => {
+		expect(formatDateWithPattern(date, 'YYYYMD')).toBe('2026412');
+	});
+});
+
+describe('defaultNotesFolder', () => {
+	it('uses the Daily Notes folder when Daily Notes is on', () => {
+		expect(defaultNotesFolder({ enabled: true, folder: 'Journal', format: 'YYYY-MM-DD' })).toBe('Journal');
+	});
+
+	it('uses / for a Daily Notes folder at the vault root', () => {
+		expect(defaultNotesFolder({ enabled: true, folder: '', format: 'YYYY-MM-DD' })).toBe('/');
+	});
+
+	it('uses Papersync when Daily Notes is off', () => {
+		expect(defaultNotesFolder({ enabled: false, folder: '', format: 'YYYY-MM-DD' })).toBe('Papersync');
 	});
 });
 
