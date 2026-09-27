@@ -178,8 +178,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		const { isFolderMissing } = this.getConnectionState();
 		if (this.shownFolderMissing !== null && this.shownFolderMissing !== isFolderMissing) {
 			this.shownFolderMissing = isFolderMissing;
-			this.refresh();
-			return;
+			this.swapFolderState();
+			// Fall through: on 1.13+ the rows were not re-rendered, so the connected
+			// row coming back still carries the status text from before the loss.
 		}
 		if (!this.syncButton || !this.syncDesc) {return;}
 		const { status, pendingCount } = this.plugin.syncState.snapshot;
@@ -250,6 +251,24 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			return;
 		}
 		this.display();
+	}
+
+	// Swap the picker and the connected row after the folder went missing or came
+	// back. On 1.13+ every row is already rendered, hidden or not, so this is only
+	// a visibility change: refreshDomState() re-runs the visible() predicates and
+	// touches nothing else. A full update() would re-render every row, the
+	// template editor included, and take focus from whatever the user is typing
+	// in. Before 1.13 only the Sync tab shows connection state: re-render when it
+	// is on screen, and otherwise let the tab switch paint it fresh.
+	private swapFolderState(): void {
+		const declarative = (this as unknown as { refreshDomState?: () => void });
+		if (this.isDeclarative && typeof declarative.refreshDomState === 'function') {
+			declarative.refreshDomState();
+			return;
+		}
+		if (this.activeTab === 'sync') {
+			this.refresh();
+		}
 	}
 
 	// The handlers below are shared by both render paths. Only the rendering is
@@ -364,6 +383,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		if (this.previewDebounce !== null) {
 			window.clearTimeout(this.previewDebounce);
 			this.previewDebounce = null;
+			// The debounce is also what persists template edits. Flush, don't drop:
+			// closing the settings (or a re-render) within 250 ms of a keystroke used
+			// to leave that edit in memory only.
+			this.plugin.saveSettings().catch(console.error);
 		}
 	}
 
@@ -975,8 +998,16 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				// and live preview are identical on both paths by construction, and a
 				// declarative re-expression would be a second thing to keep in step.
 				setting.settingEl.addClass('papersync-template-row');
-				this.renderTemplateSection(setting.settingEl.createDiv());
-				return () => this.teardownPreview();
+				// The editor lives outside controlEl, which is all Setting.clear()
+				// empties before 1.13 re-renders a row. Remove it in the cleanup, or
+				// every update() stacks another live editor (and its listeners) on top
+				// of the old one.
+				const host = setting.settingEl.createDiv();
+				this.renderTemplateSection(host);
+				return () => {
+					this.teardownPreview();
+					host.remove();
+				};
 			},
 		}];
 	}

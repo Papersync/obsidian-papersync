@@ -217,4 +217,41 @@ describe('Missing Papersync folder', function () {
 		const ui = await waitForUi((u) => u.connectedRow, 'the connected row did not survive Reset settings');
 		expect(ui.warning).toBeNull();
 	});
+
+	it('leaves the template editor alone while the folder goes and comes back', async function () {
+		// 1.13+ re-renders a row on update() by clearing only its controlEl, and the
+		// template editor lives outside it: a full re-render per flip used to stack a
+		// second live editor on the first (and lose what was typed in the old one).
+		// Before 1.13, a flip rebuilt the whole modal under the open Template tab.
+		await openPluginSettings();
+		await clickSettingsTab('Template');
+		const editor = await browser.$('.papersync-template-editor');
+		await editor.waitForExist({ timeout: 10_000 });
+		const typed = `## E2E flip ${path.basename(dir)}\n\n{{ps_markdown}}`;
+		await editor.setValue(typed);
+
+		const editors = async (): Promise<{ count: number; values: string[] }> => {
+			await focusSettingsUI();
+			return browser.execute(() => {
+				const all = Array.from(document.querySelectorAll('.papersync-template-editor')) as HTMLTextAreaElement[];
+				return { count: all.length, values: all.map((e) => e.value) };
+			});
+		};
+
+		fs.rmSync(dir, { recursive: true, force: true });
+		await browser.waitUntil(async () => (await forceSyncStatus()).status === 'error', { timeout: 20_000, interval: 1000 });
+		fs.mkdirSync(dir, { recursive: true });
+		await browser.waitUntil(async () => {
+			await switchToMainWindow();
+			return browser.execute(() => {
+				const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { syncState?: { status: string } }> } } }).app.plugins.plugins;
+				return (ps['papersync'] ?? ps['obsidian-papersync'])?.syncState?.status === 'synced';
+			});
+		}, { timeout: 30_000, interval: 500, timeoutMsg: 'the folder never came back' });
+
+		const after = await editors();
+		expect(after.count).toBe(1);
+		expect(after.values[0]).toBe(typed);
+	});
 });
+
