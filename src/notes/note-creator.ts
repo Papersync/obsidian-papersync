@@ -7,6 +7,13 @@ import { getDailyNotesConfig, formatDateWithPattern } from '@/utils/daily-notes'
 import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
 
+// obsidian.d.ts types its `moment` export as `typeof Moment` from
+// `import * as Moment from 'moment'`. Under esModuleInterop (TypeScript 6's
+// default) a namespace import of an `export =` module is not callable, although
+// the runtime value is the moment function. Describe the one call made here
+// rather than depend on moment's typings directly (it is only a transitive dep).
+const momentOf = moment as unknown as (date: Date) => { format(pattern: string): string };
+
 export interface NoteCreatorConfig {
 	templateString: string;
 	targetFolder: string;
@@ -37,7 +44,7 @@ export class NoteCreator {
 		// (arbitrary format string incl. month names, time tokens, escaped literals, '/').
 		// A hand-rolled Y/M/D replacer diverges (e.g. `MMMM D, YYYY` -> "0707 5, 2026")
 		// and writes a garbage parallel note instead of appending to the real one.
-		const dateShort = moment(createdDate).format(dailyConfig.format);
+		const dateShort = momentOf(createdDate).format(dailyConfig.format);
 		const h24 = createdDate.getHours();
 		const minutes = String(createdDate.getMinutes()).padStart(2, '0');
 		const time24 = `${String(h24).padStart(2, '0')}:${minutes}`;

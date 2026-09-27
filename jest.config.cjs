@@ -41,6 +41,9 @@ module.exports = {
 				// 'bundler' + relative paths rather than the legacy 'node' resolution
 				// and baseUrl: TypeScript 6 rejects both (TS5107 / TS5101).
 				moduleResolution: 'bundler',
+				// ts-jest emits (tsc -noEmit does not), and TypeScript 6 requires an
+				// explicit rootDir for that (TS5011); src/ and tests/ share the root.
+				rootDir: '.',
 				allowSyntheticDefaultImports: true,
 				esModuleInterop: true,
 				paths: {
