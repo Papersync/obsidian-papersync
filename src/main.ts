@@ -219,13 +219,11 @@ export default class PaperSyncPlugin extends Plugin {
 			// Drive legs of a sync can never resolve against two different snapshots of
 			// the endpoint seam.
 			const backend = new DriveBackend(this.oauthManager, this.settings.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
-			this.syncEngine = new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState);
-			this.syncEngine.start();
+			this.startEngine(new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState));
 			logger.info('Drive sync started');
 		} else if (this.settings.backendType === 'folder' && this.settings.folderPath) {
 			const backend = new FolderBackend(this.settings.folderPath);
-			this.syncEngine = new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState);
-			this.syncEngine.start();
+			this.startEngine(new SyncEngine(backend, this.app, noteConfig, this.errorHandler, this.syncState));
 			logger.info('Folder sync started');
 		} else {
 			logger.info('No backend configured or authenticated — sync not started');
@@ -234,6 +232,18 @@ export default class PaperSyncPlugin extends Plugin {
 			// instead of silently showing "synced".
 			this.syncState.setStatus('error');
 		}
+	}
+
+	// A fresh engine runs on a fresh state that has not notified anyone yet. Left
+	// alone, the status bar keeps whatever the previous engine last said (typically
+	// "Papersync: error" after a missing folder is picked again) and the
+	// transition gate swallows this engine's first error Notice. Re-open the gate
+	// before starting, then paint the new state's current snapshot.
+	private startEngine(engine: SyncEngine): void {
+		this.syncEngine = engine;
+		this.lastStatus = null;
+		engine.start();
+		this.onSyncStateChanged(this.syncState.snapshot);
 	}
 
 	private onSyncStateChanged(snap: SyncStateSnapshot): void {
