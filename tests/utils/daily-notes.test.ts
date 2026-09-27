@@ -36,6 +36,19 @@ describe('formatDateWithPattern', () => {
 		const jan = new Date('2026-01-05T00:00:00.000Z');
 		expect(formatDateWithPattern(jan, 'YYYY/MM/DD')).toBe('2026/01/05');
 	});
+
+	it('formats run-together tokens', () => {
+		expect(formatDateWithPattern(date, 'Scans/YYYYMMDD')).toBe('Scans/20260412');
+	});
+
+	it('leaves words that merely contain token letters intact', () => {
+		expect(formatDateWithPattern(date, 'SUMMARY/ADDRESS/MYDD/Daily')).toBe('SUMMARY/ADDRESS/MYDD/Daily');
+		expect(formatDateWithPattern(date, 'SUMMARY YYYY')).toBe('SUMMARY 2026');
+	});
+
+	it('treats digits and punctuation as token boundaries', () => {
+		expect(formatDateWithPattern(date, 'Q1_YYYY.MM')).toBe('Q1_2026.04');
+	});
 });
 
 describe('getDailyNotesConfig', () => {

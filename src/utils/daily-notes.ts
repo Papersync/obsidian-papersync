@@ -46,17 +46,24 @@ export function getDailyNotesConfig(app: App): DailyNotesConfig {
 	}
 }
 
-export function formatDateWithPattern(date: Date, pattern: string): string {
-	const year = date.getFullYear();
-	const month = String(date.getMonth() + 1).padStart(2, '0');
-	const day = String(date.getDate()).padStart(2, '0');
+type DateToken = 'YYYY' | 'YY' | 'MM' | 'DD' | 'M' | 'D';
+const DATE_TOKEN = /YYYY|YY|MM|DD|M|D/g;
+const ALL_DATE_TOKENS = /^(?:YYYY|YY|MM|DD|M|D)+$/;
 
-	// Replace longer tokens first to avoid greedy partial matches (MM before M, DD before D)
-	return pattern
-		.replace(/YYYY/g, String(year))
-		.replace(/YY/g, String(year).slice(2))
-		.replace(/MM/g, month)
-		.replace(/DD/g, day)
-		.replace(/(?<![A-Za-z])M(?![A-Za-z])/g, String(date.getMonth() + 1))
-		.replace(/(?<![A-Za-z])D(?![A-Za-z])/g, String(date.getDate()));
+export function formatDateWithPattern(date: Date, pattern: string): string {
+	const year = String(date.getFullYear());
+	const values: Record<DateToken, string> = {
+		YYYY: year,
+		YY: year.slice(2),
+		MM: String(date.getMonth() + 1).padStart(2, '0'),
+		DD: String(date.getDate()).padStart(2, '0'),
+		M: String(date.getMonth() + 1),
+		D: String(date.getDate()),
+	};
+
+	// Only a run of letters made entirely of tokens is a date ("YYYY", "YYYYMMDD");
+	// any other word is a literal folder name, so "SUMMARY" and "ADDRESS" survive.
+	// The alternation lists longer tokens first (YYYY before YY, MM before M).
+	return pattern.replace(/[A-Za-z]+/g, (run) =>
+		ALL_DATE_TOKENS.test(run) ? run.replace(DATE_TOKEN, (token) => values[token as DateToken]) : run);
 }
