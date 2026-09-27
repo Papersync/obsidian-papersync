@@ -1,0 +1,12 @@
+# GitHub Actions only. npm updates are planned batches here (dependency pins,
+# lockstep groups like @wdio/*, a main.js size budget), so they stay manual;
+# security advisories still surface through Dependabot alerts.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ['*']

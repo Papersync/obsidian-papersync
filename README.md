@@ -84,7 +84,8 @@ All variables are namespaced under `ps_` so they never clash with Obsidian's cor
 ```bash
 npm install
 npm run dev        # watch build
-npm test           # unit tests + coverage
+npm test           # unit tests
+npm run test:coverage  # unit tests + the 100% coverage gate CI enforces
 npm run test:e2e   # end-to-end against a real Obsidian
 npm run build      # production build
 ```

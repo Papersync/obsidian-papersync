@@ -5,16 +5,35 @@ on:
     branches: [master]
   pull_request:
     branches: [master]
+  # Weekly, so a new Obsidian release (the E2E 'latest' row resolves it at run
+  # time) or a runner-image change is caught without waiting for the next push.
+  # 1.13.6 and 1.13.7 shipped during an 8-week gap with no run.
+  schedule:
+    - cron: '17 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    # Pinned: ubuntu-latest moves to 26.04 from 2026-10-19, where wdio workers
+    # spawned through xvfb-run die with "write EINVAL" (webdriverio #15685).
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
         with:
-          node-version: '24'
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
           cache: 'npm'
 
       - run: npm ci
@@ -25,8 +44,16 @@ jobs:
       - name: Type check
         run: npm run tsc
 
-      - name: Unit tests
-        run: npm test
+      # Production dependencies only: what can reach main.js. Dev/E2E tooling
+      # advisories are tracked through Dependabot alerts instead, since several
+      # have no upstream fix yet and would keep this red for nothing we ship.
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=moderate
+
+      # --coverage is what activates jest.config.cjs's 100/100/100/100
+      # coverageThreshold; plain `npm test` never enforced it in CI.
+      - name: Unit tests (coverage gate)
+        run: npm run test:coverage
 
       - name: Build
         run: npm run build
@@ -41,7 +68,7 @@ jobs:
           fi
 
       - name: Archive build artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: plugin-dist
           path: |
@@ -50,30 +77,56 @@ jobs:
             styles.css
 
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: verify
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-node@v6
+      - uses: actions/checkout@v7
         with:
-          node-version: '24'
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
           cache: 'npm'
 
       - run: npm ci
       - run: npm run build
 
+      # Key the cache on what it holds: the Obsidian app + installer versions the
+      # two capability rows resolve to today (e.g. 1.13.4+1.5.8_1.13.7+1.13.7).
+      # An exact hit skips the save; a new Obsidian release misses, restores the
+      # previous cache, downloads only what changed, and saves once. (A fixed key
+      # never refreshed; a per-run key re-uploaded ~1 GB on every run.)
+      - name: Resolve Obsidian versions
+        id: obsidian
+        run: |
+          VERSIONS=$(node --input-type=module -e "
+            import os from 'node:os';
+            import path from 'node:path';
+            import ObsidianLauncher from 'obsidian-launcher';
+            const launcher = new ObsidianLauncher({ cacheDir: path.join(os.tmpdir(), 'obsidian-versions') });
+            const rows = [['earliest', 'earliest'], ['latest', 'latest']];
+            const out = [];
+            for (const [app, installer] of rows) out.push((await launcher.resolveVersion(app, installer)).join('+'));
+            console.log(out.join('_'));
+          ")
+          echo "Obsidian capability rows: $VERSIONS"
+          echo "versions=$VERSIONS" >> "$GITHUB_OUTPUT"
+
       - name: Cache Obsidian binaries
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: .obsidian-cache
-          key: obsidian-${{ hashFiles('manifest.json') }}
-          restore-keys: obsidian-
+          key: obsidian-${{ runner.os }}-${{ steps.obsidian.outputs.versions }}
+          restore-keys: obsidian-${{ runner.os }}-
 
+      # The suite sets DISPLAY itself, so wdio never wraps workers in xvfb-run.
       - name: Setup virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb herbstluftwm
+          sudo apt-get install -y xvfb herbstluftwm x11-xserver-utils
           Xvfb :99 -screen 0 1920x1080x24 &
           sleep 1
           DISPLAY=:99 herbstluftwm &
@@ -81,6 +134,8 @@ jobs:
         env:
           DISPLAY: ':99'
 
+      # The obsidian reporter prints each capability row's resolved Obsidian and
+      # installer versions ("Running: obsidian vX (installer: vY)").
       - name: Run E2E tests
         run: npm run test:e2e
         env:

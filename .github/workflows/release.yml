@@ -5,28 +5,80 @@ on:
     tags:
       - '[0-9]+.[0-9]+.[0-9]+'
 
-jobs:
-  release:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v6
+permissions:
+  contents: read
 
-      - uses: actions/setup-node@v6
+jobs:
+  # Everything that runs npm (and so dependency install scripts) happens here,
+  # with a read-only token and no persisted git credentials.
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
         with:
-          node-version: '24'
-          cache: 'npm'
+          persist-credentials: false
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          check-latest: true
+
+      # A tag that disagrees with manifest.json would publish a release whose
+      # assets Obsidian resolves under the wrong version.
+      - name: Tag matches manifest version
+        run: |
+          MANIFEST_VERSION=$(jq -r .version manifest.json)
+          if [ "$MANIFEST_VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match manifest.json version $MANIFEST_VERSION"
+            exit 1
+          fi
 
       - run: npm ci
-      - run: npm test
+      - run: npm run lint
+      - run: npm run tsc
+      - run: npm run test:coverage
       - run: npm run build
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Bundle size check
+        run: |
+          SIZE=$(stat -c%s main.js)
+          echo "Bundle size: ${SIZE} bytes"
+          if [ "$SIZE" -gt 512000 ]; then
+            echo "::error::main.js exceeds the 500KB budget"
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v7
         with:
-          draft: true
-          files: |
+          name: release-assets
+          path: |
             main.js
             manifest.json
             styles.css
+
+  # Only this job can write, and it runs no project code: it attaches the built
+  # files to a draft release with the GitHub CLI (Obsidian's documented pattern).
+  publish:
+    runs-on: ubuntu-24.04
+    needs: build
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+
+      # Idempotent: a re-run (or a re-pushed tag) refreshes the assets of the
+      # existing draft instead of failing or creating a second draft.
+      - name: Create or update the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
+            gh release upload "$GITHUB_REF_NAME" main.js manifest.json styles.css --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css \
+              --repo "$GITHUB_REPOSITORY" --draft --title "$GITHUB_REF_NAME" --generate-notes
+          fi
