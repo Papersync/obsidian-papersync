@@ -452,6 +452,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			['{{ps_scan_date_short}}', 'Scan date per Daily Notes format'],
 			['{{ps_scan_date}}', 'Full scan ISO timestamp'],
 			['{{ps_confidence}}', 'AI score (0-100)'],
+			['{{ps_provider}}', 'AI provider used (claude)'],
+			['{{ps_model}}', 'Model used (claude-sonnet-4)'],
 		];
 		for (const [token, desc] of vars) {
 			const row = varList.createEl('tr');
