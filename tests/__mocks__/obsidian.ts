@@ -14,12 +14,13 @@ export class Notice {
 	constructor(public message: string, public timeout?: number) {}
 }
 
-// In-memory stand-in for Obsidian's OS-integrated SecretStorage (1.11.4+). Map-backed,
-// synchronous, no deleteSecret (clear via setSecret(id, "")). Set `unavailable = true`
-// to force every call to throw, simulating an absent OS backend (headless CI, Linux
-// without a Secret Service). Set `silentNoop = true` to make setSecret a silent no-op
-// (no throw, no store) — the "locked backend that quietly drops the write" case the
-// read-back verify in writeSecret must catch. Both exercise the guarded degrade paths.
+// In-memory stand-in for Obsidian's SecretStorage (1.11.4+). Map-backed, synchronous,
+// no deleteSecret (clear via setSecret(id, "")). Set `unavailable = true` to force
+// every call to throw, simulating a backend Obsidian reports as absent. Set
+// `silentNoop = true` to make setSecret a silent no-op (no throw, no store) — a
+// backend that quietly drops the value, which the read-back in writeSecret catches.
+// Both exercise the guarded degrade paths. Neither models a missing OS secret store:
+// there real Obsidian accepts the write and stores it unencrypted.
 export class SecretStorage {
 	private store = new Map<string, string>();
 	unavailable = false;

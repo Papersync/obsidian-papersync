@@ -48,7 +48,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 			return {
 				backendType: plugin.settings.backendType,
 				setupComplete: plugin.settings.setupComplete,
-				// The refresh token now lives in OS secret storage, not settings/data.json.
+				// The refresh token now lives in Obsidian's secret storage, not settings/data.json.
 				// The in-memory oauthManager.refreshToken is the ground truth for "a token is
 				// present": after a reload it is non-empty only if restore succeeded from
 				// secret storage. A stray plaintext token in data.json is discarded on load
@@ -118,17 +118,19 @@ describe('Drive OAuth + sync against fake Google', function () {
 			if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
 			plugin.settings.backendType = 'drive';
 			plugin.settings.setupComplete = true;
-			// Seed the token into OS secret storage — the exact restore precondition a
-			// reload reads from (the real restore path). There is no plaintext staging: the
-			// token never lives in settings/data.json.
+			// Seed the token into Obsidian's secret storage — the exact restore precondition
+			// a reload reads from (the real restore path). There is no plaintext staging: the
+			// token never lives in settings/data.json. The harness launches Obsidian with a
+			// mock keychain, so no spec here touches the real OS key store.
 			plugin.app.secretStorage.setSecret(secretId, token);
 			await plugin.saveSettings();
 		}, refreshToken, OAUTH_TOKEN_SECRET_ID);
 	}
 
-	// The token the plugin actually PERSISTED to OS secret storage — the ground truth
-	// for "the write landed", distinct from the in-memory oauthManager.refreshToken
-	// (which is set regardless of whether the secret-storage write succeeded).
+	// The token as Obsidian's secret storage holds it — distinct from the in-memory
+	// oauthManager.refreshToken (which is set regardless of whether the secret-storage
+	// write succeeded). getSecret answers from Obsidian's in-memory copy, so this shows
+	// the plugin handed the token over, not that it reached disk.
 	async function persistedSecret(): Promise<string | null> {
 		await switchToMainWindow();
 		return browser.execute((secretId: string) => {
@@ -258,7 +260,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 			plugin.oauthManager?.disconnect();
 			plugin.settings.backendType = 'none';
 			plugin.settings.setupComplete = false;
-			// Clear the token from its only home — OS secret storage (disconnect already
+			// Clear the token from its only home — secret storage (disconnect already
 			// cleared it; this is belt-and-braces). The vault's data.json is shared across
 			// spec files, so leave no drive credential behind.
 			try { plugin.app.secretStorage.setSecret(secretId, ''); } catch { /* backend absent */ }
@@ -359,10 +361,10 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(s.setupComplete).toBe(true);
 		expect(s.refreshToken.startsWith('refresh-')).toBe(true); // in-memory fake-issued token
 
-		// Prove the token was actually PERSISTED into OS secret storage — not merely held
-		// in memory. oauthManager.refreshToken is set the moment the token exchange returns,
-		// regardless of whether the secretStorage write landed; only a read-back of the
-		// stored secret proves the "never plaintext, always durable" contract.
+		// Prove the token was handed to secret storage — not merely held by the plugin.
+		// oauthManager.refreshToken is set the moment the token exchange returns,
+		// regardless of whether the secretStorage write was accepted; reading the stored
+		// secret back shows the plugin wrote it there and nowhere else.
 		const persisted = await persistedSecret();
 		expect(persisted).toBe(s.refreshToken);
 		expect(persisted?.startsWith('refresh-')).toBe(true);
@@ -518,7 +520,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// Read-back symmetry with the Connect happy path's persistedSecret() assertion:
 		// prove the STORED secret was actually cleared to empty, not merely the in-memory
 		// oauthManager.refreshToken. A cleared secret reads back as "" (or absent) since
-		// the SecretStorage API has no deleteSecret.
+		// the public SecretStorage API has no deleteSecret.
 		const persistedAfterRevoke = await persistedSecret();
 		expect(persistedAfterRevoke ?? '').toBe('');
 
@@ -555,14 +557,14 @@ describe('Drive OAuth + sync against fake Google', function () {
 		await clickButtonWhenPresent('Change Storage');
 
 		// The disconnect POSTed the refresh token to the fake /revoke endpoint — a real
-		// server-side sign-out, fired BEFORE the local clear.
+		// server-side sign-out, fired AFTER the local clear with the captured token.
 		await browser.waitUntil(async () => fake.revokedTokens.includes(refreshToken), {
 			timeout: 15000, interval: 250,
 			timeoutMsg: 'Disconnect never revoked the refresh token at the fake Google /revoke endpoint',
 		});
 
-		// Local teardown still completed after the revoke: token gone from memory AND from
-		// OS secret storage (the revoke is best-effort, the local clear is unconditional).
+		// Local teardown completed: token gone from memory AND from secret storage
+		// (the revoke is best-effort, the local clear is unconditional and runs first).
 		await browser.waitUntil(async () => {
 			const s = await state();
 			return !s.isAuthenticated && s.refreshToken === '';

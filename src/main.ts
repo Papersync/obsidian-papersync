@@ -129,7 +129,7 @@ export default class PaperSyncPlugin extends Plugin {
 			// re-persist needed) makes a stale or tampered data.json self-heal instead of
 			// steering OAuth/Drive traffic at whatever host the file names.
 			delete raw.endpointOverrides;
-			// The refresh token lives in OS secret storage, never data.json. The plugin is
+			// The refresh token lives in Obsidian's secret storage, never data.json. The plugin is
 			// unpublished, so there is no token worth migrating — just discard any stray
 			// plaintext copy a pre-secret-storage dogfood build may have left behind (those
 			// devices reconnect once). The migrateSettings v3 step also strips it, but this
@@ -174,12 +174,13 @@ export default class PaperSyncPlugin extends Plugin {
 		// plugin load, before the E2E seam (settings.endpointOverrides) can be written.
 		this.oauthManager = new OAuthManager(this, GOOGLE_CLIENT_ID, () => this.settings.endpointOverrides);
 		this.oauthManager.setOnTokenChange((token) => {
-			// The refresh token lives in OS secret storage, never data.json. An empty string
-			// (disconnect / revoke) clears it — the SecretStorage API has no deleteSecret.
+			// The refresh token lives in Obsidian's secret storage, never data.json. An empty
+			// string (disconnect / revoke) clears it — the public SecretStorage API has no
+			// deleteSecret.
 			const ok = writeSecret(this.app, OAUTH_TOKEN_SECRET_ID, token);
-			// A non-empty token that could not persist means Drive works this session but
-			// won't survive a restart. Tell the user to reconnect — never fall back to
-			// plaintext. A failed CLEAR (empty token) is log-only: the in-memory copy is
+			// A non-empty token that secret storage rejected means Drive works this session
+			// but won't survive a restart. Tell the user to reconnect — never fall back to
+			// data.json. A failed CLEAR (empty token) is log-only: the in-memory copy is
 			// already gone, so there is nothing for the user to act on.
 			if (!ok && token) {
 				new Notice(STRINGS.NOTICE_SECRET_STORAGE_UNAVAILABLE, 0);

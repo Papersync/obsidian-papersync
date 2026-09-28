@@ -25,7 +25,7 @@ export const DEFAULT_GOOGLE_ENDPOINTS: GoogleEndpoints = {
 export const GOOGLE_SCANS_FOLDER = 'Papersync';
 
 // Fixed id under which the Google OAuth refresh token is kept in Obsidian's
-// OS-integrated Secret Storage (app.secretStorage), NOT plaintext data.json. The id
+// secret storage (app.secretStorage), NOT plaintext data.json. The id
 // must be lowercase-alphanumeric-with-dashes — setSecret throws on an invalid id.
 export const OAUTH_TOKEN_SECRET_ID = 'papersync-oauth-refresh-token';
 

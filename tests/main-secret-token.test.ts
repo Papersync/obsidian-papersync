@@ -1,8 +1,8 @@
-// The Google OAuth refresh token is persisted in Obsidian's OS secret storage
+// The Google OAuth refresh token is kept in Obsidian's secret storage
 // (app.secretStorage), never in plaintext data.json. These tests exercise the main.ts
 // wiring: write-on-token-change, restore-from-secret, disconnect clearing, the
-// reconnect Notice when a token write cannot persist, and graceful degrade when the OS
-// backend is unavailable. The plugin is unpublished, so there is NO legacy-plaintext
+// reconnect Notice when secret storage rejects a token write, and graceful degrade when
+// the backend is unavailable. The plugin is unpublished, so there is NO legacy-plaintext
 // migration to test. main.ts is excluded from coverage; these verify behavior.
 
 import * as obsidian from 'obsidian';
