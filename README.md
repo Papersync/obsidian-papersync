@@ -42,7 +42,7 @@ Scans already waiting are imported as soon as you connect, so edit the template 
 ## Privacy
 
 - Folder sync makes no network requests.
-- Google Drive sync talks only to Google (`accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`) with the `drive.file` scope, so it sees only files Papersync created. The sign-in token is kept in your OS credential store through Obsidian's secret storage. Details in [SECURITY.md](SECURITY.md).
+- Google Drive sync talks only to Google (`accounts.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`) with the `drive.file` scope, so it sees only files Papersync created. The sign-in token is kept in Obsidian's secret storage, never in `data.json`. Details in [SECURITY.md](SECURITY.md).
 - No telemetry or analytics.
 
 <!-- GO PUBLIC: delete this section once the plugin is listed in the community directory. -->

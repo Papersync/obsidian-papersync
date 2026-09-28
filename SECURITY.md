@@ -4,8 +4,9 @@
 
 Please do not open a public issue for security problems. Report privately via
 this repository's GitHub "Report a vulnerability" (Security advisories) page, or
-contact the maintainer through the profile linked in `manifest.json`. We aim to
-respond within a few days.
+email contact@papersync.ai. We aim to respond within a few days.
+
+Fixes ship in the latest release only. Update before reporting if you can.
 
 ## The Google OAuth client secret is intentionally in the source
 
@@ -22,6 +23,7 @@ type, Google documents that the client secret is not confidential:
 
 > "Installed apps are distributed to individual devices, and it is assumed that
 > these apps cannot keep secrets."
+> (developers.google.com/identity/protocols/oauth2/native-app)
 
 The secret is embedded in every shipped build (`main.js`) by design, so moving
 it to an environment variable would change nothing while breaking
@@ -32,40 +34,67 @@ it to an environment variable would change nothing while breaking
 Security does not rest on the secret being hidden. It rests on:
 
 - **PKCE (S256):** a stolen authorization code is useless without the
-  per-session code verifier, which never leaves your device.
+  per-session code verifier, which is sent only to Google, over TLS, when the
+  code is exchanged.
 - **Loopback redirect:** the authorization code is delivered only to a local
   server on your own machine.
 - **Per-user consent:** each user grants access through Google's own screen.
 - **`drive.file` scope:** Papersync can only see files it created, not your
   whole Drive.
-- **OS-integrated secret storage:** your Google refresh token is stored through
-  Obsidian's `secretStorage` API, which keeps it in your operating system's
-  credential vault (macOS Keychain, Windows Credential Manager, Linux Secret
-  Service) — **not** in plaintext `data.json`, ever. The short-lived access token
-  lives only in memory. Neither is ever transmitted to us (there is no Papersync
-  server). Because the credential vault is device-local, the refresh token does
-  not travel with your synced vault; connect Google Drive once per device.
-  If the OS credential vault cannot **save** the token (for example during connect
-  or a token refresh on a Linux desktop with no Secret Service), the token is kept
-  in memory for that session only, so Drive works until you restart Obsidian, and
-  the plugin prompts you to reconnect; the reconnect prompt fires precisely when a
-  token fails to persist. On a cold start where the stored token cannot be **read**
-  (for example the vault is locked at launch), there is no prompt: Drive simply
-  stays disconnected and surfaces the normal sync-error status until you reconnect.
-  In every case the token is never written to plaintext as a fallback. The rest of
-  `data.json` (sync preferences, folder paths) holds no credentials, but it is
-  still gitignored — treat your vault as private data.
-- **Real disconnect (server-side revocation):** disconnecting Drive (Change
-  Storage, or a settings reset) is a genuine sign-out, not just a local wipe.
-  Papersync clears the token from your device first, then posts it to Google's
-  revocation endpoint (`oauth2.googleapis.com/revoke`), which kills the long-lived
-  refresh token server-side. Any already-issued access token is short-lived (about
-  an hour) and is also cleared locally on disconnect. This is best-effort. If
-  you disconnect while offline the local clear still completes, but the refresh
-  token stays valid at Google until it expires on its own or you revoke it manually from your
-  Google Account settings; the failure is logged, never surfaced as an error. A
-  revoked token that somehow reappears on a later load self-heals on first use,
-  when Google rejects it with `invalid_grant` and the plugin clears it again.
+- **No Papersync server:** your tokens are sent to Google and nowhere else.
+
+### Where your sign-in token is stored
+
+- Your Google refresh token is saved through Obsidian's `secretStorage` API.
+  Papersync never writes it to `data.json`. The short-lived access token lives
+  only in memory.
+- Obsidian keeps its secrets in its own app data on your device, outside your
+  vault, encrypted with a key that your operating system protects: the macOS
+  Keychain, Windows DPAPI, or a Linux secret store such as GNOME Keyring or
+  KWallet. The token itself is not an entry in those stores.
+- Because that storage is device-local, the token does not travel with your
+  synced vault. Connect Google Drive once per device.
+- You can see the entry, named `papersync-oauth-refresh-token`, in Obsidian
+  under Settings, Keychain.
+
+Know the limits of that storage:
+
+- **No secret store, no encryption.** If your system offers no secret store
+  (some Linux setups), Obsidian stores its secrets unencrypted and shows a
+  warning in its Keychain settings. Papersync cannot detect this, so check
+  there if you are unsure.
+- **Other plugins can read it.** Obsidian's secret storage is shared by every
+  plugin in the vault. Install only plugins you trust.
+- **Other programs on Windows.** DPAPI protects the key from other user
+  accounts, not from other programs running as you.
+
+If Obsidian refuses to store the token, Papersync keeps it in memory for that
+session only and asks you to reconnect. If the stored token cannot be read at
+startup (for example, a locked keychain), Drive stays disconnected and shows the
+normal sync-error status until you reconnect.
+
+The rest of `data.json` (sync preferences, folder paths) holds no credentials.
+It sits in your vault under `.obsidian/plugins/papersync/` and goes wherever
+your vault is synced or backed up.
+
+### Disconnecting
+
+- **Change Storage** and **Full reset** sign you out for real. Papersync clears
+  the token from your device first, then posts it to Google's revocation
+  endpoint (`oauth2.googleapis.com/revoke`), which kills the refresh token
+  server-side. Any access token already issued expires within about an hour.
+  **Reset settings** keeps your account connected.
+- **Revocation is best-effort.** If you disconnect while offline, the local
+  clear still completes, but the refresh token stays valid at Google until you
+  [remove Papersync's access](https://support.google.com/accounts/answer/3466521#remove-access)
+  in your Google Account, or Google expires it after six months without use.
+  The failure is logged, never surfaced as an error.
+- **Uninstalling does not disconnect.** Use Change Storage first. Otherwise the
+  token stays in Obsidian's Keychain settings and stays valid at Google; remove
+  it in both places yourself.
+- A revoked token that somehow reappears on a later load self-heals on first
+  use, when Google rejects it with `invalid_grant` and the plugin clears it
+  again.
 
 ### For contributors and security scanners
 
@@ -73,4 +102,5 @@ Automated secret scanners (including GitHub secret scanning) may flag the
 `GOCSPX-` value. That is expected. The credential is intentionally public for
 this client type per the Google documentation above, so such alerts are not
 actionable and the secret should not be rotated reactively. Rotating it would
-break token refresh for every already-installed copy until users re-authorize.
+break sign-in and token refresh for every installed copy until its user updates
+to a build that carries the new secret.
