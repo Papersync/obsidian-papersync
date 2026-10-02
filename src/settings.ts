@@ -7,7 +7,6 @@ import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
-import { BRAND_WORDMARK_SVG } from '@/ui/brand-wordmark';
 import { renderTemplate, LEGACY_TOKENS } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsidian';
@@ -568,16 +567,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	getSettingDefinitions(): SettingDefinitionItem[] {
 		return [
-			{
-				name: 'Papersync',
-				searchable: false,
-				render: (setting) => {
-					setting.setClass('papersync-brand-intro');
-					setting.nameEl.empty();
-					const logo = new DOMParser().parseFromString(BRAND_WORDMARK_SVG, 'image/svg+xml');
-					setting.infoEl.appendChild(document.importNode(logo.documentElement, true));
-				},
-			},
 			{ type: 'group', heading: 'Sync', items: this.syncDefinitions() },
 			{ type: 'group', heading: 'Template', items: this.templateDefinitions() },
 			{ type: 'group', heading: 'Advanced', items: this.advancedDefinitions() },
