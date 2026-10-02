@@ -9,7 +9,7 @@ describe('bundled brand source asset', () => {
 		expect(svg.getAttribute('role')).toBe('img');
 		expect(svg.getAttribute('aria-label')).toBe('Papersync');
 		expect(svg.querySelector('title')?.textContent).toBe('Papersync');
-		expect(svg.querySelectorAll('path')).toHaveLength(3);
+		expect(svg.querySelectorAll('path')).toHaveLength(2);
 		expect(BRAND_WORDMARK_SVG).toContain('var(--text-normal)');
 		expect(BRAND_WORDMARK_SVG).toContain('var(--text-accent)');
 		expect(svg.querySelector('text, image, use, style, script, foreignObject')).toBeNull();

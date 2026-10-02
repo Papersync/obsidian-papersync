@@ -45,7 +45,6 @@ describe('Settings brand signature', function () {
 							letters: paths.length,
 							ink: getComputedStyle(paths[0]!).fill,
 							accent: getComputedStyle(paths[1]!).fill,
-							wave: getComputedStyle(paths[2]!).stroke,
 							hostInk: getComputedStyle(document.body).getPropertyValue('--text-normal').trim(),
 							name: intro.querySelector('.setting-item-name')?.textContent,
 							resources: svg.querySelectorAll('image, text, use, script, foreignObject').length,
@@ -56,10 +55,9 @@ describe('Settings brand signature', function () {
 					expect(result.width).toBeLessThanOrEqual(240);
 					expect(result.height / result.width).toBeCloseTo(185 / 600, 2);
 					expect(result.fits).toBe(true);
-					expect(result.letters).toBe(3);
+					expect(result.letters).toBe(2);
 					expect(result.resources).toBe(0);
 					expect(result.name).toBe('');
-					expect(result.accent).toBe(result.wave);
 					expect(result.ink).not.toBe(result.accent);
 					expect(result.groups.join(' ')).toContain('Sync');
 					expect(result.groups.join(' ')).toContain('Template');
