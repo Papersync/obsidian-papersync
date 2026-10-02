@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/wordmark.svg" alt="Papersync" width="280">
+</p>
+
 <h1 align="center">Papersync for Obsidian</h1>
 
 <p align="center">
