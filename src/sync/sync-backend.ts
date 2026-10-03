@@ -11,7 +11,8 @@ export interface ScanReference {
 export interface SyncBackend {
 	discoverUnsynced(): Promise<ScanReference[]>;
 	fetchScan(ref: ScanReference): Promise<ScanFile>;
-	fetchImage(ref: ScanReference): Promise<ArrayBuffer>;
+	/** null means the companion is absent, not inaccessible or offloaded. */
+	fetchImage(ref: ScanReference): Promise<ArrayBuffer | null>;
 	markSynced(ref: ScanReference, scanData?: ScanFile): Promise<void>;
 	start(): void;
 	stop(): void;

@@ -134,15 +134,30 @@ describe('SyncEngine integration', () => {
 		expect(syncState.status).toBe('synced');
 	});
 
-	it('skips scans without an image path', async () => {
+	it('imports old scans without an image path as text', async () => {
+		jest.useFakeTimers();
 		const refNoImage: ScanReference = { id: 'no-image', jsonPath: '/path.json', imagePath: '' };
 		backend = createMockBackend([refNoImage]);
-		engine = new SyncEngine(backend, { vault: mockVault, internalPlugins: { getPluginById: () => null } } as any, noteConfig, errorHandler, new SyncState(''));
+		(backend.fetchImage as jest.Mock).mockResolvedValue(null);
+		engine = new SyncEngine(
+			backend,
+			{ vault: mockVault, internalPlugins: { getPluginById: () => null } } as any,
+			noteConfig,
+			errorHandler,
+			new SyncState('')
+		);
 
 		await engine.forceSyncNow();
-
-		expect(backend.fetchScan).not.toHaveBeenCalled();
 		expect(backend.markSyncedCalls).toHaveLength(0);
+		jest.setSystemTime(Date.now()+60_000);
+		await engine.forceSyncNow();
+		engine.stop();
+		jest.useRealTimers();
+
+		expect(backend.fetchScan).toHaveBeenCalled();
+		expect(mockVault.createBinary).not.toHaveBeenCalled();
+		expect(mockVault.create.mock.calls[0][1]).not.toContain('![[');
+		expect(backend.markSyncedCalls).toHaveLength(1);
 	});
 
 	it('does not mark synced if fetch fails', async () => {
@@ -152,4 +167,77 @@ describe('SyncEngine integration', () => {
 
 		expect(backend.markSyncedCalls).toHaveLength(0);
 	});
+});
+
+it('holds the Drive cursor below a fresh missing companion then imports it after grace', async () => {
+	jest.useFakeTimers();
+	jest.setSystemTime(new Date('2026-10-03T12:00:00Z'));
+	const refs = [
+		{ id: 'waiting', jsonPath: 'j', imagePath: '', createdTime: '2026-10-03T12:00:00Z' },
+		{ id: 'later', jsonPath: 'j2', imagePath: 'img', createdTime: '2026-10-03T12:00:01Z' },
+	];
+	const backend = createMockBackend(refs);
+	backend.fetchScan = jest
+		.fn()
+		.mockResolvedValue({ ...validScanFile, createdAt: new Date().toISOString() });
+	backend.fetchImage = jest
+		.fn()
+		.mockImplementation(async (ref) => (ref.imagePath ? new ArrayBuffer(4) : null));
+	const update = jest.fn();
+	backend.updateLastSyncTimestamp = update;
+	const state = new SyncState('');
+	const engine = new SyncEngine(
+		backend,
+		{ vault: mockVault } as any,
+		noteConfig,
+		new ErrorHandler(state),
+		state
+	);
+	try {
+		await engine.forceSyncNow();
+		expect(update).not.toHaveBeenCalled();
+		expect(state.pendingCount).toBe(1);
+		jest.setSystemTime(Date.now() + 60_000);
+		await engine.forceSyncNow();
+		expect(backend.markSyncedCalls.some((ref) => ref.id === 'waiting')).toBe(true);
+		expect(update).toHaveBeenCalledWith('2026-10-03T12:00:01Z');
+	} finally {
+		engine.stop();
+		jest.useRealTimers();
+	}
+});
+
+it('stops companion polling when an expired wait hits a real image access error',async () => {
+	jest.useFakeTimers();
+	const backend=createMockBackend();
+	(backend.fetchImage as jest.Mock).mockResolvedValue(null);
+	const state=new SyncState('');
+	const engine=new SyncEngine(backend,{vault:mockVault} as any,noteConfig,new ErrorHandler(state),state);
+	try {
+		await engine.forceSyncNow();
+		jest.setSystemTime(Date.now()+60_000);
+		(backend.fetchImage as jest.Mock).mockRejectedValue(new Error('permission denied'));
+		await engine.forceSyncNow();
+		const count=(backend.discoverUnsynced as jest.Mock).mock.calls.length;
+		await jest.advanceTimersByTimeAsync(10_000);
+		expect((backend.discoverUnsynced as jest.Mock).mock.calls.length).toBe(count);
+		expect(jest.getTimerCount()).toBe(0);
+		expect(backend.markSyncedCalls).toHaveLength(0);
+	} finally{engine.stop();jest.useRealTimers();}
+});
+
+it('stops companion polling when discovery loses access to its source',async () => {
+	jest.useFakeTimers();
+	const backend=createMockBackend();
+	(backend.fetchImage as jest.Mock).mockResolvedValue(null);
+	const state=new SyncState('');
+	const engine=new SyncEngine(backend,{vault:mockVault} as any,noteConfig,new ErrorHandler(state),state);
+	try {
+		await engine.forceSyncNow();
+		(backend.discoverUnsynced as jest.Mock).mockRejectedValue(new Error('permission denied'));
+		await jest.advanceTimersByTimeAsync(60_000);
+		expect(jest.getTimerCount()).toBe(0);
+		expect(state.status).toBe('error');
+		expect(backend.markSyncedCalls).toHaveLength(0);
+	}finally{engine.stop();jest.useRealTimers();}
 });

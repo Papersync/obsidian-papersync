@@ -8,6 +8,8 @@ import { isOnline } from '@/utils/platform';
 import { logger } from '@/utils/logger';
 import { STRINGS } from '@/utils/strings';
 
+import { CompanionGrace } from '@/sync/companion-grace';
+
 const BATCH_SIZE = 10;
 
 export class SyncEngine {
@@ -16,6 +18,7 @@ export class SyncEngine {
 	private errorHandler: ErrorHandler;
 	readonly state: SyncState;
 	private pendingNetwork = new Set<string>();
+	private companionGrace = new CompanionGrace(() => this.forceSyncNow());
 	// Set when the backend reports its source gone, cleared by the next pass that
 	// can only run with the source present (a discovery that succeeded). A batch
 	// already in flight when the source went away must not finish by recording
@@ -46,10 +49,12 @@ export class SyncEngine {
 	}
 
 	start(): void {
+		this.companionGrace.resume();
 		window.addEventListener('online', this.handleOnline);
 		window.addEventListener('offline', this.handleOffline);
 
 		if (!isOnline()) {
+			this.companionGrace.pause();
 			logger.info('Starting offline — will sync when connected');
 			this.state.setStatus('offline');
 			return;
@@ -59,6 +64,7 @@ export class SyncEngine {
 	}
 
 	stop(): void {
+		this.companionGrace.pause();
 		window.removeEventListener('online', this.handleOnline);
 		window.removeEventListener('offline', this.handleOffline);
 		this.backend.stop();
@@ -77,6 +83,7 @@ export class SyncEngine {
 
 		try {
 			const refs = await this.backend.discoverUnsynced();
+			this.companionGrace.retain(refs.map((ref) => ref.id));
 			this.sourceUnavailable = false;
 			if (refs.length > 0) {
 				await this.processBatch(refs);
@@ -85,6 +92,9 @@ export class SyncEngine {
 				new Notice('All synced, nothing new');
 			}
 		} catch (err) {
+			// Stop companion polling on a real discovery/access failure; the backend
+			// retains its normal reconnect/poll recovery.
+			this.companionGrace.retain([]);
 			// Classify to surface the real reason (the Drive API body, a token issue,
 			// etc.) instead of a generic "error", both to the user and for debugging.
 			// The log always keeps the raw detail; stateMessageFor() decides what the
@@ -96,26 +106,27 @@ export class SyncEngine {
 	}
 
 	private async processBatch(refs: ScanReference[]): Promise<void> {
-		if (!this.state.tryStartSync()) {return;}
+		if (!this.state.tryStartSync()) {
+			return;
+		}
 
 		try {
-			// Read once per batch: flipping image saving mid-batch must not fetch an
-			// image for a scan the filter below let through because it had none.
+			// Read once per batch so a settings edit cannot change attachment
+			// handling halfway through a scan.
 			const downloadImages = this.noteCreator.config.downloadImages;
-			// When image download is off, image-less scans still produce notes, so the
-			// empty-imagePath drop only applies when we actually need the image.
-			const unsyncedRefs = refs
-				.filter((r) => downloadImages ? r.imagePath !== '' : true)
-				.sort((a, b) => {
-					// Order by createdTime so the persisted cursor can advance as a
-					// contiguous high-water mark (see earliestFailureTime below). Refs
-					// without a createdTime (folder backend) keep a stable id order and
-					// never touch the cursor.
-					const at = a.createdTime ?? '';
-					const bt = b.createdTime ?? '';
-					if (at !== bt) {return at < bt ? -1 : 1;}
-					return a.id.localeCompare(b.id);
-				});
+			// Missing companions stay eligible for text-only recovery after grace.
+			const unsyncedRefs = refs.slice().sort((a, b) => {
+				// Order by createdTime so the persisted cursor can advance as a
+				// contiguous high-water mark (see earliestFailureTime below). Refs
+				// without a createdTime (folder backend) keep a stable id order and
+				// never touch the cursor.
+				const at = a.createdTime ?? '';
+				const bt = b.createdTime ?? '';
+				if (at !== bt) {
+					return at < bt ? -1 : 1;
+				}
+				return a.id.localeCompare(b.id);
+			});
 			let remaining = unsyncedRefs.length;
 
 			this.state.setStatus('syncing', remaining);
@@ -142,33 +153,47 @@ export class SyncEngine {
 							const scanFile = await this.backend.fetchScan(ref);
 
 							if (scanFile.synced) {
+								this.companionGrace.complete(ref.id);
 								logger.info(`Scan ${ref.id} already synced, skipping`);
 								return 'skipped';
 							}
 
-							const imageData = downloadImages
-								? await this.backend.fetchImage(ref)
-								: null;
+							const imageData = downloadImages ? await this.backend.fetchImage(ref) : null;
+							if (
+								downloadImages &&
+								imageData === null &&
+								this.companionGrace.defer(ref.id)
+							) {
+								this.pendingNetwork.delete(ref.id);
+								return 'waiting-image';
+							}
 							await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);
 							await this.backend.markSynced(ref, scanFile);
 							this.pendingNetwork.delete(ref.id);
+							this.companionGrace.complete(ref.id);
 							return 'synced';
 						} catch (err) {
+							// Real access/write failures use normal recovery, not a one-second
+							// expired-companion poll loop.
+							this.companionGrace.complete(ref.id);
 							// A scan deleted between discovery and fetch is not a failure —
 							// the source of truth removed it. Skip without retries or notices.
 							if (isSyncError(err) && err.type === 'scan_missing') {
 								logger.info(`Scan ${ref.id} was removed from the source — skipping`);
 								this.pendingNetwork.delete(ref.id);
+								this.companionGrace.complete(ref.id);
 								return 'skipped';
 							}
 							throw err;
 						}
 					});
 
-					if (result === null) {
+					if (result === null || result === 'waiting-image') {
 						// Check if the error was icloud_offloaded — add to pending network
 						// The error handler already surfaced the notice; we just track it
-						this.pendingNetwork.add(ref.id);
+						if (result === null) {
+							this.pendingNetwork.add(ref.id);
+						}
 						// Refs are processed in ascending createdTime order, so the first failure
 						// we see is the earliest — record it once as the cursor ceiling.
 						if (ref.createdTime && earliestFailureTime === null) {
@@ -216,10 +241,10 @@ export class SyncEngine {
 			if (this.sourceUnavailable) {
 				logger.info('Batch finished after the sync source went away; keeping its error');
 			} else if (this.pendingNetwork.size > 0) {
-				this.state.recordSyncCompleted(this.pendingNetwork.size);
+				this.state.recordSyncCompleted(this.pendingNetwork.size + this.companionGrace.pendingCount);
 				new Notice(`${this.pendingNetwork.size} scan(s) waiting for download`);
 			} else {
-				this.state.recordSyncCompleted(0);
+				this.state.recordSyncCompleted(this.companionGrace.pendingCount);
 			}
 			this.errorHandler.resetRetries();
 		} finally {
@@ -229,6 +254,7 @@ export class SyncEngine {
 	}
 
 	private handleOnline = (): void => {
+		this.companionGrace.resume();
 		logger.info('Network restored — resuming sync');
 		this.state.setStatus('idle');
 		this.backend.stop();
@@ -237,6 +263,7 @@ export class SyncEngine {
 	};
 
 	private handleOffline = (): void => {
+		this.companionGrace.pause();
 		logger.info('Network lost — pausing sync');
 		this.state.setStatus('offline');
 		this.backend.stop();

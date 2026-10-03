@@ -239,36 +239,26 @@ export class FolderBackend implements SyncBackend {
 					const content = await fs.promises.readFile(jsonPath, 'utf-8');
 					const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
 
-					if (parsed.synced === true) {continue;}
+					if (parsed.synced === true) {
+						continue;
+					}
 					imageFileName =
-						parsed.imageFileName && entrySet.has(parsed.imageFileName) ? parsed.imageFileName : null;
+						parsed.imageFileName && entrySet.has(parsed.imageFileName)
+							? parsed.imageFileName
+							: null;
 				} else {
 					logger.info(`${jsonFile} is offloaded — discovering it for download`);
 				}
 
 				const candidate =
-					imageFileName
-					?? (entrySet.has(`${baseName}.jpg`) ? `${baseName}.jpg` : null)
-					?? (entrySet.has(`${baseName}.jpeg`) ? `${baseName}.jpeg` : null)
-					?? (entrySet.has(`${baseName}.png`) ? `${baseName}.png` : null);
+					imageFileName ??
+					(entrySet.has(`${baseName}.jpg`) ? `${baseName}.jpg` : null) ??
+					(entrySet.has(`${baseName}.jpeg`) ? `${baseName}.jpeg` : null) ??
+					(entrySet.has(`${baseName}.png`) ? `${baseName}.png` : null);
 
-				if (!candidate) {
-					logger.info(`Skipping ${jsonFile} — companion image not yet available`);
-					continue;
-				}
-
-				const imagePath = path.join(this.folderPath, candidate);
-
-				// An evicted image is unreadable until downloaded; fetchImage
-				// recovers it, so only gate on readability when it's present.
-				if (presentSet.has(candidate)) {
-					try {
-						await fs.promises.access(imagePath, fs.constants.R_OK);
-					} catch {
-						logger.info(`Skipping ${jsonFile} — companion image not readable`);
-						continue;
-					}
-				}
+				// JSON owns the text. Keep orphaned scans discoverable; the engine
+				// gives new uploads time to finish before importing without a photo.
+				const imagePath = candidate ? path.join(this.folderPath, candidate) : '';
 
 				refs.push({
 					id: baseName,
@@ -368,9 +358,19 @@ export class FolderBackend implements SyncBackend {
 		return validated;
 	}
 
-	async fetchImage(ref: ScanReference): Promise<ArrayBuffer> {
-		const buffer = await this.readScanFile(ref.imagePath);
-		return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+	async fetchImage(ref: ScanReference): Promise<ArrayBuffer | null> {
+		if (!ref.imagePath) {
+			return null;
+		}
+		try {
+			const buffer = await this.readScanFile(ref.imagePath);
+			return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
+		} catch (err) {
+			if (isSyncError(err) && err.type === 'scan_missing') {
+				return null;
+			}
+			throw err;
+		}
 	}
 
 	async markSynced(ref: ScanReference): Promise<void> {

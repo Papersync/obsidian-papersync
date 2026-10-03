@@ -213,17 +213,19 @@ export class DriveBackend implements SyncBackend {
 		return validated;
 	}
 
-	async fetchImage(ref: ScanReference): Promise<ArrayBuffer> {
+	async fetchImage(ref: ScanReference): Promise<ArrayBuffer | null> {
 		if (!ref.imagePath) {
-			throw createSyncError('vault_write_failed', `No image file found for scan ${ref.id}`);
+			return null;
 		}
 
 		const token = await this.oauthManager.getValidAccessToken();
 
-		const response = await this.driveRequest({
-			url: `${this.endpoint('driveApiBase')}/files/${ref.imagePath}?alt=media`,
-			headers: { Authorization: `Bearer ${token}` },
-		});
+		const response = await this.driveRequest(
+			{
+				url: `${this.endpoint('driveApiBase')}/files/${ref.imagePath}?alt=media`,
+				headers: { Authorization: `Bearer ${token}` },
+			}
+		);
 
 		return response.arrayBuffer;
 	}

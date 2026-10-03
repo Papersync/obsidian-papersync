@@ -108,13 +108,21 @@ describe('FolderBackend — scan removed after discovery', () => {
 	});
 
 	it('fetchScan throws scan_missing when the JSON is gone with no placeholder', async () => {
-		const ref = { id: 'gone', jsonPath: path.join(tmp, 'gone.json'), imagePath: path.join(tmp, 'gone.jpg') };
+		const ref = {
+			id: 'gone',
+			jsonPath: path.join(tmp, 'gone.json'),
+			imagePath: path.join(tmp, 'gone.jpg'),
+		};
 		await expectSyncErrorType(backend.fetchScan(ref), 'scan_missing');
 	});
 
-	it('fetchImage throws scan_missing when the image is gone with no placeholder', async () => {
-		const ref = { id: 'gone', jsonPath: path.join(tmp, 'gone.json'), imagePath: path.join(tmp, 'gone.jpg') };
-		await expectSyncErrorType(backend.fetchImage(ref), 'scan_missing');
+	it('fetchImage returns null when the image is gone with no placeholder', async () => {
+		const ref = {
+			id: 'gone',
+			jsonPath: path.join(tmp, 'gone.json'),
+			imagePath: path.join(tmp, 'gone.jpg'),
+		};
+		await expect(backend.fetchImage(ref)).resolves.toBeNull();
 	});
 
 	it('markSynced throws scan_missing when the JSON is gone with no placeholder', async () => {
@@ -240,10 +248,10 @@ describe('FolderBackend — iCloud eviction placeholders', () => {
 		expect(refs[0]!.id).toBe('scan2');
 	});
 
-	it('skips an evicted json with no companion image at all', async () => {
+	it('discovers an evicted json with no companion image at all', async () => {
 		writePlaceholder(tmp, 'scan3.json');
 		const refs = await backend.discoverUnsynced();
-		expect(refs).toHaveLength(0);
+		expect(refs).toHaveLength(1);
 	});
 
 	it('fetchScan recovers an evicted json when the download succeeds', async () => {
@@ -254,7 +262,11 @@ describe('FolderBackend — iCloud eviction placeholders', () => {
 			return true;
 		});
 
-		const scan = await backend.fetchScan({ id: 'scan4', jsonPath, imagePath: path.join(tmp, 'scan4.jpg') });
+		const scan = await backend.fetchScan({
+			id: 'scan4',
+			jsonPath,
+			imagePath: path.join(tmp, 'scan4.jpg'),
+		});
 		expect(scan.markdown).toBe('# Sample');
 		expect(mockedTrigger).toHaveBeenCalledWith(jsonPath);
 	});

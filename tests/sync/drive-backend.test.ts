@@ -134,13 +134,19 @@ describe('DriveBackend', () => {
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
 				.mockResolvedValueOnce({
 					json: {
-						files: [{ id: 'json-1', name: 'a.json' }, { id: 'img-1', name: 'a.jpg' }],
+						files: [
+							{ id: 'json-1', name: 'a.json' },
+							{ id: 'img-1', name: 'a.jpg' },
+						],
 						nextPageToken: 'page-2',
 					},
 				} as never)
 				.mockResolvedValueOnce({
 					json: {
-						files: [{ id: 'json-2', name: 'b.json' }, { id: 'img-2', name: 'b.jpg' }],
+						files: [
+							{ id: 'json-2', name: 'b.json' },
+							{ id: 'img-2', name: 'b.jpg' },
+						],
 					},
 				} as never);
 
@@ -176,14 +182,14 @@ describe('DriveBackend', () => {
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 
 			const out = await backend.fetchImage({ id: 'a', jsonPath: 'j', imagePath: 'img-1' });
-			expect(out.byteLength).toBe(42);
+			expect(out!.byteLength).toBe(42);
 		});
 
-		it('throws vault_write_failed when imagePath is empty', async () => {
+		it('returns null when imagePath is empty', async () => {
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 			await expect(
 				backend.fetchImage({ id: 'a', jsonPath: 'j', imagePath: '' })
-			).rejects.toMatchObject({ type: 'vault_write_failed' });
+			).resolves.toBeNull();
 		});
 	});
 
@@ -371,7 +377,12 @@ describe('DriveBackend', () => {
 		it("surfaces Google's error.message on a 4xx so the real reason is preserved", async () => {
 			mockedRequestUrl.mockResolvedValueOnce({
 				status: 403,
-				json: { error: { message: 'Google Drive API has not been used in project 401509475922 before or it is disabled.' } },
+				json: {
+					error: {
+						message:
+							'Google Drive API has not been used in project 401509475922 before or it is disabled.',
+					},
+				},
 			} as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
@@ -407,5 +418,19 @@ describe('DriveBackend', () => {
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 			await expect(backend.discoverUnsynced()).rejects.toThrow(/Drive request failed \(502\)/);
 		});
+	});
+});
+
+describe('Drive companion absence classification', () => {
+	it('returns null for a missing companion but preserves permission failures', async () => {
+		mockedRequestUrl.mockReset();
+		const backend = new DriveBackend(makeOAuthManager(), 30);
+		const ref = { id: 'scan', jsonPath: 'json', imagePath: 'photo' };
+		mockedRequestUrl.mockResolvedValueOnce({ status: 404, json: {} } as never);
+		await expect(backend.fetchImage(ref)).rejects.toThrow("404");
+		mockedRequestUrl.mockResolvedValueOnce({ status: 403, json: {} } as never);
+		await expect(backend.fetchImage(ref)).rejects.toThrow('403');
+		mockedRequestUrl.mockResolvedValueOnce({ status: 404, json: {} } as never);
+		await expect(backend.fetchScan(ref)).rejects.toThrow('404');
 	});
 });

@@ -28,7 +28,15 @@ const noteConfig = {
 	downloadImages: false,
 };
 
-function makeApp(): { vault: { getAbstractFileByPath: () => null; create: () => Promise<void>; createBinary: () => Promise<void>; createFolder: () => Promise<void>; adapter: { read: () => Promise<string>; write: () => Promise<void> } } } {
+function makeApp(): {
+	vault: {
+		getAbstractFileByPath: () => null;
+		create: () => Promise<void>;
+		createBinary: () => Promise<void>;
+		createFolder: () => Promise<void>;
+		adapter: { read: () => Promise<string>; write: () => Promise<void> };
+	};
+} {
 	return {
 		vault: {
 			getAbstractFileByPath: () => null,
@@ -219,7 +227,9 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 	});
 
 	it('records a source the backend reports unavailable, in plain language', () => {
-		const backend = makeBackend() as ReturnType<typeof makeBackend> & { setOnUnavailable: jest.Mock };
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & {
+			setOnUnavailable: jest.Mock;
+		};
 		backend.setOnUnavailable = jest.fn();
 		const state = new SyncState('');
 		const eh = new ErrorHandler(state);
@@ -289,11 +299,20 @@ describe('SyncEngine.processBatch', () => {
 	});
 
 	it('keeps the error when the source vanishes while a batch is still in flight', async () => {
-		const backend = makeBackend() as ReturnType<typeof makeBackend> & { setOnUnavailable: jest.Mock };
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & {
+			setOnUnavailable: jest.Mock;
+		};
 		backend.setOnUnavailable = jest.fn();
-		backend.discoverUnsynced = jest.fn().mockResolvedValue([{ id: 'r1', jsonPath: 'j1', imagePath: 'i1' }]);
+		backend.discoverUnsynced = jest
+			.fn()
+			.mockResolvedValue([{ id: 'r1', jsonPath: 'j1', imagePath: 'i1' }]);
 		let releaseFetch!: () => void;
-		backend.fetchScan = jest.fn(() => new Promise((resolve) => { releaseFetch = () => resolve({ ...validScan, synced: true }); }));
+		backend.fetchScan = jest.fn(
+			() =>
+				new Promise((resolve) => {
+					releaseFetch = () => resolve({ ...validScan, synced: true });
+				})
+		);
 
 		const state = new SyncState('');
 		const eh = new ErrorHandler(state);
@@ -313,7 +332,10 @@ describe('SyncEngine.processBatch', () => {
 	});
 
 	it('clears that hold on the next pass the backend delivers (the folder is back)', async () => {
-		const backend = makeBackend() as ReturnType<typeof makeBackend> & { setOnUnavailable: jest.Mock; setOnScanDiscovered: jest.Mock };
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & {
+			setOnUnavailable: jest.Mock;
+			setOnScanDiscovered: jest.Mock;
+		};
 		backend.setOnUnavailable = jest.fn();
 		backend.setOnScanDiscovered = jest.fn();
 		const state = new SyncState('');
@@ -396,7 +418,8 @@ describe('SyncEngine.processBatch', () => {
 		expect(backend.markSynced).toHaveBeenCalledTimes(12);
 	});
 
-	it('drops refs with empty imagePath before processing when images are downloaded', async () => {
+	it('imports older image-less refs as text when images are enabled', async () => {
+		jest.useFakeTimers();
 		const refs = [
 			{ id: 'with', jsonPath: 'j1', imagePath: 'i1' },
 			{ id: 'without', jsonPath: 'j2', imagePath: '' },
@@ -404,17 +427,31 @@ describe('SyncEngine.processBatch', () => {
 		const backend = makeBackend();
 		backend.discoverUnsynced = jest.fn().mockResolvedValue(refs);
 		backend.fetchScan = jest.fn().mockResolvedValue(validScan);
+		backend.fetchImage = jest
+			.fn()
+			.mockImplementation(async (ref) => (ref.imagePath ? new ArrayBuffer(4) : null));
 		backend.markSynced = jest.fn().mockResolvedValue(undefined);
 
 		const state = new SyncState('');
 		const eh = new ErrorHandler(state);
 		// downloadImages ON → an image-less ref cannot produce an embed, so it is dropped.
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
-		const engine = new SyncEngine(backend, makeApp() as any, { ...noteConfig, downloadImages: true }, eh, state);
+		const engine = new SyncEngine(
+			backend,
+			makeApp() as any,
+			{ ...noteConfig, downloadImages: true },
+			eh,
+			state
+		);
 
 		await engine.forceSyncNow();
+		(backend.discoverUnsynced as jest.Mock).mockResolvedValue([refs[1]]);
+		jest.setSystemTime(Date.now() + 60_000);
+		await engine.forceSyncNow();
+		engine.stop();
+		jest.useRealTimers();
 
-		expect(backend.markSynced).toHaveBeenCalledTimes(1);
+		expect(backend.markSynced).toHaveBeenCalledTimes(2);
 		expect(backend.markSynced).toHaveBeenCalledWith(
 			expect.objectContaining({ id: 'with' }),
 			expect.anything()
@@ -477,9 +514,9 @@ describe('SyncEngine.processBatch', () => {
 		// Occupy the sync lock so processBatch's `!tryStartSync()` guard trips.
 		expect(state.tryStartSync()).toBe(true);
 
-		await (
-			engine as unknown as { processBatch(refs: unknown[]): Promise<void> }
-		).processBatch([{ id: 'r', jsonPath: 'j', imagePath: 'i' }]);
+		await (engine as unknown as { processBatch(refs: unknown[]): Promise<void> }).processBatch([
+			{ id: 'r', jsonPath: 'j', imagePath: 'i' },
+		]);
 
 		expect(backend.fetchScan).not.toHaveBeenCalled();
 	});
@@ -492,12 +529,16 @@ describe('SyncEngine.processBatch', () => {
 		// because Drive re-queries `createdTime > cursor` and A lives only in memory.
 		const refA = { id: 'A', jsonPath: 'jA', imagePath: 'iA', createdTime: '2026-05-01T10:00:00Z' };
 		const refB = { id: 'B', jsonPath: 'jB', imagePath: 'iB', createdTime: '2026-05-02T10:00:00Z' };
-		const backend = makeBackend() as ReturnType<typeof makeBackend> & { updateLastSyncTimestamp: jest.Mock };
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & {
+			updateLastSyncTimestamp: jest.Mock;
+		};
 		backend.updateLastSyncTimestamp = jest.fn();
 		// Deliberately out of createdTime order — the engine must sort before advancing.
 		backend.discoverUnsynced = jest.fn().mockResolvedValue([refB, refA]);
 		backend.fetchScan = jest.fn().mockImplementation(async (ref: { id: string }) => {
-			if (ref.id === 'A') {throw nonRetriable;}
+			if (ref.id === 'A') {
+				throw nonRetriable;
+			}
 			return validScan;
 		});
 		backend.markSynced = jest.fn().mockResolvedValue(undefined);
@@ -517,11 +558,15 @@ describe('SyncEngine.processBatch', () => {
 		const refA = { id: 'A', jsonPath: 'jA', imagePath: 'iA', createdTime: '2026-05-01T10:00:00Z' }; // ok
 		const refB = { id: 'B', jsonPath: 'jB', imagePath: 'iB', createdTime: '2026-05-02T10:00:00Z' }; // fail
 		const refC = { id: 'C', jsonPath: 'jC', imagePath: 'iC', createdTime: '2026-05-03T10:00:00Z' }; // ok
-		const backend = makeBackend() as ReturnType<typeof makeBackend> & { updateLastSyncTimestamp: jest.Mock };
+		const backend = makeBackend() as ReturnType<typeof makeBackend> & {
+			updateLastSyncTimestamp: jest.Mock;
+		};
 		backend.updateLastSyncTimestamp = jest.fn();
 		backend.discoverUnsynced = jest.fn().mockResolvedValue([refC, refA, refB]);
 		backend.fetchScan = jest.fn().mockImplementation(async (ref: { id: string }) => {
-			if (ref.id === 'B') {throw nonRetriable;}
+			if (ref.id === 'B') {
+				throw nonRetriable;
+			}
 			return validScan;
 		});
 		backend.markSynced = jest.fn().mockResolvedValue(undefined);

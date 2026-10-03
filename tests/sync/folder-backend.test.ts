@@ -118,13 +118,14 @@ describe('FolderBackend.discoverUnsynced', () => {
 		expect(refs).toHaveLength(0);
 	});
 
-	it('skips scans whose companion image is missing', async () => {
+	it('discovers intact JSON when its companion image is missing', async () => {
 		const base = '2026-05-05-150000';
 		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.jpg` });
 		// no companion image on disk
 
 		const refs = await backend.discoverUnsynced();
-		expect(refs).toHaveLength(0);
+		expect(refs).toHaveLength(1);
+		expect(refs[0].imagePath).toBe('');
 	});
 
 	it('tolerates corrupt JSON files without crashing the discovery loop', async () => {
@@ -271,14 +272,14 @@ describe('FolderBackend.discoverUnsynced — unreadable companion image', () => 
 		fs.rmSync(tmp, { recursive: true, force: true });
 	});
 
-	it('skips a scan whose declared companion image is a broken symlink', async () => {
+	it('keeps a scan whose declared companion image is a broken symlink', async () => {
 		const base = '2026-08-08-180000';
 		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.jpg` });
 		// Symlink target does not exist → fs.promises.access(R_OK) throws ENOENT
 		fs.symlinkSync('/does/not/exist/anywhere.jpg', path.join(tmp, `${base}.jpg`));
 
 		const refs = await backend.discoverUnsynced();
-		expect(refs).toHaveLength(0);
+		expect(refs).toHaveLength(1);
+		expect(await backend.fetchImage(refs[0])).toBeNull();
 	});
 });
-
