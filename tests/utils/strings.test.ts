@@ -5,12 +5,23 @@ describe('STRINGS template functions', () => {
 		expect(STRINGS.STATUS_PENDING(3)).toBe('Papersync: 3 pending');
 	});
 
-	it('NOTICE_SYNCING renders the in-flight count', () => {
-		expect(STRINGS.NOTICE_SYNCING(7)).toBe('Syncing 7 scans...');
+	it('NOTICE_SYNCING names the plugin and pluralises the in-flight count', () => {
+		expect(STRINGS.NOTICE_SYNCING(7)).toBe('Papersync: syncing 7 scans\u2026');
+		expect(STRINGS.NOTICE_SYNCING(1)).toBe('Papersync: syncing 1 scan\u2026');
 	});
 
-	it('NOTICE_SYNC_COMPLETE renders the synced count', () => {
-		expect(STRINGS.NOTICE_SYNC_COMPLETE(12)).toBe('Synced 12 new notes');
+	it('NOTICE_SYNC_COMPLETE names the plugin and pluralises the synced count', () => {
+		expect(STRINGS.NOTICE_SYNC_COMPLETE(12)).toBe('Papersync: synced 12 new notes');
+		expect(STRINGS.NOTICE_SYNC_COMPLETE(1)).toBe('Papersync: synced 1 new note');
+	});
+
+	it('NOTICE_NOTHING_NEW names the plugin', () => {
+		expect(STRINGS.NOTICE_NOTHING_NEW).toBe('Papersync: all synced, nothing new');
+	});
+
+	it('NOTICE_WAITING_FOR_DOWNLOAD names the plugin and pluralises the count', () => {
+		expect(STRINGS.NOTICE_WAITING_FOR_DOWNLOAD(3)).toBe('Papersync: 3 scans waiting for download');
+		expect(STRINGS.NOTICE_WAITING_FOR_DOWNLOAD(1)).toBe('Papersync: 1 scan waiting for download');
 	});
 
 	it('NOTICE_PROVIDER_UNAVAILABLE names the provider', () => {

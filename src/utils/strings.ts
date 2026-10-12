@@ -10,8 +10,12 @@ export const STRINGS = {
 	CMD_OPEN_SETTINGS: 'Open settings',
 	RIBBON_TOOLTIP: 'Sync scans now',
 
-	NOTICE_SYNCING: (count: number) => `Syncing ${count} scans...`,
-	NOTICE_SYNC_COMPLETE: (count: number) => `Synced ${count} new notes`,
+	// Notices carry the plugin name: an Obsidian notice shows no source, so a bare
+	// "Syncing..." leaves the user guessing which plugin is working.
+	NOTICE_SYNCING: (count: number) => `Papersync: syncing ${count} ${count === 1 ? 'scan' : 'scans'}…`,
+	NOTICE_SYNC_COMPLETE: (count: number) => `Papersync: synced ${count} new ${count === 1 ? 'note' : 'notes'}`,
+	NOTICE_NOTHING_NEW: 'Papersync: all synced, nothing new',
+	NOTICE_WAITING_FOR_DOWNLOAD: (count: number) => `Papersync: ${count} ${count === 1 ? 'scan' : 'scans'} waiting for download`,
 	NOTICE_DOWNLOADING_OFFLOADED: 'Downloading offloaded files...',
 	NOTICE_TOKEN_EXPIRED: 'Your scans are safe. Reconnect Google Drive in settings to resume syncing.',
 	NOTICE_SCHEMA_MISMATCH: 'Your scan is safe in your cloud. Update Papersync to read this newer format.',

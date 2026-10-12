@@ -89,7 +89,7 @@ export class SyncEngine {
 				await this.processBatch(refs);
 			} else {
 				this.state.recordSyncCompleted(0);
-				new Notice('All synced, nothing new');
+				new Notice(STRINGS.NOTICE_NOTHING_NEW);
 			}
 		} catch (err) {
 			// Stop companion polling on a real discovery/access failure; the backend
@@ -242,7 +242,7 @@ export class SyncEngine {
 				logger.info('Batch finished after the sync source went away; keeping its error');
 			} else if (this.pendingNetwork.size > 0) {
 				this.state.recordSyncCompleted(this.pendingNetwork.size + this.companionGrace.pendingCount);
-				new Notice(`${this.pendingNetwork.size} scan(s) waiting for download`);
+				new Notice(STRINGS.NOTICE_WAITING_FOR_DOWNLOAD(this.pendingNetwork.size));
 			} else {
 				this.state.recordSyncCompleted(this.companionGrace.pendingCount);
 			}
