@@ -14,6 +14,13 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # Signs a build provenance attestation for the shipped files (no write
+    # access to the repository). Verify a download with:
+    #   gh attestation verify main.js --repo Papersync/obsidian-papersync
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -48,6 +55,16 @@ jobs:
             echo "::error::main.js exceeds the 500KB budget"
             exit 1
           fi
+
+      # Artifact attestations need a public repository on this plan.
+      - name: Attest build provenance
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - uses: actions/upload-artifact@v7
         with:

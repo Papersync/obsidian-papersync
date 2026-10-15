@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an improvement to the Papersync plugin.
+labels: ['enhancement']
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the situation and what gets in your way today, before any solution.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would help?
+      description: How you picture it working. Mockups or example notes are welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you do today instead
+      description: Optional. Workarounds or other plugins you use for this.

@@ -1,6 +1,6 @@
 # Contributing
 
-Bug reports and ideas go in [GitHub issues](https://github.com/Papersync/obsidian-papersync/issues). Security problems go through [SECURITY.md](SECURITY.md) instead.
+Bug reports and ideas go in [GitHub issues](https://github.com/Papersync/obsidian-papersync/issues/new/choose), questions in [Discussions](https://github.com/Papersync/obsidian-papersync/discussions/categories/q-a). Security problems go through [SECURITY.md](SECURITY.md) instead.
 
 ## Development
 

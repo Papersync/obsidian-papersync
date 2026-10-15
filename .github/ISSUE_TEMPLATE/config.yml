@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/Papersync/obsidian-papersync/discussions/categories/q-a
+    about: Help with setup, templates or syncing. Search answered questions first.
+  - name: Papersync phone app
+    url: https://papersync.ai
+    about: Problems with scanning or the app itself (the plugin only imports what the app saved).
+  - name: Report a security problem
+    url: https://github.com/Papersync/obsidian-papersync/security/advisories/new
+    about: Report it privately, never in a public issue.

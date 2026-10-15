@@ -58,7 +58,7 @@ Papersync is not in the community plugin directory yet. Copy `main.js`, `manifes
 
 ## Support
 
-[Open an issue](https://github.com/Papersync/obsidian-papersync/issues) for bugs and ideas. Security reports: [SECURITY.md](SECURITY.md). Building from source: [CONTRIBUTING.md](CONTRIBUTING.md).
+Questions go in [Discussions](https://github.com/Papersync/obsidian-papersync/discussions/categories/q-a). [Open an issue](https://github.com/Papersync/obsidian-papersync/issues/new/choose) for bugs and ideas. Security reports: [SECURITY.md](SECURITY.md). Building from source: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 <!-- STORE LAUNCH: uncomment once a store badge is shown.
 <sub>App Store is a service mark of Apple Inc., registered in the U.S. and other countries. Google Play and the Google Play logo are trademarks of Google LLC.</sub>

@@ -1,0 +1,102 @@
+name: Bug report
+description: Something in the Papersync plugin does not work as expected.
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. The plugin sends no telemetry, so the details below are the only way to reproduce your problem.
+        Questions about using Papersync belong in [Discussions](https://github.com/Papersync/obsidian-papersync/discussions/categories/q-a). Security problems go through [SECURITY.md](https://github.com/Papersync/obsidian-papersync/blob/master/SECURITY.md), not here.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before you report
+      options:
+        - label: I am on the [latest plugin release](https://github.com/Papersync/obsidian-papersync/releases/latest) and restarted Obsidian after updating.
+          required: true
+        - label: I searched [existing issues](https://github.com/Papersync/obsidian-papersync/issues?q=is%3Aissue) and found no report of this.
+          required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Exact steps, starting from a scan taken in the app. Paste templates and note text as text, not screenshots.
+      placeholder: |
+        1. Scan a page in the Papersync app (Fast mode).
+        2. In the plugin settings, set the Notes folder to ...
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened instead
+      description: Include the full text of any notice the plugin showed. Screenshots help here.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: source
+    attributes:
+      label: Where the app saves scans
+      options:
+        - Google Drive
+        - iCloud Drive
+        - Another synced folder (Dropbox, OneDrive, Syncthing, ...)
+    validations:
+      required: true
+
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Settings > Community plugins, next to Papersync.
+      placeholder: '0.1.2'
+    validations:
+      required: true
+
+  - type: input
+    id: obsidian-version
+    attributes:
+      label: Obsidian version and installer version
+      description: Settings > General shows both.
+      placeholder: 'v1.13.7, installer v1.13.7'
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: Papersync app version and phone platform
+      description: In the app, Settings shows the version at the bottom.
+      placeholder: 'Version 0.1.230 (310), Android'
+
+  - type: textarea
+    id: console
+    attributes:
+      label: Developer console output
+      description: |
+        Optional. Open the console with Cmd+Option+I (macOS) or Ctrl+Shift+I (Windows, Linux), reproduce the problem, and paste lines that mention Papersync.
+        Remove anything that looks like a token or a private file path before posting.
+      render: text
