@@ -25,10 +25,6 @@ type, Google documents that the client secret is not confidential:
 > these apps cannot keep secrets."
 > (developers.google.com/identity/protocols/oauth2/native-app)
 
-The secret is embedded in every shipped build (`main.js`) by design, so moving
-it to an environment variable would change nothing while breaking
-`git clone && npm run build` for contributors.
-
 ### What actually protects your data
 
 Security does not rest on the secret being hidden. It rests on:
@@ -99,8 +95,11 @@ your vault is synced or backed up.
 ### For contributors and security scanners
 
 Automated secret scanners (including GitHub secret scanning) may flag the
-`GOCSPX-` value. That is expected. The credential is intentionally public for
-this client type per the Google documentation above, so such alerts are not
-actionable and the secret should not be rotated reactively. Rotating it would
-break sign-in and token refresh for every installed copy until its user updates
-to a build that carries the new secret.
+`GOCSPX-` value. That is expected: the credential is public for this client
+type per the Google documentation above, so such alerts are not actionable.
+
+Do not disable the secret in reaction to an alert. Every installed copy uses it
+for sign-in and token refresh, so disabling it breaks Drive sync until each
+user updates. A planned rotation causes no outage: Google allows two active
+secrets per client, so add the new one, ship a release that carries it, and
+disable the old one once users have updated.
