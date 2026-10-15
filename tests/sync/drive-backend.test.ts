@@ -89,6 +89,72 @@ describe('DriveBackend', () => {
 			expect(refs[0].imagePath).toBe('');
 		});
 
+		it('finds a companion created before the cursor by name when its JSON landed after it', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({
+					json: { files: [{ id: 'json-1', name: "o'brien.json", createdTime: '2026-04-12T14:30:05Z' }] },
+				} as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'img-1', name: "o'brien.jpg" }] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-04-12T14:30:02Z');
+			const refs = await backend.discoverUnsynced();
+
+			expect(refs[0].imagePath).toBe('img-1');
+			const lookup = decodeURIComponent(mockedRequestUrl.mock.calls[2][0].url);
+			expect(lookup).toContain("'papersync-folder' in parents and trashed = false and (name = 'o\\'brien.jpg' or name = 'o\\'brien.jpeg' or name = 'o\\'brien.png')");
+			expect(lookup).not.toContain('createdTime >');
+		});
+
+		it('looks companions up in batches of 30 scans and leaves still-missing ones empty', async () => {
+			const jsons = Array.from({ length: 31 }, (_, i) => ({ id: `json-${i}`, name: `s${i}.json`, createdTime: '2026-04-12T14:30:05Z' }));
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: jsons } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'img-0', name: 's0.png' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-04-12T14:30:02Z');
+			const refs = await backend.discoverUnsynced();
+
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(4);
+			expect(decodeURIComponent(mockedRequestUrl.mock.calls[2][0].url)).toContain("name = 's29.png'");
+			expect(decodeURIComponent(mockedRequestUrl.mock.calls[3][0].url)).toContain("name = 's30.jpg'");
+			expect(refs.find((r) => r.id === 's0')?.imagePath).toBe('img-0');
+			expect(refs.find((r) => r.id === 's30')?.imagePath).toBe('');
+		});
+
+		it('escapes backslashes in companion lookup names', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'json-1', name: 'a\\b.json', createdTime: '2026-04-12T14:30:05Z' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [] } } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-04-12T14:30:02Z');
+			await backend.discoverUnsynced();
+
+			expect(decodeURIComponent(mockedRequestUrl.mock.calls[2][0].url)).toContain("name = 'a\\\\b.jpg'");
+		});
+
+		it('skips the companion lookup when every scan is already paired under a cursor', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({
+					json: {
+						files: [
+							{ id: 'json-1', name: 'a.json', createdTime: '2026-04-12T14:30:05Z' },
+							{ id: 'img-1', name: 'a.jpg', createdTime: '2026-04-12T14:30:04Z' },
+						],
+					},
+				} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-04-12T14:30:02Z');
+			const refs = await backend.discoverUnsynced();
+
+			expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
+			expect(refs[0].imagePath).toBe('img-1');
+		});
+
 		it('returns empty when Papersync folder is missing', async () => {
 			// First findScansFolder call returns no folder
 			mockedRequestUrl.mockResolvedValueOnce({ json: { files: [] } } as never);

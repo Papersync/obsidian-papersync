@@ -23,6 +23,14 @@ interface DriveListResponse {
 	nextPageToken?: string;
 }
 
+// Scans per by-name companion lookup: 3 names each keeps one query well under
+// Drive's query length limit and inside a single 100-file page.
+const COMPANION_LOOKUP_BATCH = 30;
+
+function companionNames(baseName: string): string[] {
+	return [`${baseName}.jpg`, `${baseName}.jpeg`, `${baseName}.png`];
+}
+
 export class DriveBackend implements SyncBackend {
 	private oauthManager: OAuthManager;
 	// Seconds, read live: an interval changed in Settings takes effect from the next
@@ -148,7 +156,56 @@ export class DriveBackend implements SyncBackend {
 			logger.info(`Filtering for files created after ${this.lastSyncTimestamp}`);
 		}
 
-		const allFiles: DriveFile[] = [];
+		const allFiles = await this.listFiles(token, query);
+
+		logger.info(`Drive returned ${allFiles.length} files total`);
+		const jsonFiles = allFiles.filter((f) => f.name.endsWith('.json'));
+		const imageFiles = allFiles.filter((f) => f.name.endsWith('.jpg') || f.name.endsWith('.jpeg') || f.name.endsWith('.png'));
+		logger.info(`Drive returned ${allFiles.length} files (${jsonFiles.length} JSON, ${imageFiles.length} images)`);
+
+		const imageFor = (baseName: string, images: DriveFile[]): DriveFile | undefined => {
+			// Exact companion match only — a prefix match would pair base "abc" with an
+			// unrelated "abcd.jpg" or a "abc-thumb.jpg". Mirror folder-backend's candidates.
+			const candidateNames = companionNames(baseName);
+			return images.find((f) => candidateNames.includes(f.name));
+		};
+
+		// The cursor filter also hides a photo created at or before the cursor whose
+		// JSON landed after it (uploads finishing out of order). Look such companions
+		// up by name, with no time filter, before reporting them missing.
+		if (this.lastSyncTimestamp) {
+			const unpaired = jsonFiles
+				.map((f) => f.name.replace(/\.json$/, ''))
+				.filter((baseName) => !imageFor(baseName, imageFiles));
+			for (let i = 0; i < unpaired.length; i += COMPANION_LOOKUP_BATCH) {
+				const names = unpaired.slice(i, i + COMPANION_LOOKUP_BATCH).flatMap(companionNames);
+				const byName = names.map((n) => `name = '${n.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(' or ');
+				imageFiles.push(...(await this.listFiles(token, `'${folderId}' in parents and trashed = false and (${byName})`)));
+			}
+		}
+
+		const refs: ScanReference[] = [];
+
+		for (const file of jsonFiles) {
+			const baseName = file.name.replace(/\.json$/, '');
+			const imageFile = imageFor(baseName, imageFiles);
+
+			refs.push({
+				id: baseName,
+				jsonPath: file.id,
+				imagePath: imageFile?.id ?? '',
+				createdTime: file.createdTime,
+			});
+		}
+
+		const withImages = refs.filter((r) => r.imagePath !== '');
+		logger.info(`Found ${refs.length} scans, ${withImages.length} with paired images`);
+
+		return refs;
+	}
+
+	private async listFiles(token: string, query: string): Promise<DriveFile[]> {
+		const files: DriveFile[] = [];
 		let pageToken: string | undefined;
 
 		do {
@@ -163,36 +220,11 @@ export class DriveBackend implements SyncBackend {
 			});
 
 			const listData = response.json as DriveListResponse;
-			allFiles.push(...(listData.files ?? []));
+			files.push(...(listData.files ?? []));
 			pageToken = listData.nextPageToken;
 		} while (pageToken);
 
-		logger.info(`Drive returned ${allFiles.length} files total`);
-		const jsonFiles = allFiles.filter((f) => f.name.endsWith('.json'));
-		const imageFiles = allFiles.filter((f) => f.name.endsWith('.jpg') || f.name.endsWith('.jpeg') || f.name.endsWith('.png'));
-		logger.info(`Drive returned ${allFiles.length} files (${jsonFiles.length} JSON, ${imageFiles.length} images)`);
-
-		const refs: ScanReference[] = [];
-
-		for (const file of jsonFiles) {
-			const baseName = file.name.replace(/\.json$/, '');
-			// Exact companion match only — a prefix match would pair base "abc" with an
-			// unrelated "abcd.jpg" or a "abc-thumb.jpg". Mirror folder-backend's candidates.
-			const candidateNames = [`${baseName}.jpg`, `${baseName}.jpeg`, `${baseName}.png`];
-			const imageFile = imageFiles.find((f) => candidateNames.includes(f.name));
-
-			refs.push({
-				id: baseName,
-				jsonPath: file.id,
-				imagePath: imageFile?.id ?? '',
-				createdTime: file.createdTime,
-			});
-		}
-
-		const withImages = refs.filter((r) => r.imagePath !== '');
-		logger.info(`Found ${refs.length} scans, ${withImages.length} with paired images`);
-
-		return refs;
+		return files;
 	}
 
 	async fetchScan(ref: ScanReference): Promise<ScanFile> {
