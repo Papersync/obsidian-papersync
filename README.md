@@ -43,7 +43,7 @@ Also uncomment the trademark line at the end.
 
 Scans already waiting are imported as soon as you connect, so edit the template first if you want a different layout.
 
-If a scan's photo was moved or deleted, its text still imports without a broken image embed. When a photo is first absent, the plugin allows up to one minute for it to finish syncing, then rechecks automatically. Photo access or download errors remain retryable and do not mark the scan imported.
+If a scan's photo was moved or deleted, its text still imports without a broken image embed. If your template shows only the photo, that scan's text is added instead, so it never imports empty. When a photo is first absent, the plugin allows up to one minute for it to finish syncing, then rechecks automatically. Photo access or download errors remain retryable and do not mark the scan imported.
 
 ## Privacy
 

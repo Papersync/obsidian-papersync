@@ -394,6 +394,14 @@ describe('NoteCreator', () => {
 			expect(content).toBe('# Test Notes\n\nSome content here.\nSee here\n');
 		});
 
+		it('drops empty embed lines under numbered, plus and task markers and nested quotes, but not other images', async () => {
+			const content = await renderWithoutPhoto(
+				'{{ps_markdown}}\n1. ![[{{ps_image_file}}]]\n+ ![[{{ps_image_file}}|300]]\n- [ ] ![[{{ps_image_file}}]]\n> > ![[{{ps_image_file}}]]\r\n![[other.png|300]]\n'
+			);
+
+			expect(content).toBe('# Test Notes\n\nSome content here.\n![[other.png|300]]\n');
+		});
+
 		it('keeps the scan text when the template only places the photo', async () => {
 			const content = await renderWithoutPhoto('![[{{ps_image_file}}]]\n');
 

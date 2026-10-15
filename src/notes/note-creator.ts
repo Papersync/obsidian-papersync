@@ -103,10 +103,11 @@ export class NoteCreator {
 			// No image was saved (saving off, or none attached), so {{ps_image_file}}
 			// expanded to '' and the embed line is a broken `![[]]`. Drop that whole line
 			// (with any callout/list marker) rather than shipping an empty embed.
-			// A sized or aliased embed (`![[|300]]`) is just as empty, and one placed
-			// inline goes on its own.
+			// A sized or aliased embed (`![[|300]]`) is just as empty, nested quotes,
+			// numbered lists and task boxes go with it, and one placed inline goes on
+			// its own.
 			rendered = rendered
-				.replace(/^[ \t]*(?:>[ \t]*)?(?:[-*][ \t]*)?!\[\[(?:\|[^\]\n]*)?\]\][ \t]*(?:\r?\n|$)/gm, '')
+				.replace(/^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|\d+[.)])[ \t]*(?:\[.\][ \t]*)?)?!\[\[(?:\|[^\]\n]*)?\]\][ \t]*(?:\r?\n|$)/gm, '')
 				.replace(/[ \t]*!\[\[(?:\|[^\]\n]*)?\]\]/g, '');
 
 			// A template that only places the photo would import nothing for this scan
