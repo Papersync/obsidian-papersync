@@ -14,13 +14,6 @@ jobs:
   build:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    # Signs a build provenance attestation for the shipped files (no write
-    # access to the repository). Verify a download with:
-    #   gh attestation verify main.js --repo Papersync/obsidian-papersync
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@v7
         with:
@@ -56,16 +49,6 @@ jobs:
             exit 1
           fi
 
-      # Artifact attestations need a public repository on this plan.
-      - name: Attest build provenance
-        if: ${{ !github.event.repository.private }}
-        uses: actions/attest@v4
-        with:
-          subject-path: |
-            main.js
-            manifest.json
-            styles.css
-
       - uses: actions/upload-artifact@v7
         with:
           name: release-assets
@@ -74,11 +57,38 @@ jobs:
             manifest.json
             styles.css
 
+  # Signs a build provenance attestation for the built files. It runs no
+  # project code, so no dependency install script can reach its OIDC token.
+  # Artifact attestations need a public repository on this plan. Verify a
+  # download with: gh attestation verify main.js --repo Papersync/obsidian-papersync
+  attest:
+    runs-on: ubuntu-24.04
+    needs: build
+    if: ${{ !github.event.repository.private }}
+    timeout-minutes: 5
+    permissions:
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-assets
+
+      - uses: actions/attest@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
+
   # Only this job can write, and it runs no project code: it attaches the built
   # files to a draft release with the GitHub CLI (Obsidian's documented pattern).
   publish:
     runs-on: ubuntu-24.04
-    needs: build
+    # Waits for the attestation when it runs; while the repository is private
+    # that job is skipped, which must not skip the release.
+    needs: [build, attest]
+    if: ${{ !cancelled() && needs.build.result == 'success' && needs.attest.result != 'failure' }}
     timeout-minutes: 5
     permissions:
       contents: write
