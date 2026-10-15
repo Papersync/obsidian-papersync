@@ -18,7 +18,9 @@ export class SyncEngine {
 	private errorHandler: ErrorHandler;
 	readonly state: SyncState;
 	private pendingNetwork = new Set<string>();
-	private companionGrace = new CompanionGrace(() => this.forceSyncNow());
+	// A background retry: it must not announce "nothing new" or "offline"
+	// the user never asked about.
+	private companionGrace = new CompanionGrace(() => this.forceSyncNow({ quiet: true }));
 	// Set when the backend reports its source gone, cleared by the next pass that
 	// can only run with the source present (a discovery that succeeded). A batch
 	// already in flight when the source went away must not finish by recording
@@ -70,9 +72,11 @@ export class SyncEngine {
 		this.backend.stop();
 	}
 
-	async forceSyncNow(): Promise<void> {
+	async forceSyncNow({ quiet = false }: { quiet?: boolean } = {}): Promise<void> {
 		if (!isOnline()) {
-			new Notice(STRINGS.NOTICE_OFFLINE);
+			if (!quiet) {
+				new Notice(STRINGS.NOTICE_OFFLINE);
+			}
 			return;
 		}
 
@@ -89,7 +93,9 @@ export class SyncEngine {
 				await this.processBatch(refs);
 			} else {
 				this.state.recordSyncCompleted(0);
-				new Notice(STRINGS.NOTICE_NOTHING_NEW);
+				if (!quiet) {
+					new Notice(STRINGS.NOTICE_NOTHING_NEW);
+				}
 			}
 		} catch (err) {
 			// Stop companion polling on a real discovery/access failure; the backend

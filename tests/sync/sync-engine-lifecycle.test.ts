@@ -1,3 +1,6 @@
+import * as obsidian from 'obsidian';
+
+
 import { SyncEngine } from '@/sync/sync-engine';
 import { SyncState } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
@@ -134,6 +137,31 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 
 		await engine.forceSyncNow();
 		expect(backend.discoverUnsynced).not.toHaveBeenCalled();
+	});
+
+	it('a quiet forceSyncNow (the photo-wait retry) shows no notice when offline or when nothing is new', async () => {
+		// A plain function: jest-mock calls the implementation without `new`.
+		const notice = jest.spyOn(obsidian, 'Notice').mockImplementation(function () {} as never);
+		try {
+			const backend = makeBackend();
+			backend.discoverUnsynced = jest.fn().mockResolvedValue([]);
+			const state = new SyncState('');
+			const eh = new ErrorHandler(state);
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const engine = new SyncEngine(backend, makeApp() as any, noteConfig, eh, state);
+
+			await engine.forceSyncNow({ quiet: true });
+			expect(state.status).toBe('synced');
+			Object.defineProperty(window.navigator, 'onLine', { value: false, configurable: true });
+			await engine.forceSyncNow({ quiet: true });
+			expect(notice).not.toHaveBeenCalled();
+
+			await engine.forceSyncNow();
+			expect(notice).toHaveBeenCalledTimes(1);
+		} finally {
+			Object.defineProperty(window.navigator, 'onLine', { value: true, configurable: true });
+			notice.mockRestore();
+		}
 	});
 
 	it('forceSyncNow returns early when already syncing', async () => {
