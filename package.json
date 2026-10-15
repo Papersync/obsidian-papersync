@@ -53,7 +53,7 @@
 		"wdio-obsidian-service": "^3.2.1"
 	},
 	"dependencies": {
-		"obsidian": "1.13.1",
+		"obsidian": "1.14.4",
 		"zod": "4.4.3"
 	}
 }
