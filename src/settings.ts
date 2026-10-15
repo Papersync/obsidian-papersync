@@ -26,7 +26,8 @@ const PREVIEW_CONTEXT: TemplateContext = {
 	ps_provider: 'claude',
 	ps_model: 'claude-sonnet-4',
 	ps_image_file: 'attachments/Papersync/papersync-scan.jpg',
-	ps_markdown: 'Small steps still move you forward. Start with one, and let momentum carry the rest.\n\n- [x] Grocery run before it rains\n- [ ] Read 20 pages before bed\n- [ ] 30-min walk after lunch\n- [ ] Call mom back',
+	ps_markdown:
+		'Small steps still move you forward. Start with one, and let momentum carry the rest.\n\n- [x] Grocery run before it rains\n- [ ] Read 20 pages before bed\n- [ ] 30-min walk after lunch\n- [ ] Call mom back',
 	// '***' (the append case) so the live preview can show the divider in context.
 	ps_separator: '***',
 };
@@ -104,7 +105,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	drivePollInterval: 30,
 	folderPath: '',
 	folderType: '',
-	targetFolder: '',  // resolved on first setup from daily notes config
+	targetFolder: '', // resolved on first setup from daily notes config
 	attachmentsFolder: '', // empty => Obsidian's own attachment folder
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
@@ -144,7 +145,7 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 		if (typeof data.templateString === 'string') {
 			data.templateString = data.templateString.replace(
 				new RegExp(`\\{\\{(${Object.keys(LEGACY_TOKENS).join('|')})\\}\\}`, 'g'),
-				(_match, name: string) => `{{${LEGACY_TOKENS[name]}}}`,
+				(_match, name: string) => `{{${LEGACY_TOKENS[name]}}}`
 			);
 		}
 		data.settingsVersion = 4;
@@ -154,7 +155,9 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 }
 
 function asyncHandler(fn: () => Promise<void>): () => void {
-	return () => { fn().catch(console.error); };
+	return () => {
+		fn().catch(console.error);
+	};
 }
 
 export class PaperSyncSettingTab extends PluginSettingTab {
@@ -175,7 +178,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		// (see PaperSyncPlugin.commitSettings). 'change' fires when a text field or the
 		// template editor is left or Enter is pressed; focusout also covers leaving a
 		// field unchanged-looking, e.g. by switching windows. hide() commits the rest.
-		const commit = (): void => { this.plugin.commitSettings(); };
+		const commit = (): void => {
+			this.plugin.commitSettings();
+		};
 		plugin.registerDomEvent(this.containerEl, 'change', commit);
 		plugin.registerDomEvent(this.containerEl, 'focusout', commit);
 	}
@@ -195,7 +200,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			// Fall through: the rows were not re-rendered, so the connected row coming
 			// back still carries the status text from before the loss.
 		}
-		if (!this.syncButton || !this.syncDesc) {return;}
+		if (!this.syncButton || !this.syncDesc) {
+			return;
+		}
 		const { status, pendingCount } = this.plugin.syncState.snapshot;
 		const isBusy = status === 'syncing';
 
@@ -207,14 +214,20 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			: 'Synced';
 		const statusText = isBusy
 			? `Syncing (${pendingCount} pending)...`
-			: status === 'error' ? (this.plugin.syncState.snapshot.lastError ?? 'Sync error')
-			: status === 'offline' ? 'Offline'
-			: this.plugin.syncEngine ? syncedText : 'Not connected';
+			: status === 'error'
+				? (this.plugin.syncState.snapshot.lastError ?? 'Sync error')
+				: status === 'offline'
+					? 'Offline'
+					: this.plugin.syncEngine
+						? syncedText
+						: 'Not connected';
 		this.syncDesc.textContent = statusText;
 	}
 
 	private setSyncBusy(busy: boolean): void {
-		if (!this.syncButton) {return;}
+		if (!this.syncButton) {
+			return;
+		}
 		const isReady = !!this.plugin.syncEngine;
 		this.syncButton.textContent = busy ? 'Syncing...' : 'Sync now';
 		this.syncButton.disabled = busy || !isReady;
@@ -230,9 +243,14 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// instead of a connected row that cannot sync. Read from disk on every call
 	// rather than from the last sync error: the disk is the truth at startup, before
 	// any sync has run, and after a drive is remounted, when a stale error would lie.
-	private getConnectionState(): { isGoogleConnected: boolean; isFolderConnected: boolean; isFolderMissing: boolean } {
+	private getConnectionState(): {
+		isGoogleConnected: boolean;
+		isFolderConnected: boolean;
+		isFolderMissing: boolean;
+	} {
 		const { backendType, setupComplete, folderPath } = this.plugin.settings;
-		const isGoogleConnected = backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
+		const isGoogleConnected =
+			backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
 		const folderConfigured = backendType === 'folder' && setupComplete;
 		const isFolderMissing = folderConfigured && !isExistingDirectory(folderPath);
 		const isFolderConnected = folderConfigured && !isFolderMissing;
@@ -312,7 +330,13 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		// is the folder itself; resetting only backendType/setupComplete left a folder
 		// backend pointing at '' (and the settings reporting "Papersync" missing).
 		const { backendType, setupComplete, folderPath, folderType } = this.plugin.settings;
-		this.plugin.settings = { ...DEFAULT_SETTINGS, backendType, setupComplete, folderPath, folderType };
+		this.plugin.settings = {
+			...DEFAULT_SETTINGS,
+			backendType,
+			setupComplete,
+			folderPath,
+			folderType,
+		};
 		await this.plugin.saveSettings();
 		await this.plugin.resolveTargetFolder();
 		await this.plugin.startSync();
@@ -365,14 +389,28 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private async browseForFolder(): Promise<void> {
 		try {
-			const electron = (window as unknown as { require?: (mod: string) => { remote?: { dialog: { showOpenDialog: (opts: { properties: string[] }) => Promise<{ canceled: boolean; filePaths: string[] }> } } } }).require?.('electron');
+			const electron = (
+				window as unknown as {
+					require?: (mod: string) => {
+						remote?: {
+							dialog: {
+								showOpenDialog: (opts: {
+									properties: string[];
+								}) => Promise<{ canceled: boolean; filePaths: string[] }>;
+							};
+						};
+					};
+				}
+			).require?.('electron');
 			const dialog = electron?.remote?.dialog;
 			if (!dialog) {
 				new Notice('Folder browser not available');
 				return;
 			}
 			const result = await dialog.showOpenDialog({ properties: ['openDirectory'] });
-			if (result.canceled || !result.filePaths[0]) {return;}
+			if (result.canceled || !result.filePaths[0]) {
+				return;
+			}
 			await this.selectFolderLocation(resolvePickedFolder(result.filePaths[0]), 'custom');
 		} catch (err) {
 			new Notice(`Could not open the folder browser: ${errorMessage(err)}`);
@@ -423,15 +461,17 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// itself (next to Change Storage); that row's description carries live status.
 	private addSyncNowButton(setting: Setting): void {
 		setting.addButton((button) => {
-			button
-				.setCta()
-				.onClick(asyncHandler(async () => {
-					if (!this.plugin.syncEngine || this.plugin.syncState.isSyncing) {return;}
+			button.setCta().onClick(
+				asyncHandler(async () => {
+					if (!this.plugin.syncEngine || this.plugin.syncState.isSyncing) {
+						return;
+					}
 					this.setSyncBusy(true);
 					await new Promise((r) => window.setTimeout(r, 50));
 					await this.plugin.syncEngine.forceSyncNow();
 					this.setSyncBusy(false);
-				}));
+				})
+			);
 			this.syncButton = button.buttonEl;
 		});
 		this.syncDesc = setting.descEl;
@@ -439,7 +479,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private renderTemplateSection(containerEl: HTMLElement): void {
-		const descContainer = containerEl.createDiv({ cls: 'setting-item-description papersync-template-desc' });
+		const descContainer = containerEl.createDiv({
+			cls: 'setting-item-description papersync-template-desc',
+		});
 		descContainer.createEl('p', { text: 'Template for synced notes. Available variables:' });
 
 		const varList = descContainer.createEl('table', { cls: 'papersync-var-table' });
@@ -490,9 +532,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		const updateImageWarning = (): void => {
 			const show = embedsImage() && imageSavingOff();
 			imageWarning.toggleClass('is-visible', show);
-			imageWarning.setText(show
-				? 'Save scan images is off, so the image line is dropped from synced notes. Remove it from your template, or turn Save scan images back on under Sync.'
-				: '');
+			imageWarning.setText(
+				show
+					? 'Save scan images is off, so the image line is dropped from synced notes. Remove it from your template, or turn Save scan images back on under Sync.'
+					: ''
+			);
 		};
 
 		const renderPreview = (): void => {
@@ -508,35 +552,49 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			// token, render the entry standalone so the heading isn't crowded.
 			if (embedsSeparator()) {
 				const prior = previewEl.createDiv({ cls: 'papersync-preview-prior markdown-rendered' });
-				MarkdownRenderer.render(this.app, PRIOR_ENTRY_MD, prior, '', component).catch(console.error);
+				MarkdownRenderer.render(this.app, PRIOR_ENTRY_MD, prior, '', component).catch(
+					console.error
+				);
 			}
 
 			const md = renderTemplate(textarea.value, PREVIEW_CONTEXT);
-			MarkdownRenderer.render(this.app, md, previewEl, '', component).then(() => {
-				// Only the scan embed (a correctly-written {{ps_image_file}}, which resolves
-				// to the sample path) becomes the placeholder. A malformed embed such as
-				// ![[{{}}]] leaves the token literal, so its src won't match and it keeps
-				// rendering as Obsidian's own unresolved box, showing the user their mistake.
-				previewEl.querySelectorAll('.internal-embed').forEach((embed) => {
-					const box = embed as HTMLElement;
-					if (box.getAttribute('src') !== PREVIEW_CONTEXT.ps_image_file) {return;}
-					box.empty();
-					if (imageSavingOff()) {
-						box.createDiv({ cls: 'papersync-preview-scan-off', text: 'Image saving is off, so this line is dropped from synced notes.' });
-					} else {
-						const figure = box.createDiv({ cls: 'papersync-preview-scan' });
-						// Trusted static asset (no user input); parsed into a node rather
-						// than assigned as innerHTML so the DOM-safety lint stays happy.
-						const scan = new DOMParser().parseFromString(buildScanPlaceholderSvg(PREVIEW_CONTEXT.ps_markdown), 'image/svg+xml');
-						figure.appendChild(document.importNode(scan.documentElement, true));
-					}
-				});
-			}).catch(console.error);
+			MarkdownRenderer.render(this.app, md, previewEl, '', component)
+				.then(() => {
+					// Only the scan embed (a correctly-written {{ps_image_file}}, which resolves
+					// to the sample path) becomes the placeholder. A malformed embed such as
+					// ![[{{}}]] leaves the token literal, so its src won't match and it keeps
+					// rendering as Obsidian's own unresolved box, showing the user their mistake.
+					previewEl.querySelectorAll('.internal-embed').forEach((embed) => {
+						const box = embed as HTMLElement;
+						if (box.getAttribute('src') !== PREVIEW_CONTEXT.ps_image_file) {
+							return;
+						}
+						box.empty();
+						if (imageSavingOff()) {
+							box.createDiv({
+								cls: 'papersync-preview-scan-off',
+								text: 'Image saving is off, so this line is dropped from synced notes.',
+							});
+						} else {
+							const figure = box.createDiv({ cls: 'papersync-preview-scan' });
+							// Trusted static asset (no user input); parsed into a node rather
+							// than assigned as innerHTML so the DOM-safety lint stays happy.
+							const scan = new DOMParser().parseFromString(
+								buildScanPlaceholderSvg(PREVIEW_CONTEXT.ps_markdown),
+								'image/svg+xml'
+							);
+							figure.appendChild(document.importNode(scan.documentElement, true));
+						}
+					});
+				})
+				.catch(console.error);
 		};
 
 		textarea.addEventListener('input', () => {
 			this.plugin.settings.templateString = textarea.value;
-			if (this.previewDebounce !== null) {window.clearTimeout(this.previewDebounce);}
+			if (this.previewDebounce !== null) {
+				window.clearTimeout(this.previewDebounce);
+			}
 			this.previewDebounce = window.setTimeout(() => {
 				this.previewDebounce = null;
 				this.plugin.saveSettings().catch(console.error);
@@ -576,33 +634,46 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
 		switch (key) {
-			case 'targetFolder': return s.targetFolder;
-			case 'downloadImages': return s.downloadImages;
-			case 'attachmentsFolder': return s.attachmentsFolder;
+			case 'targetFolder':
+				return s.targetFolder;
+			case 'downloadImages':
+				return s.downloadImages;
+			case 'attachmentsFolder':
+				return s.attachmentsFolder;
 			// The control is a text field, so hand back a string rather than the
 			// number we store; the framework would otherwise seed it as "[object]".
-			case 'drivePollInterval': return String(s.drivePollInterval);
-			default: return undefined;
+			case 'drivePollInterval':
+				return String(s.drivePollInterval);
+			default:
+				return undefined;
 		}
 	}
 
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const s = this.plugin.settings;
 		switch (key) {
-			case 'targetFolder': s.targetFolder = String(value); break;
-			case 'attachmentsFolder': s.attachmentsFolder = String(value); break;
+			case 'targetFolder':
+				s.targetFolder = String(value);
+				break;
+			case 'attachmentsFolder':
+				s.attachmentsFolder = String(value);
+				break;
 			case 'drivePollInterval': {
 				// validate() already rejects anything out of range, so by here the
 				// value parses; guard anyway rather than persist a NaN.
 				const parsed = parseInt(String(value), 10);
-				if (isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S || parsed > MAX_POLL_INTERVAL_S) {return;}
+				if (isNaN(parsed) || parsed < MIN_POLL_INTERVAL_S || parsed > MAX_POLL_INTERVAL_S) {
+					return;
+				}
 				s.drivePollInterval = parsed;
 				break;
 			}
 			// Toggling image saving changes which other rows are visible, so it goes
 			// through the shared handler that persists AND re-renders.
-			case 'downloadImages': return this.setDownloadImages(Boolean(value));
-			default: return;
+			case 'downloadImages':
+				return this.setDownloadImages(Boolean(value));
+			default:
+				return;
 		}
 		await this.plugin.saveSettings();
 	}
@@ -655,13 +726,22 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				setting.setClass('papersync-storage-active');
 				this.addSyncNowButton(setting);
 				setting.addButton((button) =>
-					button.setButtonText('Change Storage').onClick(asyncHandler(() =>
-						this.getConnectionState().isGoogleConnected ? this.disconnectGoogle() : this.disconnectFolder()
-					))
+					button
+						.setButtonText('Change Storage')
+						.onClick(
+							asyncHandler(() =>
+								this.getConnectionState().isGoogleConnected
+									? this.disconnectGoogle()
+									: this.disconnectFolder()
+							)
+						)
 				);
 				// addSyncNowButton caches these for updateSyncState; drop the
 				// references when the row goes so it cannot write into dead DOM.
-				return () => { this.syncButton = null; this.syncDesc = null; };
+				return () => {
+					this.syncButton = null;
+					this.syncDesc = null;
+				};
 			},
 		});
 
@@ -685,7 +765,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				visible: () => !this.isConnected(),
 				render: (setting) => {
 					setting.addButton((button) =>
-						button.setButtonText('Select').onClick(asyncHandler(() => this.selectDetectedLocation(loc)))
+						button
+							.setButtonText('Select')
+							.onClick(asyncHandler(() => this.selectDetectedLocation(loc)))
 					);
 				},
 			});
@@ -721,21 +803,24 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		defs.push({
 			name: 'Template still embeds the scan image',
 			searchable: false,
-			visible: () => this.isConnected()
-				&& !this.plugin.settings.downloadImages
-				&& templateEmbedsImage(this.plugin.settings.templateString),
+			visible: () =>
+				this.isConnected() &&
+				!this.plugin.settings.downloadImages &&
+				templateEmbedsImage(this.plugin.settings.templateString),
 			render: (setting) => {
 				// Not 'papersync-image-warning': that class is display:none until the
 				// template editor adds is-visible, which left this row permanently
 				// hidden. visible() alone decides whether it shows.
 				setting.setClass('papersync-warning-row');
-				setting.setDesc('Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template section to make it explicit.');
+				setting.setDesc(
+					'Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template section to make it explicit.'
+				);
 			},
 		});
 
 		defs.push({
 			name: 'Attachments folder',
-			desc: 'Where scan images are saved (/ is the vault root). Leave empty to use Obsidian\'s own attachment folder.',
+			desc: "Where scan images are saved (/ is the vault root). Leave empty to use Obsidian's own attachment folder.",
 			visible: () => this.isConnected() && this.plugin.settings.downloadImages,
 			control: {
 				type: 'text',
@@ -744,9 +829,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				// Obsidian reads these as wikilink syntax, so the image saves but the
 				// ![[ ]] embed never resolves. Inline validation says so at the point
 				// of entry rather than as a separate warning element.
-				validate: (value) => RESERVED_WIKILINK_CHARS.test(value)
-					? 'Avoid # | [ ] here. Obsidian reads them as wikilink syntax, so the image embed will not resolve.'
-					: undefined,
+				validate: (value) =>
+					RESERVED_WIKILINK_CHARS.test(value)
+						? 'Avoid # | [ ] here. Obsidian reads them as wikilink syntax, so the image embed will not resolve.'
+						: undefined,
 			},
 		});
 
@@ -754,26 +840,35 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private templateDefinitions(): SettingDefinition[] {
-		return [{
-			name: 'Note template',
-			desc: 'Template for synced notes, with a live preview of a sample scan.',
-			aliases: ['template', 'preview', 'variables', 'ps_markdown', 'ps_image_file', 'ps_scan_time'],
-			render: (setting) => {
-				// The variable table, editor and live preview are built imperatively
-				// inside the row.
-				setting.settingEl.addClass('papersync-template-row');
-				// The editor lives outside controlEl, which is all Setting.clear()
-				// empties before Obsidian re-renders a row. Remove it in the cleanup, or
-				// every update() stacks another live editor (and its listeners) on top
-				// of the old one.
-				const host = setting.settingEl.createDiv();
-				this.renderTemplateSection(host);
-				return () => {
-					this.teardownPreview();
-					host.remove();
-				};
+		return [
+			{
+				name: 'Note template',
+				desc: 'Template for synced notes, with a live preview of a sample scan.',
+				aliases: [
+					'template',
+					'preview',
+					'variables',
+					'ps_markdown',
+					'ps_image_file',
+					'ps_scan_time',
+				],
+				render: (setting) => {
+					// The variable table, editor and live preview are built imperatively
+					// inside the row.
+					setting.settingEl.addClass('papersync-template-row');
+					// The editor lives outside controlEl, which is all Setting.clear()
+					// empties before Obsidian re-renders a row. Remove it in the cleanup, or
+					// every update() stacks another live editor (and its listeners) on top
+					// of the old one.
+					const host = setting.settingEl.createDiv();
+					this.renderTemplateSection(host);
+					return () => {
+						this.teardownPreview();
+						host.remove();
+					};
+				},
 			},
-		}];
+		];
 	}
 
 	private advancedDefinitions(): SettingDefinition[] {
@@ -803,7 +898,10 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 						button.setButtonText('Reset settings').onClick(asyncHandler(() => this.resetSettings()))
 					);
 					setting.addButton((button) =>
-						button.setButtonText('Full reset').setDestructive().onClick(asyncHandler(() => this.fullReset()))
+						button
+							.setButtonText('Full reset')
+							.setDestructive()
+							.onClick(asyncHandler(() => this.fullReset()))
 					);
 				},
 			},
