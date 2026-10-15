@@ -377,6 +377,48 @@ describe('NoteCreator', () => {
 		expect(content).toContain('[!abstract]- Original scan');
 	});
 
+	describe('without a photo', () => {
+		const renderWithoutPhoto = async (templateString: string, scan = makeScanFile()): Promise<string> => {
+			const creator = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, {
+				...defaultConfig,
+				templateString,
+			});
+			await creator.createOrAppend(scan, null, 'scan-nophoto');
+			return mockVault.create.mock.calls[0]?.[1] as string;
+		};
+
+		it('drops a sized embed line and an inline empty embed', async () => {
+			const content = await renderWithoutPhoto('{{ps_markdown}}\n![[{{ps_image_file}}|300]]\nSee ![[{{ps_image_file}}]] here\n');
+
+			expect(content).not.toMatch(/!\[\[/);
+			expect(content).toBe('# Test Notes\n\nSome content here.\nSee here\n');
+		});
+
+		it('keeps the scan text when the template only places the photo', async () => {
+			const content = await renderWithoutPhoto('![[{{ps_image_file}}]]\n');
+
+			expect(content).toBe('# Test Notes\n\nSome content here.\n');
+		});
+
+		it('adds the scan text under the rest of a template that never places it', async () => {
+			const content = await renderWithoutPhoto('## {{ps_scan_time_24h}}\n\n![[{{ps_image_file}}]]\n');
+
+			expect(content).toBe('## 14:30\n\n# Test Notes\n\nSome content here.\n');
+		});
+
+		it('adds nothing for a scan with no text', async () => {
+			const content = await renderWithoutPhoto('## {{ps_scan_time_24h}}\n![[{{ps_image_file}}]]\n', makeScanFile({ markdown: '  ' }));
+
+			expect(content).toBe('## 14:30\n');
+		});
+
+		it('leaves a template that already places the text unchanged', async () => {
+			const content = await renderWithoutPhoto('{{ps_markdown}}\n![[{{ps_image_file}}]]\n');
+
+			expect(content).toBe('# Test Notes\n\nSome content here.\n');
+		});
+	});
+
 	it('uses a Papersync folder when the Notes folder is empty and Daily Notes is off', async () => {
 		// Same rule as first-run resolution, so a cleared field files notes where
 		// they will also go after a restart.

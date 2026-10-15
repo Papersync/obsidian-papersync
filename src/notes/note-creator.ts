@@ -103,7 +103,19 @@ export class NoteCreator {
 			// No image was saved (saving off, or none attached), so {{ps_image_file}}
 			// expanded to '' and the embed line is a broken `![[]]`. Drop that whole line
 			// (with any callout/list marker) rather than shipping an empty embed.
-			rendered = rendered.replace(/^[ \t]*(?:>[ \t]*)?(?:[-*][ \t]*)?!\[\[\]\][ \t]*(?:\r?\n|$)/gm, '');
+			// A sized or aliased embed (`![[|300]]`) is just as empty, and one placed
+			// inline goes on its own.
+			rendered = rendered
+				.replace(/^[ \t]*(?:>[ \t]*)?(?:[-*][ \t]*)?!\[\[(?:\|[^\]\n]*)?\]\][ \t]*(?:\r?\n|$)/gm, '')
+				.replace(/[ \t]*!\[\[(?:\|[^\]\n]*)?\]\]/g, '');
+
+			// A template that only places the photo would import nothing for this scan
+			// and still mark it imported, so keep its text instead.
+			const textSentinel = '\u0000papersync-text\u0000';
+			const placesText = renderTemplate(config.templateString, { ...context, ps_markdown: textSentinel }).includes(textSentinel);
+			if (!placesText && scanFile.markdown.trim() !== '') {
+				rendered = `${rendered.trimEnd()}${rendered.trim() === '' ? '' : '\n\n'}${scanFile.markdown}\n`;
+			}
 		}
 
 		if (existingFile instanceof TFile) {
