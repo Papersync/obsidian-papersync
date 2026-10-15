@@ -180,7 +180,14 @@ export class DriveBackend implements SyncBackend {
 			for (let i = 0; i < unpaired.length; i += COMPANION_LOOKUP_BATCH) {
 				const names = unpaired.slice(i, i + COMPANION_LOOKUP_BATCH).flatMap(companionNames);
 				const byName = names.map((n) => `name = '${n.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(' or ');
-				imageFiles.push(...(await this.listFiles(token, `'${folderId}' in parents and trashed = false and (${byName})`)));
+				try {
+					imageFiles.push(...(await this.listFiles(token, `'${folderId}' in parents and trashed = false and (${byName})`)));
+				} catch (err) {
+					// Best effort: a failed lookup leaves these scans photo-less (the
+					// missing-photo grace still applies) instead of failing discovery
+					// for every scan.
+					logger.warn(`Photo lookup by name failed: ${errorMessage(err)}`);
+				}
 			}
 		}
 

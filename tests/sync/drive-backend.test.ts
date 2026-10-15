@@ -136,6 +136,29 @@ describe('DriveBackend', () => {
 			expect(decodeURIComponent(mockedRequestUrl.mock.calls[2][0].url)).toContain("name = 'a\\\\b.jpg'");
 		});
 
+		it('keeps discovering when the by-name companion lookup fails', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({
+					json: {
+						files: [
+							{ id: 'json-1', name: 'a.json', createdTime: '2026-04-12T14:30:05Z' },
+							{ id: 'json-2', name: 'b.json', createdTime: '2026-04-12T14:30:06Z' },
+							{ id: 'img-2', name: 'b.jpg', createdTime: '2026-04-12T14:30:06Z' },
+						],
+					},
+				} as never)
+				.mockResolvedValueOnce({ status: 400, json: { error: { message: 'Invalid Value' } }, text: '' } as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30, '2026-04-12T14:30:02Z');
+			const refs = await backend.discoverUnsynced();
+
+			expect(refs.map((r) => [r.id, r.imagePath])).toEqual([
+				['a', ''],
+				['b', 'img-2'],
+			]);
+		});
+
 		it('skips the companion lookup when every scan is already paired under a cursor', async () => {
 			mockedRequestUrl
 				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
