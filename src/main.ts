@@ -129,6 +129,8 @@ export default class PaperSyncPlugin extends Plugin {
 			// re-persist needed) makes a stale or tampered data.json self-heal instead of
 			// steering OAuth/Drive traffic at whatever host the file names.
 			delete raw.endpointOverrides;
+			// Same for the E2E-only companion grace override.
+			delete raw.companionGraceOverrideMs;
 			// The refresh token lives in Obsidian's secret storage, never data.json. The plugin is
 			// unpublished, so there is no token worth migrating — just discard any stray
 			// plaintext copy a pre-secret-storage dogfood build may have left behind (those
@@ -247,11 +249,11 @@ export default class PaperSyncPlugin extends Plugin {
 			// the endpoint seam.
 			const backend = new DriveBackend(this.oauthManager, () => this.committed.drivePollInterval, this.settings.lastSyncTimestamp, () => this.settings.endpointOverrides);
 			this.driveBackend = backend;
-			this.startEngine(new SyncEngine(backend, this.app, this.engineConfig, this.errorHandler, this.syncState));
+			this.startEngine(new SyncEngine(backend, this.app, this.engineConfig, this.errorHandler, this.syncState, this.graceOverride));
 			logger.info('Drive sync started');
 		} else if (this.settings.backendType === 'folder' && this.settings.folderPath) {
 			const backend = new FolderBackend(this.settings.folderPath);
-			this.startEngine(new SyncEngine(backend, this.app, this.engineConfig, this.errorHandler, this.syncState));
+			this.startEngine(new SyncEngine(backend, this.app, this.engineConfig, this.errorHandler, this.syncState, this.graceOverride));
 			logger.info('Folder sync started');
 		} else {
 			logger.info('No backend configured or authenticated — sync not started');
@@ -261,6 +263,9 @@ export default class PaperSyncPlugin extends Plugin {
 			this.syncState.setStatus('error');
 		}
 	}
+
+	// Call-time read so a late E2E write still applies to a running engine.
+	private readonly graceOverride = (): unknown => this.settings.companionGraceOverrideMs;
 
 	// A fresh engine runs on a fresh state that has not notified anyone yet. Left
 	// alone, the status bar keeps whatever the previous engine last said (typically

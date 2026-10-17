@@ -86,6 +86,10 @@ export interface PluginSettings {
 	// control. E2E specs set it at runtime to point the REAL OAuth + Drive flow
 	// at an in-repo fake server (test/e2e/fake-google.ts).
 	endpointOverrides?: Partial<GoogleEndpoints>;
+	// Undocumented test seam, same rules as endpointOverrides (absent by default,
+	// no UI, stripped on load): a shorter missing-photo grace in ms so E2E specs
+	// need not wait the production window out. Only ever shortens it.
+	companionGraceOverrideMs?: number;
 }
 
 const DEFAULT_TEMPLATE = `{{ps_separator}}

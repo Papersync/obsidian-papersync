@@ -510,6 +510,10 @@ describe('DriveBackend', () => {
 	});
 });
 
+it('waits 5 minutes from createdTime for a missing companion photo', () => {
+	expect(new DriveBackend({} as unknown as OAuthManager, 30).companionGraceMs).toBe(300_000);
+});
+
 describe('Drive companion absence classification', () => {
 	it('returns null for a missing companion but preserves permission failures', async () => {
 		mockedRequestUrl.mockReset();

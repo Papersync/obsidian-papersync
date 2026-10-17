@@ -47,6 +47,22 @@ describe('PaperSyncPlugin.loadSettings endpoint-seam strip', () => {
 		expect('endpointOverrides' in persisted).toBe(false);
 	});
 
+	it('strips a persisted companion grace override too', async () => {
+		const plugin = makePlugin({
+			settingsVersion: DEFAULT_SETTINGS.settingsVersion,
+			companionGraceOverrideMs: 1000,
+		});
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.companionGraceOverrideMs).toBeUndefined();
+		// The engine's call-time supplier reads the live (stripped) value.
+		const supplier = (plugin as unknown as { graceOverride: () => unknown }).graceOverride;
+		expect(supplier()).toBeUndefined();
+		plugin.settings.companionGraceOverrideMs = 3000;
+		expect(supplier()).toBe(3000);
+	});
+
 	it('falls back to defaults when nothing is persisted', async () => {
 		const plugin = makePlugin(null);
 

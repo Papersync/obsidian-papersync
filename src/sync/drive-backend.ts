@@ -10,6 +10,7 @@ import { errorMessage } from '@/utils/error-message';
 
 import { GOOGLE_SCANS_FOLDER, MAX_POLL_INTERVAL_S } from '@/config';
 import { resolveGoogleEndpoint } from '@/google-endpoints';
+import { DRIVE_COMPANION_GRACE_MS } from '@/sync/companion-grace';
 import type { GoogleEndpointsSupplier } from '@/google-endpoints';
 
 interface DriveFile {
@@ -32,6 +33,9 @@ function companionNames(baseName: string): string[] {
 }
 
 export class DriveBackend implements SyncBackend {
+	// The app uploads the JSON first and the photo second (with retries), so a
+	// Drive JSON waits up to 5 minutes from its createdTime for its photo.
+	readonly companionGraceMs = DRIVE_COMPANION_GRACE_MS;
 	private oauthManager: OAuthManager;
 	// Seconds, read live: an interval changed in Settings takes effect from the next
 	// tick without restarting sync.

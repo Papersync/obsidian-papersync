@@ -692,4 +692,67 @@ describe('SyncEngine.processBatch', () => {
 		// finally released the lock despite the throw → a future sync isn't deadlocked.
 		expect(state.isSyncing).toBe(false);
 	});
+
+	describe('missing companion grace per backend', () => {
+		const NOW = new Date('2026-10-17T12:00:00Z').getTime();
+		const imagesOn = { ...noteConfig, downloadImages: true };
+		function pendingEngine(createdTime: string | undefined, companionGraceMs?: number, override?: () => unknown) {
+			const backend = makeBackend() as ReturnType<typeof makeBackend> & { companionGraceMs?: number };
+			if (companionGraceMs !== undefined) {
+				backend.companionGraceMs = companionGraceMs;
+			}
+			const ref = { id: 'json-first', jsonPath: 'j', imagePath: '', createdTime };
+			backend.discoverUnsynced = jest.fn().mockResolvedValue([ref]);
+			backend.fetchScan = jest.fn().mockResolvedValue({
+				version: 1, createdAt: '2026-10-17T12:00:00Z', markdown: '# t', confidence: 90,
+				provider: 'p', model: 'm', imageFileName: 'json-first.jpg',
+			});
+			backend.fetchImage = jest.fn().mockResolvedValue(null);
+			backend.markSynced = jest.fn().mockResolvedValue(undefined);
+			const state = new SyncState('');
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			const engine = new SyncEngine(backend, makeApp() as any, imagesOn, new ErrorHandler(state), state, override);
+			return { engine, backend };
+		}
+		beforeEach(() => {
+			jest.useFakeTimers();
+		});
+		afterEach(() => jest.useRealTimers());
+
+		it('holds a Drive JSON until 5 minutes after its createdTime', async () => {
+			const { engine, backend } = pendingEngine(new Date(NOW).toISOString(), 300_000);
+			jest.setSystemTime(NOW + 240_000); // 4 min after upload: past the old 60 s window
+			await engine.forceSyncNow();
+			jest.setSystemTime(NOW + 299_999);
+			await engine.forceSyncNow();
+			expect(backend.markSynced).not.toHaveBeenCalled();
+			jest.setSystemTime(NOW + 300_000);
+			await engine.forceSyncNow();
+			expect(backend.markSynced).toHaveBeenCalledTimes(1);
+			engine.stop();
+		});
+
+		it('keeps the 60 s first-sight grace for backends without their own window', async () => {
+			const { engine, backend } = pendingEngine(undefined);
+			jest.setSystemTime(NOW);
+			await engine.forceSyncNow();
+			jest.setSystemTime(NOW + 59_999);
+			await engine.forceSyncNow();
+			expect(backend.markSynced).not.toHaveBeenCalled();
+			jest.setSystemTime(NOW + 60_000);
+			await engine.forceSyncNow();
+			expect(backend.markSynced).toHaveBeenCalledTimes(1);
+			engine.stop();
+		});
+
+		it('honours the test-only override supplier', async () => {
+			const { engine, backend } = pendingEngine(new Date(NOW).toISOString(), 300_000, () => 2000);
+			jest.setSystemTime(NOW);
+			await engine.forceSyncNow();
+			jest.setSystemTime(NOW + 2000);
+			await engine.forceSyncNow();
+			expect(backend.markSynced).toHaveBeenCalledTimes(1);
+			engine.stop();
+		});
+	});
 });

@@ -26,4 +26,8 @@ export interface SyncBackend {
 	// watcher sees its folder deleted) report it here, so the failure reaches the
 	// sync state instead of only a log line.
 	setOnUnavailable?(callback: (error: SyncError) => void): void;
+	// How long a JSON whose companion photo is missing waits for it, measured from
+	// the ref's createdTime when valid (else first sight). Backends without one use
+	// the first-sight folder grace (COMPANION_GRACE_MS).
+	readonly companionGraceMs?: number;
 }

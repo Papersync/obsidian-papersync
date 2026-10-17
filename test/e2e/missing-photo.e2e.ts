@@ -9,15 +9,38 @@ import {
 	MINIMAL_JPEG,
 	isoStamp,
 	switchToMainWindow,
+	waitForPlugin,
 } from './helpers';
 
+// Production waits 60 s (folders) / 5 min from createdTime (Drive) for a missing
+// photo. The E2E-only settings seam shortens it so this spec need not wait it out;
+// long enough that waitPending() and the late-photo write land inside the window.
+const GRACE_OVERRIDE_MS = 10_000;
+
+async function setGraceOverride(ms: number | null): Promise<void> {
+	await browser.execute((value: number | null) => {
+		const ps = (window as unknown as {
+			app: { plugins: { plugins: Record<string, { settings: Record<string, unknown> }> } };
+		}).app.plugins.plugins;
+		const plugin = ps['papersync'] || ps['obsidian-papersync'];
+		if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
+		if (value === null) {
+			delete plugin.settings.companionGraceOverrideMs;
+		} else {
+			plugin.settings.companionGraceOverrideMs = value;
+		}
+	}, ms);
+}
+
 describe('Missing saved scan photo', function () {
-	this.timeout(100_000);
+	this.timeout(60_000);
 	let dir: string;
 	let target: string;
 	beforeEach(async () => {
 		dir = fs.mkdtempSync(path.join(os.tmpdir(), 'papersync-missing-photo-e2e-'));
 		target = `MissingPhoto-${isoStamp()}`;
+		await waitForPlugin();
+		await setGraceOverride(GRACE_OVERRIDE_MS);
 		await configureFolderBackend({
 			folderPath: dir,
 			targetFolder: target,
@@ -37,6 +60,7 @@ describe('Missing saved scan photo', function () {
 			).app.plugins.plugins;
 			plugins['papersync']?.syncEngine?.stop();
 		});
+		await setGraceOverride(null);
 		fs.rmSync(dir, { recursive: true, force: true });
 	});
 	function write(id: string, createdAt: string): void {
@@ -77,7 +101,7 @@ describe('Missing saved scan photo', function () {
 			}
 			write(id, '2026-01-01T12:00:00Z');
 			await triggerSyncNow();
-			let text = await waitForNotes(target, `# ${id} text kept`, 75_000);
+			let text = await waitForNotes(target, `# ${id} text kept`, 30_000);
 			await waitSynced(id);
 			expect(text).not.toContain('![[');
 			await triggerSyncNow();
@@ -95,7 +119,7 @@ describe('Missing saved scan photo', function () {
 		expect(JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8')).synced).not.toBe(true);
 		fs.writeFileSync(path.join(dir, `${id}.jpg`), MINIMAL_JPEG);
 		await triggerSyncNow();
-		const text = await waitForNotes(target, `# ${id} text kept`, 75_000);
+		const text = await waitForNotes(target, `# ${id} text kept`, 30_000);
 		expect(text).toContain('![[');
 	});
 	it('automatically imports permanently absent photos after the bounded grace', async () => {
@@ -104,7 +128,7 @@ describe('Missing saved scan photo', function () {
 		await triggerSyncNow();
 		await waitPending();
 		expect(JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8')).synced).not.toBe(true);
-		const text = await waitForNotes(target, `# ${id} text kept`, 75_000);
+		const text = await waitForNotes(target, `# ${id} text kept`, 30_000);
 		await waitSynced(id);
 		expect(text).not.toContain('![[');
 		expect(JSON.parse(fs.readFileSync(path.join(dir, `${id}.json`), 'utf8')).synced).toBe(true);

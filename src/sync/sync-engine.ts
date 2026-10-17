@@ -8,7 +8,8 @@ import { isOnline } from '@/utils/platform';
 import { logger } from '@/utils/logger';
 import { STRINGS } from '@/utils/strings';
 
-import { CompanionGrace } from '@/sync/companion-grace';
+import { CompanionGrace, COMPANION_GRACE_MS } from '@/sync/companion-grace';
+import type { GraceOverrideSupplier } from '@/sync/companion-grace';
 
 const BATCH_SIZE = 10;
 
@@ -20,7 +21,7 @@ export class SyncEngine {
 	private pendingNetwork = new Set<string>();
 	// A background retry: it must not announce "nothing new" or "offline"
 	// the user never asked about.
-	private companionGrace = new CompanionGrace(() => this.forceSyncNow({ quiet: true }));
+	private companionGrace: CompanionGrace;
 	// Set when the backend reports its source gone, cleared by the next pass that
 	// can only run with the source present (a discovery that succeeded). A batch
 	// already in flight when the source went away must not finish by recording
@@ -32,8 +33,12 @@ export class SyncEngine {
 		app: App,
 		noteConfig: NoteCreatorConfig,
 		errorHandler: ErrorHandler,
-		state: SyncState
+		state: SyncState,
+		// Test-only (settings.companionGraceOverrideMs, E2E-injected, never persisted
+		// across a load): a shorter companion grace so specs need not wait it out.
+		graceOverride?: GraceOverrideSupplier
 	) {
+		this.companionGrace = new CompanionGrace(() => this.forceSyncNow({ quiet: true }), graceOverride);
 		this.backend = backend;
 		this.noteCreator = new NoteCreator(app, app.vault, noteConfig);
 		this.errorHandler = errorHandler;
@@ -168,7 +173,10 @@ export class SyncEngine {
 							if (
 								downloadImages &&
 								imageData === null &&
-								this.companionGrace.defer(ref.id)
+								this.companionGrace.defer(ref.id, {
+									windowMs: this.backend.companionGraceMs ?? COMPANION_GRACE_MS,
+									uploadedAt: ref.createdTime,
+								})
 							) {
 								this.pendingNetwork.delete(ref.id);
 								return 'waiting-image';
