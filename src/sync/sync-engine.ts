@@ -19,6 +19,11 @@ export class SyncEngine {
 	private errorHandler: ErrorHandler;
 	readonly state: SyncState;
 	private pendingNetwork = new Set<string>();
+	// Scans this session imported or found already synced. Drive re-lists them on
+	// every poll while an older scan holds the cursor back (companion grace), so
+	// they must not count toward the "syncing N" notice. In memory only: it never
+	// skips a fetch, the JSON's synced flag still decides what imports.
+	private syncedThisSession = new Set<string>();
 	// A background retry: it must not announce "nothing new" or "offline"
 	// the user never asked about.
 	private companionGrace: CompanionGrace;
@@ -95,7 +100,7 @@ export class SyncEngine {
 			this.companionGrace.retain(refs.map((ref) => ref.id));
 			this.sourceUnavailable = false;
 			if (refs.length > 0) {
-				await this.processBatch(refs);
+				await this.processBatch(refs, !quiet);
 			} else {
 				this.state.recordSyncCompleted(0);
 				if (!quiet) {
@@ -116,7 +121,7 @@ export class SyncEngine {
 		}
 	}
 
-	private async processBatch(refs: ScanReference[]): Promise<void> {
+	private async processBatch(refs: ScanReference[], manual = false): Promise<void> {
 		if (!this.state.tryStartSync()) {
 			return;
 		}
@@ -139,10 +144,15 @@ export class SyncEngine {
 				return a.id.localeCompare(b.id);
 			});
 			let remaining = unsyncedRefs.length;
+			// Announce only scans that will do work: not a re-check of a scan already
+			// waiting for its photo, nor a re-list of one this session already synced.
+			const workCount = unsyncedRefs.filter(
+				(ref) => !this.companionGrace.has(ref.id) && !this.syncedThisSession.has(ref.id)
+			).length;
 
 			this.state.setStatus('syncing', remaining);
-			if (remaining > 0) {
-				new Notice(STRINGS.NOTICE_SYNCING(remaining));
+			if (workCount > 0) {
+				new Notice(STRINGS.NOTICE_SYNCING(workCount));
 			}
 
 			let synced = 0;
@@ -215,8 +225,11 @@ export class SyncEngine {
 						}
 					}
 
-					if ((result === 'synced' || result === 'skipped') && ref.createdTime) {
-						processedTimes.push(ref.createdTime);
+					if (result === 'synced' || result === 'skipped') {
+						this.syncedThisSession.add(ref.id);
+						if (ref.createdTime) {
+							processedTimes.push(ref.createdTime);
+						}
 					}
 					if (result === 'synced') {
 						synced++;
@@ -259,6 +272,15 @@ export class SyncEngine {
 				new Notice(STRINGS.NOTICE_WAITING_FOR_DOWNLOAD(this.pendingNetwork.size));
 			} else {
 				this.state.recordSyncCompleted(this.companionGrace.pendingCount);
+				// A manual Sync now that imported nothing still answers the user (this
+				// branch means nothing failed): scans waiting for their photo, or nothing new.
+				if (manual && synced === 0) {
+					new Notice(
+						this.companionGrace.pendingCount > 0
+							? STRINGS.NOTICE_WAITING_FOR_DOWNLOAD(this.companionGrace.pendingCount)
+							: STRINGS.NOTICE_NOTHING_NEW
+					);
+				}
 			}
 			this.errorHandler.resetRetries();
 		} finally {

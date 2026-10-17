@@ -48,6 +48,11 @@ export class CompanionGrace {
 		return this.deadlines.size;
 	}
 
+	/** True while this scan is inside its grace (a re-check is not new work). */
+	has(id: string): boolean {
+		return this.deadlines.has(id);
+	}
+
 	defer(id: string, policy: GracePolicy = { windowMs: COMPANION_GRACE_MS }): boolean {
 		const now = Date.now();
 		const deadline = this.deadlines.get(id) ?? this.deadlineFor(now, policy);
