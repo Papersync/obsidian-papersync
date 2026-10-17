@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml"><img alt="CI" src="https://github.com/Papersync/obsidian-papersync/actions/workflows/verify.yml/badge.svg"></a>
-  <a href="https://github.com/Papersync/obsidian-papersync/releases/latest"><img alt="Version 0.1.2" src="https://img.shields.io/badge/version-0.1.2-blue"></a>
+  <a href="https://github.com/Papersync/obsidian-papersync/releases/latest"><img alt="Version 0.1.3" src="https://img.shields.io/badge/version-0.1.3-blue"></a>
   <img alt="License MIT" src="https://img.shields.io/badge/license-MIT-blue">
   <img alt="Obsidian 1.13.4+" src="https://img.shields.io/badge/Obsidian-1.13.4%2B-7c3aed">
   <img alt="Desktop" src="https://img.shields.io/badge/platform-desktop-lightgrey">

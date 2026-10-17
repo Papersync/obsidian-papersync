@@ -1,7 +1,7 @@
 {
 	"id": "papersync",
 	"name": "Papersync",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.13.4",
 	"description": "Syncs handwritten scans from Google Drive, iCloud Drive, or any synced folder into your vault as markdown notes.",
 	"author": "Papersync",
