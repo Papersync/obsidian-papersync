@@ -99,6 +99,7 @@ npm run build
 - Create a GitHub release whose tag exactly matches `manifest.json`'s `version`. Do not use a leading `v`.
 - Attach `manifest.json`, `main.js`, and `styles.css` (if present) to the release as individual assets.
 - After the initial release, follow the process to add/update your plugin in the community catalog as required.
+- Cut releases with `npm run release` (patch; `-- minor` for minor, major is refused while in beta): it checks the tree, runs lint + tsc + unit tests, bumps and tags via `npm version`, pushes, and waits for `release.yml` to build a draft. Then write the notes (the generated ones list only PRs) and publish with `npm run release -- publish <x.y.z>`.
 
 ## Security, privacy, and compliance
 

@@ -21,6 +21,13 @@ E2E tests automate a real Obsidian instance with the plugin loaded from a test v
 cd plugin && npx tsc --noEmit
 ```
 
+## Releasing
+```bash
+npm run release                     # patch: checks, bump + tag, push, wait for the draft
+npm run release -- publish 0.1.4    # after editing the draft's notes
+```
+Script: `scripts/release.sh`. Details in AGENTS.md § Versioning & releases.
+
 ## Key Patterns
 
 - **BackendType:** `'drive' | 'folder' | 'none'` (was `'icloud'` before v2 migration)

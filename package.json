@@ -13,6 +13,7 @@
 		"test:dev": "jest --config jest.config.cjs --watch",
 		"test:e2e": "npm run build && npx wdio run ./wdio.conf.mts",
 		"version": "node version-bump.mjs && git add manifest.json versions.json README.md",
+		"release": "bash scripts/release.sh",
 		"lint": "eslint .",
 		"format": "prettier --write src/ tests/"
 	},
