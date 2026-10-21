@@ -1,5 +1,5 @@
 import { App, Vault, TFile, moment, normalizePath } from 'obsidian';
-import { extractTitle } from '@/notes/scan-title';
+import { scanTitle, scanSummary } from '@papersync/scan-format';
 import { renderTemplate } from '@/notes/template-engine';
 import type { TemplateContext } from '@/notes/template-engine';
 import { saveImageToVault } from '@/notes/image-handler';
@@ -90,8 +90,8 @@ export class NoteCreator {
 			ps_confidence: scanFile.confidence,
 			ps_provider: scanFile.provider,
 			ps_model: scanFile.model,
-			ps_title: scanFile.title || extractTitle(scanFile.markdown, time12),
-			ps_summary: scanFile.summary ?? '',
+			ps_title: scanTitle(scanFile, time12),
+			ps_summary: scanSummary(scanFile) ?? '',
 			ps_image_file: imagePath,
 			ps_markdown: scanFile.markdown,
 			// '***' (not '---') as the divider: it renders as the same horizontal rule but

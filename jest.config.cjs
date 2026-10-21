@@ -7,6 +7,8 @@ process.env.TZ = 'UTC';
 module.exports = {
 	preset: 'ts-jest',
 	testEnvironment: 'jsdom',
+	// The shared contract is ESM-only; transform its JS for Jest's CJS runner.
+	transformIgnorePatterns: ['/node_modules/(?!@papersync/scan-format/)'],
 	roots: ['<rootDir>/tests'],
 	coverageProvider: 'v8',
 	collectCoverageFrom: [
@@ -28,14 +30,16 @@ module.exports = {
 		},
 	},
 	moduleNameMapper: {
+		'^@papersync/scan-format$': '<rootDir>/node_modules/@papersync/scan-format/dist/index.js',
 		'^@/(.*)$': '<rootDir>/src/$1',
 		'^obsidian$': '<rootDir>/tests/__mocks__/obsidian.ts',
 	},
 	setupFiles: ['<rootDir>/tests/setup.ts'],
 	transform: {
-		'^.+\\.ts$': ['ts-jest', {
+		'^.+\\.[tj]s$': ['ts-jest', {
 			tsconfig: {
 				strict: true,
+				allowJs: true,
 				module: 'ESNext',
 				target: 'ES2018',
 				// 'bundler' + relative paths rather than the legacy 'node' resolution

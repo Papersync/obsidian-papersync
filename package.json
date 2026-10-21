@@ -54,6 +54,7 @@
 		"wdio-obsidian-service": "^3.3.0"
 	},
 	"dependencies": {
+		"@papersync/scan-format": "0.1.0",
 		"obsidian": "1.14.4",
 		"zod": "4.6.7"
 	}

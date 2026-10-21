@@ -1,6 +1,7 @@
 import { TFile } from 'obsidian';
 
 import { NoteCreator } from '@/notes/note-creator';
+import { validateScanFile } from '@/validation/scan-file-schema';
 import type { ScanFile } from '@/validation/scan-file-schema';
 
 // getAbstractFileByPath must return a real TFile for the append path (instanceof check).
@@ -41,17 +42,23 @@ const defaultConfig = {
 	downloadImages: true,
 };
 
-const makeScanFile = (overrides?: Partial<ScanFile>): ScanFile => ({
-	version: '1',
-	createdAt: '2026-04-12T14:30:00.000Z',
-	markdown: '# Test Notes\n\nSome content here.',
-	confidence: 87,
-	provider: 'claude',
-	model: 'claude-sonnet-4',
-	imageFileName: '2026-04-12-143000.jpg',
-	synced: false,
-	...overrides,
-});
+const makeScanFile = (overrides?: Partial<ScanFile>): ScanFile => {
+	const parsed = validateScanFile({
+		version: 1,
+		createdAt: '2026-04-12T14:30:00.000Z',
+		markdown: '# Test Notes\n\nSome content here.',
+		confidence: 87,
+		provider: 'claude',
+		model: 'claude-sonnet-4',
+		imageFileName: '2026-04-12-143000.jpg',
+		synced: false,
+		...overrides,
+	});
+	if ('error' in parsed) {
+		throw new Error(parsed.error);
+	}
+	return parsed;
+};
 
 // Build a creator whose app reports a specific Core Daily Notes format/folder.
 const creatorWithDailyFormat = (format: string, folder = '', config = defaultConfig): NoteCreator => {

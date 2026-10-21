@@ -99,6 +99,18 @@ describe('FolderBackend.discoverUnsynced', () => {
 		expect(refs[0].imagePath).toBe(path.join(tmp, `${base}.jpeg`));
 	});
 
+	it.each([
+		['renamed-photo.jpeg', 'renamed-photo.jpeg'],
+		['stale.jpg', 'scan.jpg'],
+		[42, 'scan.jpg'],
+	])('pairs metadata %j using the directory snapshot', async (imageFileName, expected) => {
+		writeScanJson(tmp, 'scan', { ...baseScan, imageFileName });
+		writeBlob(tmp, 'scan.jpg');
+		writeBlob(tmp, 'renamed-photo.jpeg');
+		const refs = await backend.discoverUnsynced();
+		expect(refs[0].imagePath).toBe(path.join(tmp, expected));
+	});
+
 	it('prefers the JSON-declared imageFileName even when other extensions exist on disk', async () => {
 		const base = '2026-03-03-130000';
 		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.png` });
@@ -191,10 +203,10 @@ describe('FolderBackend.fetchScan', () => {
 		await expect(backend.fetchScan(ref)).rejects.toMatchObject({ type: 'schema_mismatch' });
 	});
 
-	it('coerces numeric version to string per the schema contract', async () => {
+	it('normalizes string version to numeric v1', async () => {
 		const base = '2026-04-12-143000';
-		// App writes `version: 1` (number); plugin must accept it.
-		writeScanJson(tmp, base, { ...baseScan, version: 1, imageFileName: `${base}.jpg` });
+		// Older writers emitted string v1; reads now normalize it.
+		writeScanJson(tmp, base, { ...baseScan, version: '1', imageFileName: `${base}.jpg` });
 		writeBlob(tmp, `${base}.jpg`);
 		const ref = {
 			id: base,
@@ -202,7 +214,7 @@ describe('FolderBackend.fetchScan', () => {
 			imagePath: path.join(tmp, `${base}.jpg`),
 		};
 		const scan = await backend.fetchScan(ref);
-		expect(scan.version).toBe('1');
+		expect(scan.version).toBe(1);
 	});
 });
 
@@ -221,7 +233,7 @@ describe('FolderBackend.markSynced', () => {
 
 	it('writes synced:true into the JSON file in place', async () => {
 		const base = '2026-04-12-143000';
-		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.jpg` });
+		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.jpg`, confidence: 0.9, title: '  Raw  ', future: { keep: true } });
 		const ref = {
 			id: base,
 			jsonPath: path.join(tmp, `${base}.json`),
@@ -232,6 +244,7 @@ describe('FolderBackend.markSynced', () => {
 
 		const updated = JSON.parse(fs.readFileSync(ref.jsonPath, 'utf-8'));
 		expect(updated.synced).toBe(true);
+		expect(updated).toMatchObject({ version: '1', confidence: 0.9, title: '  Raw  ', future: { keep: true } });
 		// Original fields preserved
 		expect(updated.markdown).toBe('# Sample');
 		expect(updated.imageFileName).toBe(`${base}.jpg`);

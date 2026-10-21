@@ -1,4 +1,4 @@
-import { cleanMarkdownPreview, extractTitle } from '@/notes/scan-title';
+import { cleanMarkdownPreview, deriveTitle } from '@papersync/scan-format';
 
 describe('app-compatible scan titles', () => {
 	it.each([
@@ -13,7 +13,7 @@ describe('app-compatible scan titles', () => {
 		['x'.repeat(90), 'x'.repeat(60)],
 		['# ' + 'x'.repeat(220), 'x'.repeat(200)],
 	])('extracts %j', (markdown, title) => {
-		expect(extractTitle(markdown, 'scan time')).toBe(title);
+		expect(deriveTitle(markdown, 'scan time')).toBe(title);
 	});
 
 	it('cleans all syntax handled by the app and collapses whitespace', () => {

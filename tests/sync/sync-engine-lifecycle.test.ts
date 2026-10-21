@@ -302,7 +302,7 @@ describe('SyncEngine lifecycle and online/offline handling', () => {
 });
 
 const validScan = {
-	version: '1' as const,
+	version: 1 as const,
 	createdAt: '2026-04-12T14:30:00.000Z',
 	markdown: '# scan',
 	confidence: 95,

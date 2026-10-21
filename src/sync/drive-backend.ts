@@ -1,4 +1,5 @@
 import { requestUrl } from 'obsidian';
+import { IMAGE_EXTENSIONS } from '@papersync/scan-format';
 import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
@@ -29,12 +30,12 @@ interface DriveListResponse {
 const COMPANION_LOOKUP_BATCH = 30;
 
 function companionNames(baseName: string): string[] {
-	return [`${baseName}.jpg`, `${baseName}.jpeg`, `${baseName}.png`];
+	return IMAGE_EXTENSIONS.map((extension) => `${baseName}${extension}`);
 }
 
 export class DriveBackend implements SyncBackend {
-	// The app uploads the JSON first and the photo second (with retries), so a
-	// Drive JSON waits up to 5 minutes from its createdTime for its photo.
+	// JSON and photo uploads can become visible at different times or finish
+	// out of order. Wait up to 5 minutes from the JSON createdTime for its photo.
 	readonly companionGraceMs = DRIVE_COMPANION_GRACE_MS;
 	private oauthManager: OAuthManager;
 	// Seconds, read live: an interval changed in Settings takes effect from the next
@@ -277,7 +278,7 @@ export class DriveBackend implements SyncBackend {
 		const token = await this.oauthManager.getValidAccessToken();
 
 		// Re-fetch the RAW JSON (not the zod-parsed ScanFile, which drops unmodeled fields
-		// and coerces types e.g. version number->string) so the PATCH round-trips every
+		// and normalizes version, confidence and metadata) so the PATCH round-trips every
 		// original field untouched. Mirrors FolderBackend.markSynced.
 		const response = await this.driveRequest({
 			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,

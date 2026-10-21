@@ -1,3 +1,4 @@
+import { imageFileNameFor } from '@papersync/scan-format';
 import * as fs from 'fs';
 import * as path from 'path';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
@@ -221,7 +222,8 @@ export class FolderBackend implements SyncBackend {
 		// Evicted iCloud files are listed only as `.name.icloud` placeholders;
 		// fold them back to their real names so offloaded scans stay discoverable.
 		const entrySet = new Set(entries.map(materializedName));
-		const jsonFiles = [...entrySet].filter((e) => e.endsWith('.json'));
+		const availableFileNames = [...entrySet];
+		const jsonFiles = availableFileNames.filter((e) => e.endsWith('.json'));
 		const refs: ScanReference[] = [];
 
 		for (const jsonFile of jsonFiles) {
@@ -234,7 +236,7 @@ export class FolderBackend implements SyncBackend {
 				// extension probing in case the field is missing or stale. An
 				// evicted JSON can't be read yet — its synced flag is unknowable
 				// until fetchScan triggers the download, so discover it anyway.
-				let imageFileName: string | null = null;
+				let imageFileName = '';
 				if (presentSet.has(jsonFile)) {
 					const content = await fs.promises.readFile(jsonPath, 'utf-8');
 					const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
@@ -242,19 +244,15 @@ export class FolderBackend implements SyncBackend {
 					if (parsed.synced === true) {
 						continue;
 					}
-					imageFileName =
-						parsed.imageFileName && entrySet.has(parsed.imageFileName)
-							? parsed.imageFileName
-							: null;
+					imageFileName = typeof parsed.imageFileName === 'string' ? parsed.imageFileName : '';
 				} else {
 					logger.info(`${jsonFile} is offloaded — discovering it for download`);
 				}
 
-				const candidate =
-					imageFileName ??
-					(entrySet.has(`${baseName}.jpg`) ? `${baseName}.jpg` : null) ??
-					(entrySet.has(`${baseName}.jpeg`) ? `${baseName}.jpeg` : null) ??
-					(entrySet.has(`${baseName}.png`) ? `${baseName}.png` : null);
+				const candidate = imageFileNameFor({ imageFileName }, {
+					jsonFileName: jsonFile,
+					availableFileNames,
+				});
 
 				// JSON owns the text. Keep orphaned scans discoverable; the engine
 				// gives new uploads time to finish before importing without a photo.

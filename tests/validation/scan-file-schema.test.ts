@@ -1,7 +1,7 @@
 import { validateScanFile } from '@/validation/scan-file-schema';
 
 const validScanFile = {
-	version: '1',
+	version: 1,
 	createdAt: '2026-04-12T14:30:00.000Z',
 	markdown: '# Test notes',
 	confidence: 87,
@@ -16,7 +16,7 @@ describe('validateScanFile', () => {
 		const result = validateScanFile(validScanFile);
 		expect('error' in result).toBe(false);
 		if (!('error' in result)) {
-			expect(result.version).toBe('1');
+			expect(result.version).toBe(1);
 			expect(result.confidence).toBe(87);
 			expect(result.synced).toBe(false);
 		}
@@ -33,26 +33,18 @@ describe('validateScanFile', () => {
 		expect('error' in result).toBe(true);
 	});
 
-	it('rejects confidence below 0', () => {
-		const result = validateScanFile({ ...validScanFile, confidence: -1 });
-		expect('error' in result).toBe(true);
-	});
-
-	it('rejects confidence above 100', () => {
-		const result = validateScanFile({ ...validScanFile, confidence: 101 });
-		expect('error' in result).toBe(true);
-	});
-
-	it('rejects non-integer confidence', () => {
-		const result = validateScanFile({ ...validScanFile, confidence: 87.5 });
-		expect('error' in result).toBe(true);
-	});
+	it.each([[-1, 0], [101, 100], [87.5, 88], [0.9, 90], [1, 1]])(
+		'normalizes legacy confidence %s to %s', (confidence, expected) => {
+			expect(validateScanFile({ ...validScanFile, confidence })).toMatchObject({ confidence: expected });
+		}
+	);
 
 	it('rejects unsupported schema version', () => {
 		const result = validateScanFile({ ...validScanFile, version: '99' });
 		expect('error' in result).toBe(true);
 		if ('error' in result) {
-			expect(result.error).toContain('Unsupported schema version');
+			expect(result.error).toContain('Unsupported Papersync scan version');
+			expect(result.error).toContain('update the Papersync plugin');
 		}
 	});
 
