@@ -80,6 +80,17 @@ describe('validateScanFile', () => {
 });
 
 describe('optional title and summary', () => {
+	it.each(['title', 'summary'])('treats non-string %s as absent without dropping the scan', (field) => {
+		for (const input of [null, 42, {}, { text: 'Page' }, [], ['Page'], true]) {
+			const result = validateScanFile({ ...validScanFile, [field]: input });
+			expect(result).not.toHaveProperty('error');
+			expect(result).toMatchObject(validScanFile);
+			if (!('error' in result)) {
+				expect(result[field as 'title' | 'summary']).toBeUndefined();
+			}
+		}
+	});
+
 	it.each(['title', 'summary'])('normalizes %s without imposing a length limit', (field) => {
 		for (const [input, expected] of [['  Page  ', 'Page'], [' \n ', undefined], ['x'.repeat(500), 'x'.repeat(500)]]) {
 			const result = validateScanFile({ ...validScanFile, [field]: input });
@@ -88,6 +99,5 @@ describe('optional title and summary', () => {
 		}
 		const old = validateScanFile(validScanFile);
 		expect(old).not.toHaveProperty(field);
-		expect(validateScanFile({ ...validScanFile, [field]: 42 })).toHaveProperty('error');
 	});
 });

@@ -14,6 +14,13 @@ z.config(en());
 
 const SUPPORTED_SCHEMA_VERSIONS = ['1'] as const;
 
+// Optional descriptive metadata must never make an otherwise valid scan fail.
+// Ignore non-strings instead of coercing them into misleading note content.
+const OptionalScanText = z.preprocess(
+	(value) => typeof value === 'string' ? value : undefined,
+	z.string().trim().transform((value) => value || undefined).optional()
+);
+
 export const ScanFileSchema = z.object({
 	version: z.union([z.string(), z.number()]).transform(String),
 	// Must be a real ISO datetime (the producer emits Date.toISOString()). A loose
@@ -21,8 +28,8 @@ export const ScanFileSchema = z.object({
 	// "Invalid Date" filename with a NaN:NaN time instead of a clean schema_mismatch.
 	createdAt: z.iso.datetime(),
 	markdown: z.string(),
-	title: z.string().trim().transform((value) => value || undefined).optional(),
-	summary: z.string().trim().transform((value) => value || undefined).optional(),
+	title: OptionalScanText,
+	summary: OptionalScanText,
 	confidence: z.number().int().min(0).max(100),
 	provider: z.string(),
 	model: z.string(),
