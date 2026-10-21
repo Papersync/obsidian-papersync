@@ -78,3 +78,16 @@ describe('validateScanFile', () => {
 		expect('error' in result).toBe(true);
 	});
 });
+
+describe('optional title and summary', () => {
+	it.each(['title', 'summary'])('normalizes %s without imposing a length limit', (field) => {
+		for (const [input, expected] of [['  Page  ', 'Page'], [' \n ', undefined], ['x'.repeat(500), 'x'.repeat(500)]]) {
+			const result = validateScanFile({ ...validScanFile, [field]: input });
+			expect(result).not.toHaveProperty('error');
+			expect(result).toHaveProperty(field, expected);
+		}
+		const old = validateScanFile(validScanFile);
+		expect(old).not.toHaveProperty(field);
+		expect(validateScanFile({ ...validScanFile, [field]: 42 })).toHaveProperty('error');
+	});
+});

@@ -25,6 +25,8 @@ const PREVIEW_CONTEXT: TemplateContext = {
 	ps_confidence: 92,
 	ps_provider: 'claude',
 	ps_model: 'claude-sonnet-4',
+	ps_title: 'Small steps',
+	ps_summary: 'A reminder to keep moving forward, with four everyday tasks.',
 	ps_image_file: 'attachments/Papersync/papersync-scan.jpg',
 	ps_markdown:
 		'Small steps still move you forward. Start with one, and let momentum carry the rest.\n\n- [x] Grocery run before it rains\n- [ ] Read 20 pages before bed\n- [ ] 30-min walk after lunch\n- [ ] Call mom back',
@@ -491,6 +493,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		const varList = descContainer.createEl('table', { cls: 'papersync-var-table' });
 		const vars: Array<[string, string]> = [
 			['{{ps_markdown}}', 'Converted text'],
+			['{{ps_title}}', 'Page title (AI, or the first heading)'],
+			['{{ps_summary}}', 'One-line summary (AI, empty if none)'],
 			['{{ps_image_file}}', 'Image vault path, use ![[{{ps_image_file}}]] to embed'],
 			['{{ps_scan_time}}', '12h scan time (2:30 PM)'],
 			['{{ps_scan_time_24h}}', '24h scan time (14:30)'],

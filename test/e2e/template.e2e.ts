@@ -78,6 +78,25 @@ describe('Template editor', function () {
 		expect(value).toContain('{{ps_separator}}');
 	});
 
+	it('lists title/summary tokens and renders them in the live preview', async function () {
+		const editor = await browser.$('.papersync-template-editor');
+		const original = await editor.getValue();
+		try {
+			const help = await (await browser.$('.papersync-var-table')).getText();
+			expect(help).toContain('{{ps_title}}');
+			expect(help).toContain('Page title (AI, or the first heading)');
+			expect(help).toContain('{{ps_summary}}');
+			expect(help).toContain('One-line summary (AI, empty if none)');
+			await editor.setValue('## {{ps_title}}\n\n{{ps_summary}}');
+			await browser.waitUntil(async () => {
+				const text = await (await browser.$('.papersync-template-preview')).getText();
+				return text.includes('Small steps') && text.includes('A reminder to keep moving forward, with four everyday tasks.');
+			}, { timeout: 5000, timeoutMsg: 'new template tokens never rendered in preview' });
+		} finally {
+			await editor.setValue(original);
+		}
+	});
+
 	it('template has proper styling', async function () {
 		const textarea = await browser.$('.papersync-template-editor');
 		await textarea.waitForExist({ timeout: 3000 });

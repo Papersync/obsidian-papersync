@@ -8,6 +8,8 @@ const defaultContext: TemplateContext = {
 	ps_confidence: 87,
 	ps_provider: 'claude',
 	ps_model: 'claude-sonnet-4',
+	ps_title: 'Meeting Notes',
+	ps_summary: 'Roadmap and action items',
 	ps_image_file: 'attachments/papersync/scan-001.jpg',
 	ps_markdown: '# Meeting Notes\n\n- Discussed roadmap\n- Action items assigned',
 	ps_separator: '',
@@ -77,3 +79,14 @@ describe('renderTemplate', () => {
 		expect(result).toBe('confidence: 87');
 	});
 });
+
+ it('renders new tokens as single-line literal Markdown without recursive substitution', () => {
+	const value = '[[Page#Heading|Alias]]\n# Title **bold** <tag> \r\n{{ps_model}}';
+	const escaped = String.raw`\[\[Page\#Heading\|Alias\]\] \# Title \*\*bold\*\* \<tag\>  \{\{ps\_model\}\}`;
+	expect(renderTemplate('{{ps_title}} | {{ps_summary}}', {
+		...defaultContext, ps_title: value, ps_summary: value,
+	})).toBe(`${escaped} | ${escaped}`);
+	expect(renderTemplate('{{ps_markdown}} {{ps_model}}', {
+		...defaultContext, ps_markdown: value, ps_model: value,
+	})).toBe(`${value} ${value}`);
+ });

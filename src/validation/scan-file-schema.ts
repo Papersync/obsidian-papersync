@@ -21,6 +21,8 @@ export const ScanFileSchema = z.object({
 	// "Invalid Date" filename with a NaN:NaN time instead of a clean schema_mismatch.
 	createdAt: z.iso.datetime(),
 	markdown: z.string(),
+	title: z.string().trim().transform((value) => value || undefined).optional(),
+	summary: z.string().trim().transform((value) => value || undefined).optional(),
 	confidence: z.number().int().min(0).max(100),
 	provider: z.string(),
 	model: z.string(),

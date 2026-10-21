@@ -6,6 +6,8 @@ export interface TemplateContext {
 	ps_confidence: number;
 	ps_provider: string;
 	ps_model: string;
+	ps_title: string;
+	ps_summary: string;
 	ps_image_file: string;
 	ps_markdown: string;
 	ps_separator: string;
@@ -29,9 +31,18 @@ export const LEGACY_TOKENS: Record<string, keyof TemplateContext> = {
 };
 
 export function renderTemplate(template: string, context: TemplateContext): string {
-	// Pure substitution: every newline the author wrote is preserved verbatim in the
-	// note file (Markdown rendering still collapses blank runs at display time).
-	// Own properties only, so {{toString}} and friends stay literal.
-	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) =>
-		Object.prototype.hasOwnProperty.call(context, key) ? String(context[key as keyof TemplateContext]) : match);
+	// Preserve author newlines and the existing raw ps_markdown/ps_model behavior.
+	// Title and summary are plain text: flatten line breaks and escape Markdown
+	// punctuation so headings, wikilinks, table pipes and HTML stay literal. Do
+	// this here so saved notes and the settings preview use the same policy.
+	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
+		// Own properties only, so {{toString}} and friends stay literal.
+		if (!Object.prototype.hasOwnProperty.call(context, key)) {
+			return match;
+		}
+		const value = String(context[key as keyof TemplateContext]);
+		return key === 'ps_title' || key === 'ps_summary'
+			? value.replace(/[\r\n\u2028\u2029]+/g, ' ').replace(/([!"#$%&'()*+,\-./:;<=>?@[\\\]^_{|}~`])/g, '\\$1')
+			: value;
+	});
 }

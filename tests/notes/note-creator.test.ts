@@ -73,6 +73,23 @@ describe('NoteCreator', () => {
 		creator = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, defaultConfig);
 	});
 
+	it.each([
+		[{ title: 'AI title', summary: 'AI summary' }, '# AI title\nAI summary'],
+		[{}, '# Test Notes\n'],
+		[{ markdown: '' }, '# 2\\:30 PM\n'],
+		[{ title: '', markdown: '- [x] **Task**' }, '# Task\n'],
+		[{ title: '[[Page#Part|Alias]]\n# Next', summary: 'a|b' }, String.raw`# \[\[Page\#Part\|Alias\]\] \# Next` + '\na\\|b'],
+	])('renders metadata and legacy fallbacks into saved notes (%j)', async (overrides, expected) => {
+		const original = creator.config.templateString;
+		creator.config.templateString = '# {{ps_title}}\n{{ps_summary}}';
+		try {
+			await creator.createOrAppend(makeScanFile(overrides), new ArrayBuffer(10), 'scan-title');
+			expect(mockVault.create.mock.calls[0]?.[1]).toBe(expected);
+		} finally {
+			creator.config.templateString = original;
+		}
+	});
+
 	it('creates a new note when no file exists at the target path', async () => {
 		const scan = makeScanFile();
 		const imageData = new ArrayBuffer(10);
