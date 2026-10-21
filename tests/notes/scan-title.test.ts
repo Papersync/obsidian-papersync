@@ -1,4 +1,5 @@
-import { cleanMarkdownPreview, deriveTitle } from '@papersync/scan-format';
+import { scanTitle } from '@papersync/scan-format';
+import { cleanMarkdownPreview } from '@/notes/scan-title';
 
 describe('app-compatible scan titles', () => {
 	it.each([
@@ -7,13 +8,18 @@ describe('app-compatible scan titles', () => {
 		['\n- [x] **Groceries**', 'Groceries'],
 		['#### Fourth level', 'Fourth level'],
 		['#     \nfirst text', 'first text'],
+		['intro\n###### Deep heading', 'Deep heading'],
+		['intro\nSetext title\n===', 'Setext title'],
+		['```md\n# Code heading\n```\n# Real heading', 'Real heading'],
+		['    # Code heading\nPlain title', 'Plain title'],
+		['# Emoji ' + '👨‍👩‍👧‍👦'.repeat(30), 'Emoji ' + '👨‍👩‍👧‍👦'.repeat(27)],
 		['#     ', 'scan time'],
 		['  \n\t', 'scan time'],
 		['', 'scan time'],
 		['x'.repeat(90), 'x'.repeat(60)],
 		['# ' + 'x'.repeat(220), 'x'.repeat(200)],
 	])('extracts %j', (markdown, title) => {
-		expect(deriveTitle(markdown, 'scan time')).toBe(title);
+		expect(scanTitle({ markdown }, 'scan time')).toBe(title);
 	});
 
 	it('cleans all syntax handled by the app and collapses whitespace', () => {

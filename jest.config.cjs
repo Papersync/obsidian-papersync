@@ -30,7 +30,6 @@ module.exports = {
 		},
 	},
 	moduleNameMapper: {
-		'^@papersync/scan-format$': '<rootDir>/node_modules/@papersync/scan-format/dist/index.js',
 		'^@/(.*)$': '<rootDir>/src/$1',
 		'^obsidian$': '<rootDir>/tests/__mocks__/obsidian.ts',
 	},

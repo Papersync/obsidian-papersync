@@ -102,11 +102,13 @@ describe('FolderBackend.discoverUnsynced', () => {
 	it.each([
 		['renamed-photo.jpeg', 'renamed-photo.jpeg'],
 		['stale.jpg', 'scan.jpg'],
+		['bad..jpg', 'scan.jpg'],
 		[42, 'scan.jpg'],
 	])('pairs metadata %j using the directory snapshot', async (imageFileName, expected) => {
 		writeScanJson(tmp, 'scan', { ...baseScan, imageFileName });
 		writeBlob(tmp, 'scan.jpg');
 		writeBlob(tmp, 'renamed-photo.jpeg');
+		writeBlob(tmp, 'bad..jpg');
 		const refs = await backend.discoverUnsynced();
 		expect(refs[0].imagePath).toBe(path.join(tmp, expected));
 	});

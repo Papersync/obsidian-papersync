@@ -1,3 +1,4 @@
+import { createScanFile } from '@papersync/scan-format';
 import { validateScanFile } from '@/validation/scan-file-schema';
 
 const validScanFile = {
@@ -33,7 +34,7 @@ describe('validateScanFile', () => {
 		expect('error' in result).toBe(true);
 	});
 
-	it.each([[-1, 0], [101, 100], [87.5, 88], [0.9, 90], [1, 1]])(
+	it.each([[-1, 0], [101, 100], [87.5, 88], [0.9, 90], [1, 1], [0.145, 15], [0.995, 100]])(
 		'normalizes legacy confidence %s to %s', (confidence, expected) => {
 			expect(validateScanFile({ ...validScanFile, confidence })).toMatchObject({ confidence: expected });
 		}
@@ -58,9 +59,32 @@ describe('validateScanFile', () => {
 		expect('error' in result).toBe(true);
 	});
 
-	it('rejects wrong type for synced field', () => {
-		const result = validateScanFile({ ...validScanFile, synced: 'false' });
-		expect('error' in result).toBe(true);
+	it.each(['false', 'true', 0, 1, null, {}, []])('reads non-boolean synced %j as false', (synced) => {
+		expect(validateScanFile({ ...validScanFile, synced })).toMatchObject({ synced: false });
+	});
+
+	it.each(['../scan.jpg', 'folder/scan.jpg', 'folder\\scan.jpg', 'C:scan.jpg', 'scan..jpg', 'scan\u0000.jpg', '.jpg', 'scan.JPG', 'scan.txt', ''])(
+		'keeps the scan but clears unsafe image name %j; writer rejects it', (imageFileName) => {
+			expect(validateScanFile({ ...validScanFile, imageFileName })).toMatchObject({
+				imageFileName: '', markdown: validScanFile.markdown,
+			});
+			expect(() => createScanFile({ ...validScanFile, imageFileName })).toThrow();
+		}
+	);
+
+	it.each([0, -1, 2.5, '01', '2.0', '2e0', 'foo', Infinity, NaN, 1e9, null, true])(
+		'reports malformed version %j as a schema error', (version) => {
+			const result = validateScanFile({ ...validScanFile, version });
+			expect(result).toEqual({ error: expect.stringContaining('Invalid Papersync scan file:') });
+		}
+	);
+
+	it('does not suggest updating the plugin for an unrelated object with a version', () => {
+		expect(validateScanFile({ version: 2 })).toEqual({ error: expect.stringContaining('Invalid Papersync scan file:') });
+	});
+
+	it.each([2, '2', 999999999])('recognizes future version %j even with other invalid fields', (version) => {
+		expect(validateScanFile({ version, markdown: '' })).toEqual({ error: expect.stringContaining('update the Papersync plugin') });
 	});
 
 	it('rejects a non-ISO createdAt so it never reaches new Date() as garbage (#10)', () => {
