@@ -11,19 +11,12 @@ import { isSyncError } from '@/errors/error-handler';
 import { isICloudPath, triggerICloudDownload, isDataless } from '@/sync/icloud-offload';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
+import { isExistingDirectory } from '@/utils/fs';
 
 const DEBOUNCE_MS = 500;
 // How often a running folder backend checks that its folder is still there, and
 // whether a missing one (deleted, renamed, drive unplugged) has come back.
 export const FOLDER_CHECK_MS = 5000;
-
-function isDirectory(folderPath: string): boolean {
-	try {
-		return fs.statSync(folderPath).isDirectory();
-	} catch {
-		return false;
-	}
-}
 
 export function isENOENT(err: unknown): boolean {
 	return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
@@ -160,7 +153,7 @@ export class FolderBackend implements SyncBackend {
 				// Deleting, moving, or unmounting the watched folder itself arrives, where
 				// it arrives at all, as a plain 'rename'. The fast path; the monitor is
 				// the guarantee.
-				if (eventType === 'rename' && !isDirectory(this.folderPath)) {
+				if (eventType === 'rename' && !isExistingDirectory(this.folderPath)) {
 					this.folderGone();
 				}
 			});
@@ -171,7 +164,7 @@ export class FolderBackend implements SyncBackend {
 			this.watcher.on('error', (err) => {
 				logger.error(`Folder watcher error: ${errorMessage(err)}`);
 				this.closeWatcher();
-				if (!isDirectory(this.folderPath)) {
+				if (!isExistingDirectory(this.folderPath)) {
 					this.folderGone();
 				}
 			});
@@ -184,7 +177,7 @@ export class FolderBackend implements SyncBackend {
 			// Typically the folder is missing (at startup, or it went away again).
 			// Say so now; the monitor resumes the watch once the folder exists.
 			logger.error(`Failed to start Folder watcher: ${errorMessage(err)}`);
-			if (!isDirectory(this.folderPath)) {
+			if (!isExistingDirectory(this.folderPath)) {
 				this.folderGone();
 			}
 		}
@@ -201,7 +194,7 @@ export class FolderBackend implements SyncBackend {
 	}
 
 	private checkFolder(): void {
-		const present = isDirectory(this.folderPath);
+		const present = isExistingDirectory(this.folderPath);
 		if (this.watcher && !present) {
 			this.folderGone();
 			return;

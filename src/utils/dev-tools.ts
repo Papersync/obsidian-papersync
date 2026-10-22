@@ -1,10 +1,10 @@
 import { requestUrl } from 'obsidian';
 import type { OAuthManager } from '@/auth/oauth-manager';
-import { GOOGLE_SCANS_FOLDER } from '@/config';
+import { DEFAULT_GOOGLE_ENDPOINTS, GOOGLE_SCANS_FOLDER } from '@/config';
 import { logger } from '@/utils/logger';
 
-const DRIVE_API_BASE = 'https://www.googleapis.com/drive/v3';
-const DRIVE_UPLOAD_BASE = 'https://www.googleapis.com/upload/drive/v3';
+const DRIVE_API_BASE = DEFAULT_GOOGLE_ENDPOINTS.driveApiBase;
+const DRIVE_UPLOAD_BASE = DEFAULT_GOOGLE_ENDPOINTS.driveUploadBase;
 
 interface DriveListResult { files?: Array<{ id: string }> }
 interface CreateResult { id: string }

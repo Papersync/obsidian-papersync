@@ -5,6 +5,7 @@ import { detectSyncLocations, resolvePickedFolder } from '@/utils/platform';
 import type { SyncLocation } from '@/utils/platform';
 import { STRINGS } from '@/utils/strings';
 import { errorMessage } from '@/utils/error-message';
+import { isExistingDirectory } from '@/utils/fs';
 import { logger } from '@/utils/logger';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate, LEGACY_TOKENS } from '@/notes/template-engine';
@@ -54,17 +55,6 @@ function templateEmbedsImage(template: string): boolean {
 	return /\{\{\s*ps_image_file\s*\}\}/.test(template);
 }
 
-// True only for a path that exists AND is a directory. A folder backend whose
-// folder fails this is "missing": deleted, renamed, or on a drive that is not
-// mounted right now.
-function isExistingDirectory(folderPath: string): boolean {
-	try {
-		return fs.statSync(folderPath).isDirectory();
-	} catch {
-		return false;
-	}
-}
-
 export type BackendType = 'drive' | 'folder' | 'none';
 
 export interface PluginSettings {
@@ -78,7 +68,6 @@ export interface PluginSettings {
 	attachmentsFolder: string;
 	templateString: string;
 	downloadImages: boolean;
-	oauthExpiresAt: number;
 	lastSyncTimestamp: string;
 	lastSyncAt: number;
 	// Undocumented test seam: overrides for the Google OAuth/Drive endpoints.
@@ -113,7 +102,6 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	attachmentsFolder: '', // empty => Obsidian's own attachment folder
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
-	oauthExpiresAt: 0,
 	lastSyncTimestamp: '',
 	lastSyncAt: 0,
 };

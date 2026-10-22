@@ -239,7 +239,7 @@ export class DriveBackend implements SyncBackend {
 
 		logger.info(`Drive returned ${allFiles.length} files total`);
 		const jsonFiles = allFiles.filter((f) => f.name.endsWith('.json'));
-		const imageFiles = allFiles.filter((f) => f.name.endsWith('.jpg') || f.name.endsWith('.jpeg') || f.name.endsWith('.png'));
+		const imageFiles = allFiles.filter((f) => IMAGE_EXTENSIONS.some((extension) => f.name.endsWith(extension)));
 		logger.info(`Drive returned ${allFiles.length} files (${jsonFiles.length} JSON, ${imageFiles.length} images)`);
 
 		const imageFor = (baseName: string, images: DriveFile[]): DriveFile | undefined => {

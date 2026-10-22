@@ -1,3 +1,4 @@
+import { TFolder } from 'obsidian';
 import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 
 const mockVault = {
@@ -79,6 +80,10 @@ describe('saveImageToVault', () => {
 		// between the getAbstractFileByPath check and our createFolder call.
 		// The image-handler swallows the error and proceeds to createBinary.
 		mockVault.createFolder.mockRejectedValueOnce(new Error('EEXIST'));
+		// The parallel write's folder is there by the time the create fails.
+		mockVault.getAbstractFileByPath
+			.mockReturnValueOnce(null)
+			.mockReturnValueOnce(Object.assign(new TFolder(), { path: 'attachments' }));
 		const imageData = new ArrayBuffer(100);
 
 		await expect(

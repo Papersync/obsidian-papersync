@@ -97,6 +97,10 @@ export class TFile {
 	path = '';
 }
 
+export class TFolder {
+	path = '';
+}
+
 export class Vault {
 	getAbstractFileByPath() { return null; }
 	create() { return Promise.resolve(); }

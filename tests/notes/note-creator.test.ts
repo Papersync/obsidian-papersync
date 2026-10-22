@@ -1,4 +1,4 @@
-import { TFile } from 'obsidian';
+import { TFile, TFolder } from 'obsidian';
 
 import { NoteCreator } from '@/notes/note-creator';
 import { validateScanFile } from '@/validation/scan-file-schema';
@@ -397,18 +397,33 @@ describe('NoteCreator', () => {
 	it('tolerates createFolder rejecting on the note-folder path (race with parallel write)', async () => {
 		// Reject ONLY the note-folder createFolder so note-creator's own catch fires.
 		// (image-handler's catch is exercised separately in image-handler.test.ts.)
+		// The parallel writer created it: the folder exists once the create fails.
+		let raced = false;
 		mockVault.createFolder.mockImplementation((p: string) => {
-			if (p === 'PaperSync') return Promise.reject(new Error('EEXIST'));
+			if (p === 'PaperSync') { raced = true; return Promise.reject(new Error('EEXIST')); }
 			return Promise.resolve();
 		});
+		mockVault.getAbstractFileByPath.mockImplementation((p: string) =>
+			p === 'PaperSync' && raced ? Object.assign(new TFolder(), { path: p }) : null
+		);
 
 		const scan = makeScanFile();
 		const imageData = new ArrayBuffer(10);
 
-		await expect(creator.createOrAppend(scan, imageData, 'scan-race')).resolves.toBe(
-			'PaperSync/2026-04-12.md'
-		);
-		expect(mockVault.create).toHaveBeenCalled();
+		try {
+			await expect(creator.createOrAppend(scan, imageData, 'scan-race')).resolves.toBe(
+				'PaperSync/2026-04-12.md'
+			);
+			expect(mockVault.create).toHaveBeenCalled();
+		} finally {
+			mockVault.createFolder.mockReset().mockResolvedValue(undefined);
+		}
+	});
+
+	it('reports a folder it could not create instead of failing later on the note', async () => {
+		mockVault.createFolder.mockRejectedValueOnce(new Error('a file is in the way'));
+		await expect(creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-blocked')).rejects.toThrow('a file is in the way');
+		expect(mockVault.create).not.toHaveBeenCalled();
 	});
 
 	it('skips image download when downloadImages=false', async () => {

@@ -57,17 +57,15 @@ export async function triggerICloudDownload(filePath: string, timeoutMs = 30000)
 		// brctl may not be available; fall through to the read-poll fallback below.
 	}
 
-	// Poll until the file is readable with non-zero content, or timeout
+	// Poll until the file has content on disk (non-zero size and allocated
+	// blocks), or timeout. Never read it here: the caller reads it once it is down.
 	const start = Date.now();
 	const { promises: fsp } = await import('fs');
 
 	while (Date.now() - start < timeoutMs) {
 		try {
 			const stat = await fsp.stat(filePath);
-			if (stat.size > 0) {
-				const content = await fsp.readFile(filePath, 'utf-8');
-				if (content.length > 0) {return true;}
-			}
+			if (stat.size > 0 && !isDataless(stat)) {return true;}
 		} catch {
 			// File not yet materialized
 		}
