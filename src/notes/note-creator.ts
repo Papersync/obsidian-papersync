@@ -1,7 +1,7 @@
 import { App, Vault, TFile, moment, normalizePath } from 'obsidian';
 import { scanTitle } from '@papersync/scan-format';
 import { renderTemplate } from '@/notes/template-engine';
-import { neutralizeMarkdown } from '@/notes/untrusted-text';
+import { MAX_SUMMARY_CHARS, MAX_TITLE_CHARS, clampLength, neutralizeMarkdown } from '@/notes/untrusted-text';
 import type { TemplateContext } from '@/notes/template-engine';
 import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
@@ -105,8 +105,10 @@ export class NoteCreator {
 			ps_confidence: scanFile.confidence,
 			ps_provider: scanFile.provider,
 			ps_model: scanFile.model,
-			ps_title: scanTitle(scanFile, time12),
-			ps_summary: scanFile.summary ?? '',
+			// Clamped on read too: only the app's writer clamps them, and a hand-made
+			// scan with a 1 MB title would become a 1 MB heading.
+			ps_title: clampLength(scanTitle(scanFile, time12), MAX_TITLE_CHARS),
+			ps_summary: clampLength(scanFile.summary ?? '', MAX_SUMMARY_CHARS),
 			ps_image_file: imagePath,
 			ps_markdown: scanFile.markdown,
 			// '***' (not '---') as the divider: it renders as the same horizontal rule but

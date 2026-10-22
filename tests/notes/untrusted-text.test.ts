@@ -1,4 +1,4 @@
-import { escapePlainText, flattenLine, neutralizeMarkdown, neutralizeTemplater, sanitizeInlineValue } from '@/notes/untrusted-text';
+import { clampLength, escapePlainText, flattenLine, neutralizeMarkdown, neutralizeTemplater, sanitizeInlineValue } from '@/notes/untrusted-text';
 
 const Z = '​';
 
@@ -53,5 +53,12 @@ describe('untrusted scan text', () => {
 	it('leaves ordinary Markdown untouched', () => {
 		const md = '# Title\n\n- [ ] task\n> [!note] callout\n[[Link|alias]] **bold** 5% off, 3 < 4 > 2\n![[scan.jpg]]';
 		expect(neutralizeMarkdown(md)).toBe(md);
+	});
+
+	it('clamps long text by code points with an ellipsis', () => {
+		expect(clampLength('short', 80)).toBe('short');
+		expect(clampLength('abcdef', 4)).toBe('abc\u2026');
+		expect(clampLength('ab cdef', 4)).toBe('ab\u2026');
+		expect(clampLength('😀😀😀😀😀', 3)).toBe('😀😀\u2026');
 	});
 });

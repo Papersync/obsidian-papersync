@@ -92,6 +92,7 @@ describe('NoteCreator', () => {
 		[{ markdown: '' }, '# 2\\:30 PM\n'],
 		[{ title: '', markdown: '- [x] **Task**' }, '# Task\n'],
 		[{ title: '[[Page#Part|Alias]]\n# Next', summary: 'a|b' }, String.raw`# \[\[Page\#Part\|Alias\]\] \# Next` + '\na\\|b'],
+		[{ title: 'T'.repeat(500), summary: 'S'.repeat(500) }, `# ${'T'.repeat(79)}\u2026\n${'S'.repeat(199)}\u2026`],
 	])('renders metadata and legacy fallbacks into saved notes (%j)', async (overrides, expected) => {
 		const original = creator.config.templateString;
 		creator.config.templateString = '# {{ps_title}}\n{{ps_summary}}';

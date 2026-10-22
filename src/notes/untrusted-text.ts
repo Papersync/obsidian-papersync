@@ -34,6 +34,16 @@ const REFERENCE_IMAGE = /!(?=\[(?:[^\]\\\n]|\\.)*\]\[)/g;
 // HTML tags that load a resource or embed a page.
 const EMBEDDING_HTML_TAG = /<(?=\/?(?:img|image|iframe|frame|frameset|video|audio|source|track|embed|object|picture|svg|link|style|base|meta|input)\b)/gi;
 
+// Longest title and summary a note gets, the limits the app writes them with.
+export const MAX_TITLE_CHARS = 80;
+export const MAX_SUMMARY_CHARS = 200;
+
+/** At most `limit` characters (code points), ending in an ellipsis when cut. */
+export function clampLength(value: string, limit: number): string {
+	const chars = Array.from(value);
+	return chars.length <= limit ? value : `${chars.slice(0, limit - 1).join('').trimEnd()}…`;
+}
+
 /** One line of plain text: line breaks become spaces. */
 export function flattenLine(value: string): string {
 	return value.replace(LINE_BREAKS, ' ');
