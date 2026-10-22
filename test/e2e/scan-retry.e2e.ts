@@ -32,8 +32,9 @@ describe('Failed scan retries after fix', function () {
 			imageFileName: `${id}.jpg`,
 		};
 
-		// confidence 999 violates z.number().int().min(0).max(100) -> schema mismatch.
-		writeScan(dir, id, { ...base, confidence: 999 });
+		// A non-numeric confidence fails validation -> schema mismatch. (An out of
+		// range number no longer does: the shared scan format clamps it to 0-100.)
+		writeScan(dir, id, { ...base, confidence: 'high' });
 		await syncNow();
 
 		let notes = await readNotes('Retry');
