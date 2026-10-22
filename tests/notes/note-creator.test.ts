@@ -473,6 +473,12 @@ describe('NoteCreator', () => {
 			expect(content).toBe(marked('## 14:30\n'));
 		});
 
+		it('neutralizes the scan text it adds under a template that never places it', async () => {
+			const content = await renderWithoutPhoto('## {{ps_scan_time_24h}}\n![[{{ps_image_file}}]]\n', makeScanFile({ markdown: '<%* x %>' }));
+
+			expect(content).toBe(marked('## 14:30\n\n<\u200B%* x %\u200B>'));
+		});
+
 		it('saves only the marker when nothing else is left', async () => {
 			const content = await renderWithoutPhoto('![[{{ps_image_file}}]]\n', makeScanFile({ markdown: '  ' }));
 

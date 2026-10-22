@@ -86,7 +86,13 @@ describe('renderTemplate', () => {
 	expect(renderTemplate('{{ps_title}} | {{ps_summary}}', {
 		...defaultContext, ps_title: value, ps_summary: value,
 	})).toBe(`${escaped} | ${escaped}`);
-	expect(renderTemplate('{{ps_markdown}} {{ps_model}}', {
-		...defaultContext, ps_markdown: value, ps_model: value,
-	})).toBe(`${value} ${value}`);
+	expect(renderTemplate('{{ps_markdown}}', { ...defaultContext, ps_markdown: value })).toBe(value);
+	expect(renderTemplate('{{ps_provider}}|{{ps_model}}', {
+		...defaultContext, ps_provider: 'a\nb', ps_model: 'm <%* x %>',
+	})).toBe('a b|m <\u200B%* x %\u200B>');
  });
+
+it('neutralizes executable syntax in the scan markdown', () => {
+	expect(renderTemplate('{{ps_markdown}}', { ...defaultContext, ps_markdown: '<%* app.vault %>' }))
+		.toBe('<\u200B%* app.vault %\u200B>');
+});

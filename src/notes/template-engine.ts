@@ -1,3 +1,5 @@
+import { escapePlainText, neutralizeMarkdown, sanitizeInlineValue } from '@/notes/untrusted-text';
+
 export interface TemplateContext {
 	ps_scan_date: string;
 	ps_scan_date_short: string;
@@ -31,18 +33,27 @@ export const LEGACY_TOKENS: Record<string, keyof TemplateContext> = {
 };
 
 export function renderTemplate(template: string, context: TemplateContext): string {
-	// Preserve author newlines and the existing raw ps_markdown/ps_model behavior.
-	// Title and summary are plain text: flatten line breaks and escape Markdown
-	// punctuation so headings, wikilinks, table pipes and HTML stay literal. Do
-	// this here so saved notes and the settings preview use the same policy.
+	// Every scan-supplied value is untrusted (see untrusted-text.ts). Title and
+	// summary are plain text, flattened and escaped; provider and model are
+	// flattened; the markdown keeps its formatting but loses anything executable.
+	// Do this here so saved notes and the settings preview use the same policy.
 	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
 		// Own properties only, so {{toString}} and friends stay literal.
 		if (!Object.prototype.hasOwnProperty.call(context, key)) {
 			return match;
 		}
 		const value = String(context[key as keyof TemplateContext]);
-		return key === 'ps_title' || key === 'ps_summary'
-			? value.replace(/[\r\n\u2028\u2029]+/g, ' ').replace(/([!"#$%&'()*+,\-./:;<=>?@[\\\]^_{|}~`])/g, '\\$1')
-			: value;
+		switch (key) {
+			case 'ps_title':
+			case 'ps_summary':
+				return escapePlainText(value);
+			case 'ps_provider':
+			case 'ps_model':
+				return sanitizeInlineValue(value);
+			case 'ps_markdown':
+				return neutralizeMarkdown(value);
+			default:
+				return value;
+		}
 	});
 }

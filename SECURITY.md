@@ -92,6 +92,26 @@ your vault is synced or backed up.
   use, when Google rejects it with `invalid_grant` and the plugin clears it
   again.
 
+## Scan text is treated as untrusted
+
+A scan's text comes from a synced folder or your Drive, and from whatever page
+was photographed, so Papersync treats it as untrusted before it reaches a note:
+
+- Templater command tags (`<%` and `%>`) are broken with an invisible
+  zero-width space, so Templater never runs them, even with "Trigger Templater
+  on new file creation" turned on.
+- Code blocks that other plugins run (`dataview`, `dataviewjs`, `js-engine`,
+  `tasks`, Meta Bind and Buttons blocks) and Dataview inline JS (`` `$=` ``)
+  are broken the same way, so they show as plain code.
+- Remote images (`![](https://...)`, reference-style images) become plain links,
+  and HTML tags that load something (`<img>`, `<iframe>`, `<video>` and the
+  like) are shown as text, so opening a note makes no request.
+- Titles and summaries are escaped to plain text.
+
+Other plugins may define their own executable syntax that this list does not
+cover. If you run such plugins, review imported notes before you let them
+process the note.
+
 ### For contributors and security scanners
 
 Automated secret scanners (including GitHub secret scanning) may flag the

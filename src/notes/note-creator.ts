@@ -1,6 +1,7 @@
 import { App, Vault, TFile, moment, normalizePath } from 'obsidian';
 import { scanTitle } from '@papersync/scan-format';
 import { renderTemplate } from '@/notes/template-engine';
+import { neutralizeMarkdown } from '@/notes/untrusted-text';
 import type { TemplateContext } from '@/notes/template-engine';
 import { saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
@@ -132,7 +133,7 @@ export class NoteCreator {
 			const textSentinel = '\u0000papersync-text\u0000';
 			const placesText = renderTemplate(config.templateString, { ...context, ps_markdown: textSentinel }).includes(textSentinel);
 			if (!placesText && scanFile.markdown.trim() !== '') {
-				rendered = `${rendered.trimEnd()}${rendered.trim() === '' ? '' : '\n\n'}${scanFile.markdown}\n`;
+				rendered = `${rendered.trimEnd()}${rendered.trim() === '' ? '' : '\n\n'}${neutralizeMarkdown(scanFile.markdown)}\n`;
 			}
 		}
 
