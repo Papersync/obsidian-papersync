@@ -9,7 +9,8 @@ import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
-import { GOOGLE_SCANS_FOLDER, MAX_POLL_INTERVAL_S } from '@/config';
+import { GOOGLE_SCANS_FOLDER } from '@/config';
+import { clampPollInterval } from '@/utils/poll-interval';
 import { resolveGoogleEndpoint } from '@/google-endpoints';
 import { DRIVE_COMPANION_GRACE_MS } from '@/sync/companion-grace';
 import type { GoogleEndpointsSupplier } from '@/google-endpoints';
@@ -34,6 +35,11 @@ function headerValue(headers: Record<string, string> | undefined, name: string):
 	return key === undefined ? undefined : headers![key];
 }
 
+// A string literal inside a Drive `q` query: backslash and quote escaped.
+function escapeQueryValue(value: string): string {
+	return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
 function companionNames(baseName: string): string[] {
 	return IMAGE_EXTENSIONS.map((extension) => `${baseName}${extension}`);
 }
@@ -52,6 +58,7 @@ export class DriveBackend implements SyncBackend {
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 	private lastSyncTimestamp: string;
 	private backoffUntil = 0;
+	private polling = false;
 	// Same call-time supplier form as OAuthManager (main.ts hands the SAME supplier
 	// to both), so OAuth and Drive can never split-brain across two snapshots of the
 	// endpoint seam (token grant to one host, Drive calls to another).
@@ -136,8 +143,10 @@ export class DriveBackend implements SyncBackend {
 		logger.info(`Drive poll interval now ${this.armedSeconds}s`);
 	}
 
+	// Clamped again here, not only on load and in Settings: a bad value would
+	// make setInterval(…, 0 or NaN) poll Drive in a tight loop.
 	private intervalSeconds(): number {
-		return Math.min(this.pollIntervalSeconds(), MAX_POLL_INTERVAL_S);
+		return clampPollInterval(this.pollIntervalSeconds());
 	}
 
 	private arm(): void {
@@ -158,6 +167,12 @@ export class DriveBackend implements SyncBackend {
 			logger.info('Drive poll skipped: waiting out Retry-After');
 			return;
 		}
+		// A slow listing must not overlap the next tick's.
+		if (this.polling) {
+			logger.info('Drive poll skipped: the previous one is still running');
+			return;
+		}
+		this.polling = true;
 		logger.info('Drive poll cycle starting...');
 		try {
 			const refs = await this.discoverUnsynced();
@@ -173,6 +188,8 @@ export class DriveBackend implements SyncBackend {
 					this.backoffUntil = Date.now() + retryAfterMs;
 				}
 			}
+		} finally {
+			this.polling = false;
 		}
 	}
 
@@ -189,7 +206,7 @@ export class DriveBackend implements SyncBackend {
 
 		let query = `'${folderId}' in parents and trashed = false`;
 		if (this.lastSyncTimestamp) {
-			query += ` and createdTime > '${this.lastSyncTimestamp}'`;
+			query += ` and createdTime > '${escapeQueryValue(this.lastSyncTimestamp)}'`;
 			logger.info(`Filtering for files created after ${this.lastSyncTimestamp}`);
 		}
 
@@ -216,7 +233,7 @@ export class DriveBackend implements SyncBackend {
 				.filter((baseName) => !imageFor(baseName, imageFiles));
 			for (let i = 0; i < unpaired.length; i += COMPANION_LOOKUP_BATCH) {
 				const names = unpaired.slice(i, i + COMPANION_LOOKUP_BATCH).flatMap(companionNames);
-				const byName = names.map((n) => `name = '${n.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`).join(' or ');
+				const byName = names.map((n) => `name = '${escapeQueryValue(n)}'`).join(' or ');
 				try {
 					imageFiles.push(...(await this.listFiles(token, `'${folderId}' in parents and trashed = false and (${byName})`)));
 				} catch (err) {

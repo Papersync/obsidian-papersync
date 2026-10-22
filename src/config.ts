@@ -30,6 +30,8 @@ export const GOOGLE_SCANS_FOLDER = 'Papersync';
 export const OAUTH_TOKEN_SECRET_ID = 'papersync-oauth-refresh-token';
 
 export const DEFAULT_POLL_INTERVAL_S = 30;
+// Below this, polling Drive is more likely to hit rate limits than to feel fast.
+export const MIN_POLL_INTERVAL_S = 5;
 // A timer delay is a signed 32-bit millisecond count, so anything past ~24.8 days
 // overflows to ~1 ms and polls Drive in a tight loop. One day is plenty.
 export const MAX_POLL_INTERVAL_S = 86_400;

@@ -1,5 +1,6 @@
 import { Notice, Plugin } from 'obsidian';
 import { DEFAULT_SETTINGS, PaperSyncSettingTab, migrateSettings } from '@/settings';
+import { sanitizeSettings } from '@/settings-validation';
 import type { PluginSettings } from '@/settings';
 import { setDebugLogging, logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
@@ -142,7 +143,7 @@ export default class PaperSyncPlugin extends Plugin {
 			delete raw.oauthRefreshToken;
 			const versionBefore = raw.settingsVersion;
 			const migrated = migrateSettings(raw);
-			this.settings = Object.assign({}, DEFAULT_SETTINGS, migrated as Partial<PluginSettings>);
+			this.settings = sanitizeSettings(migrated);
 			// Re-persist on a version bump (existing behavior) OR when a stray plaintext
 			// token was present. The latter forces "discard" to overwrite data.json with
 			// this.settings (which no longer carries the field), so an already-v3 file whose

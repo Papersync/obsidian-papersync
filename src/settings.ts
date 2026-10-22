@@ -13,7 +13,7 @@ import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsi
 import type { Setting } from 'obsidian';
 import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
-import { DEFAULT_POLL_INTERVAL_S, MAX_POLL_INTERVAL_S } from '@/config';
+import { DEFAULT_POLL_INTERVAL_S, MAX_POLL_INTERVAL_S, MIN_POLL_INTERVAL_S } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
 // so the preview is stable and never depends on real vault state.
@@ -48,9 +48,6 @@ const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
 // Obsidian reads these as wikilink syntax, so an attachments folder containing
 // one saves the image but leaves the ![[ ]] embed unresolved.
 const RESERVED_WIKILINK_CHARS = /[#|[\]]/;
-
-// Below this, polling Drive is more likely to hit rate limits than to feel fast.
-const MIN_POLL_INTERVAL_S = 5;
 
 function templateEmbedsImage(template: string): boolean {
 	return /\{\{\s*ps_image_file\s*\}\}/.test(template);
@@ -108,7 +105,7 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	settingsVersion: 4,
 	setupComplete: false,
 	backendType: 'none',
-	drivePollInterval: 30,
+	drivePollInterval: DEFAULT_POLL_INTERVAL_S,
 	folderPath: '',
 	folderType: '',
 	targetFolder: '', // resolved on first setup from daily notes config

@@ -63,6 +63,21 @@ describe('PaperSyncPlugin.loadSettings endpoint-seam strip', () => {
 		expect(supplier()).toBe(3000);
 	});
 
+	it('validates the loaded fields instead of trusting data.json', async () => {
+		const plugin = makePlugin({
+			settingsVersion: DEFAULT_SETTINGS.settingsVersion,
+			drivePollInterval: 0,
+			templateString: 7,
+			targetFolder: 'Journal',
+		});
+
+		await plugin.loadSettings();
+
+		expect(plugin.settings.drivePollInterval).toBe(5);
+		expect(plugin.settings.templateString).toBe(DEFAULT_SETTINGS.templateString);
+		expect(plugin.settings.targetFolder).toBe('Journal');
+	});
+
 	it('falls back to defaults when nothing is persisted', async () => {
 		const plugin = makePlugin(null);
 

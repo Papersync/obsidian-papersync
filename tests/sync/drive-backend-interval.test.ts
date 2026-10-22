@@ -74,3 +74,32 @@ describe('DriveBackend poll interval', () => {
 		expect(() => backend.stop()).not.toThrow();
 	});
 });
+
+describe('DriveBackend poll interval bounds', () => {
+	beforeEach(() => { jest.useFakeTimers(); });
+	afterEach(() => { jest.useRealTimers(); });
+
+	it('never polls faster than the minimum, even for a zero or NaN interval', () => {
+		for (const interval of [0, Number.NaN, -1]) {
+			const { backend, polls } = makeBackend(interval);
+			backend.start();
+			jest.advanceTimersByTime(4_999);
+			expect(polls()).toBe(1);
+			backend.stop();
+		}
+	});
+});
+
+describe('DriveBackend overlapping polls', () => {
+	it('skips a poll while the previous one is still running', async () => {
+		let finish!: () => void;
+		const oauth = { getValidAccessToken: jest.fn(() => new Promise<string>((resolve) => { finish = () => resolve('t'); })) };
+		const backend = new DriveBackend(oauth as unknown as OAuthManager, 30);
+		const poll = (): Promise<void> => (backend as unknown as { poll: () => Promise<void> }).poll();
+		const first = poll();
+		await poll();
+		expect(oauth.getValidAccessToken).toHaveBeenCalledTimes(1);
+		finish();
+		await first; // fails later on the unmocked request; only the overlap matters
+	});
+});
