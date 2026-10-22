@@ -285,7 +285,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// below only wire them to rows.
 
 	private async disconnectGoogle(): Promise<void> {
-		this.plugin.syncEngine?.stop();
+		this.plugin.stopSync();
 		await this.plugin.oauthManager?.disconnect();
 		this.plugin.settings.backendType = 'none';
 		this.plugin.settings.setupComplete = false;
@@ -296,7 +296,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 
 	private async disconnectFolder(): Promise<void> {
 		const displayName = this.getFolderDisplayName();
-		this.plugin.syncEngine?.stop();
+		this.plugin.stopSync();
 		this.plugin.settings.backendType = 'none';
 		this.plugin.settings.folderPath = '';
 		this.plugin.settings.folderType = '';
@@ -311,7 +311,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		// folder is missing, with that engine still running. Stop it first: a
 		// cancelled or failed sign-in leaves backendType 'none', and nothing may keep
 		// watching (and, once the folder is back, syncing from) the abandoned folder.
-		this.plugin.syncEngine?.stop();
+		this.plugin.stopSync();
 		try {
 			this.plugin.settings.backendType = 'drive';
 			await this.plugin.saveSettings();
@@ -331,7 +331,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private async resetSettings(): Promise<void> {
-		this.plugin.syncEngine?.stop();
+		this.plugin.stopSync();
 		// "Account kept": the storage connection survives. For a folder backend that
 		// is the folder itself; resetting only backendType/setupComplete left a folder
 		// backend pointing at '' (and the settings reporting "Papersync" missing).
@@ -351,7 +351,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private async fullReset(): Promise<void> {
-		this.plugin.syncEngine?.stop();
+		this.plugin.stopSync();
 		await this.plugin.oauthManager?.disconnect();
 		this.plugin.settings = { ...DEFAULT_SETTINGS };
 		await this.plugin.saveSettings();
@@ -452,7 +452,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	}
 
 	private async selectFolderLocation(folderPath: string, folderType: string): Promise<void> {
-		this.plugin.syncEngine?.stop();
+		this.plugin.stopSync();
 		this.plugin.settings.backendType = 'folder';
 		this.plugin.settings.folderPath = folderPath;
 		this.plugin.settings.folderType = folderType;

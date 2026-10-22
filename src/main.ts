@@ -46,6 +46,9 @@ export default class PaperSyncPlugin extends Plugin {
 	private unsubscribeSyncState: (() => void) | null = null;
 	private lastStatus: SyncStateSnapshot['status'] | null = null;
 	private firstRunTimeout: number | null = null;
+	// Set by onunload: a startSync still awaiting must not start an engine (with
+	// its watcher, timers and window listeners) for a plugin that is gone.
+	private unloaded = false;
 
 	async onload(): Promise<void> {
 		if (!this.checkMinObsidianVersion()) {return;}
@@ -99,11 +102,12 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		this.unloaded = true;
 		if (this.firstRunTimeout !== null) {
 			window.clearTimeout(this.firstRunTimeout);
 			this.firstRunTimeout = null;
 		}
-		this.syncEngine?.stop();
+		this.stopSync();
 		this.unsubscribeSyncState?.();
 		this.oauthManager?.cleanup();
 		logger.info('Plugin unloaded');
@@ -222,11 +226,23 @@ export default class PaperSyncPlugin extends Plugin {
 		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
 	}
 
-	async startSync(): Promise<void> {
+	// Stops the engine and forgets it, so Sync now (ribbon, command) cannot run a
+	// stopped engine against a source that was just disconnected.
+	stopSync(): void {
 		this.syncEngine?.stop();
+		this.syncEngine = null;
+		this.driveBackend = null;
+	}
+
+	async startSync(): Promise<void> {
+		this.stopSync();
 		this.unsubscribeSyncState?.();
 
 		await this.resolveTargetFolder();
+		if (this.unloaded) {
+			logger.info('Plugin unloaded while sync was starting; not starting it');
+			return;
+		}
 
 		logger.info(`startSync — backendType: ${this.settings.backendType}, setupComplete: ${String(this.settings.setupComplete)}, oauthAuthenticated: ${String(this.oauthManager?.isAuthenticated)}`);
 

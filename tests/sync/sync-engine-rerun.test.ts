@@ -196,4 +196,19 @@ describe('SyncEngine reruns and retries', () => {
 		expect(backend.discoverUnsynced).not.toHaveBeenCalled();
 		expect(jest.getTimerCount()).toBe(0);
 	});
+
+	it('a stopped engine neither syncs nor imports a late discovery, and stops mid-batch', async () => {
+		const backend = makeBackend();
+		const engine = makeEngine(backend);
+		engine.stop();
+		await engine.forceSyncNow();
+		await backend.discovered([ref('a')]);
+		expect(backend.discoverUnsynced).not.toHaveBeenCalled();
+		expect(backend.fetchScan).not.toHaveBeenCalled();
+
+		engine.start();
+		(backend.fetchScan as jest.Mock).mockImplementationOnce(async () => { engine.stop(); return scan; });
+		await backend.discovered([ref('a'), ref('b')]);
+		expect(backend.fetchScan).toHaveBeenCalledTimes(1);
+	});
 });

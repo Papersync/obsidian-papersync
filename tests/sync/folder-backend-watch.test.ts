@@ -179,3 +179,49 @@ describe('FolderBackend.start — discovery with no callback registered', () => 
 		}
 	}, 15000);
 });
+
+describe('FolderBackend stop during a discovery pass', () => {
+	it('does not hand over scans from a pass that finished after stop()', async () => {
+		jest.useFakeTimers();
+		const tmp = makeTempDir();
+		fs.writeFileSync(path.join(tmp, 'a.json'), JSON.stringify({ markdown: 'x' }));
+		const backend = new FolderBackend(tmp, 60_000);
+		const onDiscovered = jest.fn().mockResolvedValue(undefined);
+		backend.setOnScanDiscovered(onDiscovered);
+		let finish!: () => void;
+		const real = backend.discoverUnsynced.bind(backend);
+		jest.spyOn(backend, 'discoverUnsynced').mockImplementation(() => new Promise((resolve) => { finish = () => resolve(real()); }));
+		try {
+			backend.start();
+			await jest.advanceTimersByTimeAsync(600); // the debounced pass starts
+			backend.stop();
+			finish();
+			await jest.advanceTimersByTimeAsync(0);
+			await Promise.resolve();
+			expect(onDiscovered).not.toHaveBeenCalled();
+		} finally {
+			backend.stop();
+			jest.useRealTimers();
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+
+	it('logs a failed import instead of leaving its promise unhandled', async () => {
+		jest.useFakeTimers();
+		const tmp = makeTempDir();
+		fs.writeFileSync(path.join(tmp, 'a.json'), JSON.stringify({ markdown: 'x' }));
+		const backend = new FolderBackend(tmp, 60_000);
+		const onDiscovered = jest.fn().mockRejectedValue(new Error('import blew up'));
+		backend.setOnScanDiscovered(onDiscovered);
+		try {
+			backend.start();
+			await jest.advanceTimersByTimeAsync(600);
+			await jest.advanceTimersByTimeAsync(0);
+			expect(onDiscovered).toHaveBeenCalledTimes(1);
+		} finally {
+			backend.stop();
+			jest.useRealTimers();
+			fs.rmSync(tmp, { recursive: true, force: true });
+		}
+	});
+});

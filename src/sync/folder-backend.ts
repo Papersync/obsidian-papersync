@@ -110,7 +110,9 @@ export class FolderBackend implements SyncBackend {
 	// that merely broke on a present folder re-arms quietly: no completed sync, no
 	// data.json write every 5 s if it keeps breaking.
 	private lost = false;
-	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
+	private onScanDiscovered: ((refs: ScanReference[]) => Promise<void>) | null = null;
+	// False once stopped: a pass still reading then must not hand its scans over.
+	private running = false;
 	private onUnavailable: ((error: SyncError) => void) | null = null;
 
 	// checkIntervalMs is injectable so tests can exercise the monitor without a 5 s wait.
@@ -118,7 +120,7 @@ export class FolderBackend implements SyncBackend {
 		this.folderPath = folderPath;
 	}
 
-	setOnScanDiscovered(callback: (refs: ScanReference[]) => void): void {
+	setOnScanDiscovered(callback: (refs: ScanReference[]) => Promise<void>): void {
 		this.onScanDiscovered = callback;
 	}
 
@@ -127,11 +129,13 @@ export class FolderBackend implements SyncBackend {
 	}
 
 	start(): void {
+		this.running = true;
 		this.startMonitor();
 		this.startWatch();
 	}
 
 	stop(): void {
+		this.running = false;
 		this.closeWatcher();
 		if (this.debounceTimer) {
 			window.clearTimeout(this.debounceTimer);
@@ -237,9 +241,10 @@ export class FolderBackend implements SyncBackend {
 		this.debounceTimer = window.setTimeout(async () => {
 			try {
 				const refs = await this.discoverUnsynced();
+				if (!this.running) {return;}
 				if (refs.length > 0 || this.recovering) {
 					this.recovering = false;
-					this.onScanDiscovered?.(refs);
+					await this.onScanDiscovered?.(refs);
 				}
 			} catch (err) {
 				logger.warn(`Folder discovery failed: ${errorMessage(err)}`);

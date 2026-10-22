@@ -22,7 +22,8 @@ export interface SyncBackend {
 	stop(): void;
 	// Push-based backends (FolderBackend, DriveBackend) report freshly discovered
 	// scans through this callback; backends without a watcher omit it.
-	setOnScanDiscovered?(callback: (refs: ScanReference[]) => void): void;
+	// The callback runs the import, so a backend must catch its promise.
+	setOnScanDiscovered?(callback: (refs: ScanReference[]) => Promise<void>): void;
 	// Cursor-based backends (DriveBackend) persist the sync high-water mark so the
 	// next poll only re-queries newer scans; folder scanning does not use a cursor.
 	updateLastSyncTimestamp?(timestamp: string): void;

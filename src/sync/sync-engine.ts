@@ -101,6 +101,10 @@ export class SyncEngine {
 	}
 
 	async forceSyncNow({ quiet = false }: { quiet?: boolean } = {}): Promise<void> {
+		if (!this.active) {
+			logger.info('Sync engine stopped; not syncing');
+			return;
+		}
 		if (!isOnline()) {
 			if (!quiet) {
 				new Notice(STRINGS.NOTICE_OFFLINE);
@@ -142,6 +146,9 @@ export class SyncEngine {
 	}
 
 	private async processBatch(refs: ScanReference[], manual = false): Promise<void> {
+		// A discovery that finished after stop() (Change Storage, unload) must not
+		// import from the source that was just abandoned.
+		if (!this.active) {return;}
 		if (!this.state.tryStartSync()) {
 			this.rerunRequested = true;
 			return;
@@ -196,6 +203,10 @@ export class SyncEngine {
 				const chunk = unsyncedRefs.slice(i, i + BATCH_SIZE);
 
 				for (const ref of chunk) {
+					if (!this.active) {
+						logger.info('Sync engine stopped mid-batch; leaving the rest for later');
+						break batches;
+					}
 					// Set once the note holds this scan. A retry after that point (the
 					// "synced" write-back failed) retries only the write-back: appending
 					// again would duplicate the scan in the note.

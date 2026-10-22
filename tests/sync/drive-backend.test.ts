@@ -365,6 +365,7 @@ describe('DriveBackend', () => {
 			const backend = new DriveBackend(makeOAuthManager(), 30);
 			const onDiscovered = jest.fn();
 			backend.setOnScanDiscovered(onDiscovered);
+			(backend as unknown as { running: boolean }).running = true;
 
 			// Drive's poll() is private but exposed via start(). Invoke it directly
 			// via reflection so we don't have to manage setInterval timers.
@@ -375,6 +376,33 @@ describe('DriveBackend', () => {
 			expect(refs).toHaveLength(1);
 			expect(refs[0].id).toBe('a');
 			expect(refs[0].imagePath).toBe('img-1');
+		});
+
+		it('does not hand over scans from a poll that finished after stop()', async () => {
+			jest.useFakeTimers();
+			let finish!: (token: string) => void;
+			const oauth = { getValidAccessToken: jest.fn().mockImplementationOnce(() => new Promise<string>((resolve) => { finish = resolve; })).mockResolvedValue('t') };
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'json-1', name: 'a.json' }] } } as never);
+			const backend = new DriveBackend(oauth as unknown as OAuthManager, 30);
+			const onDiscovered = jest.fn();
+			backend.setOnScanDiscovered(onDiscovered);
+			backend.start();
+			backend.stop();
+			finish('t');
+			await jest.advanceTimersByTimeAsync(0);
+			expect(onDiscovered).not.toHaveBeenCalled();
+		});
+
+		it('logs a failed import instead of leaving its promise unhandled', async () => {
+			mockedRequestUrl
+				.mockResolvedValueOnce({ json: { files: [{ id: 'papersync-folder' }] } } as never)
+				.mockResolvedValueOnce({ json: { files: [{ id: 'json-1', name: 'a.json' }] } } as never);
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			backend.setOnScanDiscovered(jest.fn().mockRejectedValue(new Error('import blew up')));
+			(backend as unknown as { running: boolean }).running = true;
+			await expect((backend as unknown as { poll: () => Promise<void> }).poll()).resolves.toBeUndefined();
 		});
 
 		it('does not invoke onScanDiscovered when no unsynced refs are found', async () => {
@@ -422,6 +450,7 @@ describe('DriveBackend', () => {
 				} as never);
 
 			const backend = new DriveBackend(makeOAuthManager(), 30);
+			(backend as unknown as { running: boolean }).running = true;
 			// No setOnScanDiscovered call — the `?.` optional chain must short-circuit safely.
 			await expect(
 				(backend as unknown as { poll: () => Promise<void> }).poll()

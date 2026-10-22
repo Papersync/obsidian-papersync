@@ -76,7 +76,9 @@ export class DriveBackend implements SyncBackend {
 	private pollIntervalSeconds: () => number;
 	private armedSeconds = 0;
 	private intervalId: number | null = null;
-	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
+	private onScanDiscovered: ((refs: ScanReference[]) => Promise<void>) | null = null;
+	// False once stopped: a poll still listing then must not hand its scans over.
+	private running = false;
 	private lastSyncTimestamp: string;
 	private backoffUntil = 0;
 	private polling = false;
@@ -140,17 +142,19 @@ export class DriveBackend implements SyncBackend {
 		this.lastSyncTimestamp = timestamp;
 	}
 
-	setOnScanDiscovered(callback: (refs: ScanReference[]) => void): void {
+	setOnScanDiscovered(callback: (refs: ScanReference[]) => Promise<void>): void {
 		this.onScanDiscovered = callback;
 	}
 
 	start(): void {
+		this.running = true;
 		void this.poll();
 		this.arm();
 		logger.info(`Drive polling started (${this.armedSeconds}s interval)`);
 	}
 
 	stop(): void {
+		this.running = false;
 		this.disarm();
 		logger.info('Drive polling stopped');
 	}
@@ -198,8 +202,8 @@ export class DriveBackend implements SyncBackend {
 		try {
 			const refs = await this.discoverUnsynced();
 			logger.info(`Drive poll found ${refs.length} unsynced scans`);
-			if (refs.length > 0) {
-				this.onScanDiscovered?.(refs);
+			if (refs.length > 0 && this.running) {
+				await this.onScanDiscovered?.(refs);
 			}
 		} catch (err) {
 			logger.warn(`Drive poll failed: ${errorMessage(err)}`);
