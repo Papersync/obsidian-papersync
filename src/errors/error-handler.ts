@@ -40,9 +40,12 @@ export function stateMessageFor(error: SyncError): string {
 export class ErrorHandler {
 	private retryCountMap = new Map<string, number>();
 
+	// onGiveUp receives the final error when the retries ran out (or the error was
+	// not retriable), so a caller can schedule a later attempt for a retriable one.
 	async handleWithRetry<T>(
 		scanId: string,
-		operation: () => Promise<T>
+		operation: () => Promise<T>,
+		onGiveUp?: (error: SyncError) => void
 	): Promise<T | null> {
 		const retryCount = this.retryCountMap.get(scanId) ?? 0;
 
@@ -61,10 +64,11 @@ export class ErrorHandler {
 				const source = syncError.retryAfterMs ? 'header' : 'default';
 				logger.warn(`Retry ${retryCount + 1}/${MAX_RETRIES} for ${scanId} after ${delay}ms (source=${source}): ${syncError.message}`);
 				await sleep(delay);
-				return this.handleWithRetry(scanId, operation);
+				return this.handleWithRetry(scanId, operation, onGiveUp);
 			}
 
 			this.surface(syncError);
+			onGiveUp?.(syncError);
 			this.retryCountMap.delete(scanId);
 			return null;
 		}

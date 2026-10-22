@@ -13,6 +13,10 @@ import { CompanionGrace, COMPANION_GRACE_MS } from '@/sync/companion-grace';
 import type { GraceOverrideSupplier } from '@/sync/companion-grace';
 
 const BATCH_SIZE = 10;
+// When a scan failed with a retriable error (most often "not downloaded yet" on
+// an on-demand sync folder) and nothing else will rediscover it, the engine runs
+// a quiet sync again on this schedule, staying at the last step until it clears.
+export const RETRY_SCHEDULE_MS = [30_000, 60_000, 120_000, 300_000, 600_000] as const;
 
 export class SyncEngine {
 	private backend: SyncBackend;
@@ -33,6 +37,15 @@ export class SyncEngine {
 	// already in flight when the source went away must not finish by recording
 	// 'synced' over that error.
 	private sourceUnavailable = false;
+	// A discovery (or Sync now) that arrived while a batch held the sync lock. It
+	// may carry scans the running batch never saw, so one more pass runs after it.
+	private rerunRequested = false;
+	// Scans whose last failure was retriable and still waiting for a retry.
+	private retryLater = new Set<string>();
+	private retryTimer: number | null = null;
+	private retryStep = 0;
+	// False between stop() and the next start(): nothing may import meanwhile.
+	private active = true;
 
 	constructor(
 		backend: SyncBackend,
@@ -62,6 +75,7 @@ export class SyncEngine {
 	}
 
 	start(): void {
+		this.active = true;
 		this.companionGrace.resume();
 		window.addEventListener('online', this.handleOnline);
 		window.addEventListener('offline', this.handleOffline);
@@ -77,6 +91,9 @@ export class SyncEngine {
 	}
 
 	stop(): void {
+		this.active = false;
+		this.rerunRequested = false;
+		this.clearRetryTimer();
 		this.companionGrace.pause();
 		window.removeEventListener('online', this.handleOnline);
 		window.removeEventListener('offline', this.handleOffline);
@@ -92,7 +109,8 @@ export class SyncEngine {
 		}
 
 		if (this.state.isSyncing) {
-			logger.info('Sync already in progress');
+			logger.info('Sync already in progress; one more pass runs after it');
+			this.rerunRequested = true;
 			return;
 		}
 
@@ -103,6 +121,7 @@ export class SyncEngine {
 			if (refs.length > 0) {
 				await this.processBatch(refs, !quiet);
 			} else {
+				this.retryLater.clear();
 				this.state.recordSyncCompleted(0);
 				if (!quiet) {
 					new Notice(STRINGS.NOTICE_NOTHING_NEW);
@@ -124,10 +143,17 @@ export class SyncEngine {
 
 	private async processBatch(refs: ScanReference[], manual = false): Promise<void> {
 		if (!this.state.tryStartSync()) {
+			this.rerunRequested = true;
 			return;
 		}
 
 		try {
+			// A full discovery lists every unsynced scan, so a retry entry it no longer
+			// lists was synced or removed in the meantime.
+			const listed = new Set(refs.map((ref) => ref.id));
+			for (const id of this.retryLater) {
+				if (!listed.has(id)) {this.retryLater.delete(id);}
+			}
 			// Read once per batch so a settings edit cannot change attachment
 			// handling halfway through a scan.
 			const downloadImages = this.noteCreator.config.downloadImages;
@@ -221,6 +247,10 @@ export class SyncEngine {
 							}
 							throw err;
 						}
+					}, (error) => {
+						if (error.retriable) {
+							this.retryLater.add(ref.id);
+						}
 					});
 
 					if (result === null || result === 'waiting-image') {
@@ -236,6 +266,9 @@ export class SyncEngine {
 						}
 					}
 
+					if (result !== null) {
+						this.retryLater.delete(ref.id);
+					}
 					if (result === 'synced' || result === 'skipped') {
 						this.syncedThisSession.add(ref.id);
 						if (ref.createdTime) {
@@ -297,6 +330,41 @@ export class SyncEngine {
 		} finally {
 			// Release the lock no matter what so a future throw can't deadlock all syncs.
 			this.state.setSyncing(false);
+			this.afterBatch();
+		}
+	}
+
+	private afterBatch(): void {
+		if (!this.active) {return;}
+		if (this.rerunRequested) {
+			this.rerunRequested = false;
+			logger.info('Running the discovery that arrived during the last batch');
+			void this.forceSyncNow({ quiet: true });
+			return;
+		}
+		this.scheduleRetry();
+	}
+
+	private scheduleRetry(): void {
+		if (this.retryLater.size === 0 || this.backend.polls) {
+			this.clearRetryTimer();
+			this.retryStep = 0;
+			return;
+		}
+		if (this.retryTimer !== null) {return;}
+		const delay = RETRY_SCHEDULE_MS[Math.min(this.retryStep, RETRY_SCHEDULE_MS.length - 1)]!;
+		this.retryStep++;
+		logger.info(`Retrying ${this.retryLater.size} failed scan(s) in ${delay / 1000}s`);
+		this.retryTimer = window.setTimeout(() => {
+			this.retryTimer = null;
+			void this.forceSyncNow({ quiet: true });
+		}, delay);
+	}
+
+	private clearRetryTimer(): void {
+		if (this.retryTimer !== null) {
+			window.clearTimeout(this.retryTimer);
+			this.retryTimer = null;
 		}
 	}
 

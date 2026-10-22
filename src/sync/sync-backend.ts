@@ -30,4 +30,7 @@ export interface SyncBackend {
 	// the ref's createdTime when valid (else first sight). Backends without one use
 	// the first-sight folder grace (COMPANION_GRACE_MS).
 	readonly companionGraceMs?: number;
+	// Backends that rediscover on a timer of their own (Drive polls) retry failed
+	// scans anyway; the engine schedules its own retries only for the others.
+	readonly polls?: boolean;
 }

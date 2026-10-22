@@ -42,6 +42,7 @@ export class DriveBackend implements SyncBackend {
 	// JSON and photo uploads can become visible at different times or finish
 	// out of order. Wait up to 5 minutes from the JSON createdTime for its photo.
 	readonly companionGraceMs = DRIVE_COMPANION_GRACE_MS;
+	readonly polls = true;
 	private oauthManager: OAuthManager;
 	// Seconds, read live: an interval changed in Settings takes effect from the next
 	// tick without restarting sync.
