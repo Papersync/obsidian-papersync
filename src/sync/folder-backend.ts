@@ -4,7 +4,8 @@ import * as path from 'path';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
-import { createSyncError } from '@/errors/sync-error';
+import { createSyncError, scanTooLargeError } from '@/errors/sync-error';
+import { MAX_SCAN_IMAGE_BYTES, MAX_SCAN_JSON_BYTES } from '@/config';
 import type { SyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
 import { isICloudPath, triggerICloudDownload, isDataless } from '@/sync/icloud-offload';
@@ -53,6 +54,16 @@ function parseScanJson(content: string, filePath: string): unknown {
 		// A truncated or half-synced file: retrying reads the same bytes.
 		throw createSyncError('schema_mismatch', `${path.basename(filePath)} is not valid JSON: ${errorMessage(err)}`);
 	}
+}
+
+// Refuses a file over maxBytes before reading it. A stat failure is left to the
+// read, which reports it the usual way.
+async function readCapped(filePath: string, maxBytes: number): Promise<Buffer<ArrayBuffer>> {
+	const size = await fs.promises.stat(filePath).then((stat) => stat.size, () => 0);
+	if (size > maxBytes) {
+		throw scanTooLargeError(path.basename(filePath), size, maxBytes);
+	}
+	return fs.promises.readFile(filePath);
 }
 
 // iCloud represents an evicted (offloaded) file as a hidden `.name.icloud`
@@ -264,7 +275,11 @@ export class FolderBackend implements SyncBackend {
 				// evicted JSON can't be read yet — its synced flag is unknowable
 				// until fetchScan triggers the download, so discover it anyway.
 				let imageFileName = '';
-				if (presentSet.has(jsonFile)) {
+				if (presentSet.has(jsonFile) && (await fs.promises.stat(jsonPath)).size > MAX_SCAN_JSON_BYTES) {
+					// Discovered unread, so fetchScan reports it instead of every pass
+					// loading it.
+					logger.warn(`${jsonFile} is over the scan size limit`);
+				} else if (presentSet.has(jsonFile)) {
 					const content = await fs.promises.readFile(jsonPath, 'utf-8');
 					const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
 
@@ -303,10 +318,11 @@ export class FolderBackend implements SyncBackend {
 	 * `.name.icloud` placeholder present, triggers the download and reads again.
 	 * Throws `scan_missing` when the file is genuinely gone.
 	 */
-	private async readScanFile(filePath: string): Promise<Buffer<ArrayBuffer>> {
+	private async readScanFile(filePath: string, maxBytes: number): Promise<Buffer<ArrayBuffer>> {
 		try {
-			return await fs.promises.readFile(filePath);
+			return await readCapped(filePath, maxBytes);
 		} catch (err) {
+			if (isSyncError(err)) {throw err;}
 			if (!isENOENT(err)) {
 				// A dataless read materializes on demand, so a failure here means the
 				// content could not be fetched (offline, or iCloud declined). That is a
@@ -319,7 +335,7 @@ export class FolderBackend implements SyncBackend {
 			if (fs.existsSync(placeholderPath(filePath))) {
 				const downloaded = await triggerICloudDownload(filePath);
 				if (downloaded) {
-					return await fs.promises.readFile(filePath);
+					return await readCapped(filePath, maxBytes);
 				}
 				throw createSyncError('icloud_offloaded', `File not yet downloaded: ${path.basename(filePath)}`);
 			}
@@ -372,7 +388,7 @@ export class FolderBackend implements SyncBackend {
 			}
 		}
 
-		const content = (await this.readScanFile(ref.jsonPath)).toString('utf-8');
+		const content = (await this.readScanFile(ref.jsonPath, MAX_SCAN_JSON_BYTES)).toString('utf-8');
 		const raw = parseScanJson(content, ref.jsonPath);
 
 		const validated = validateScanFile(raw);
@@ -388,7 +404,7 @@ export class FolderBackend implements SyncBackend {
 			return null;
 		}
 		try {
-			const buffer = await this.readScanFile(ref.imagePath);
+			const buffer = await this.readScanFile(ref.imagePath, MAX_SCAN_IMAGE_BYTES);
 			return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
 		} catch (err) {
 			if (isSyncError(err) && err.type === 'scan_missing') {
@@ -399,7 +415,7 @@ export class FolderBackend implements SyncBackend {
 	}
 
 	async markSynced(ref: ScanReference): Promise<void> {
-		const content = (await this.readScanFile(ref.jsonPath)).toString('utf-8');
+		const content = (await this.readScanFile(ref.jsonPath, MAX_SCAN_JSON_BYTES)).toString('utf-8');
 		const parsed = parseScanJson(content, ref.jsonPath) as Record<string, unknown>;
 		parsed.synced = true;
 		try {

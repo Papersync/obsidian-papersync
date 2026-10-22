@@ -31,6 +31,7 @@ export const STRINGS = {
 	SETTINGS_FOLDER_MISSING_TITLE: (name: string) => `\u26A0 Your Papersync folder "${name}" is missing`,
 	SETTINGS_FOLDER_MISSING_DESC: 'Pick it again below, or reconnect the drive it lives on.',
 	NOTICE_FOLDER_ACCESS: 'Papersync could not read or update a scan in your Papersync folder. Check that the folder and its files are not read-only.',
+	NOTICE_SCAN_TOO_LARGE: 'A scan file is too large to import (over 1 MB of text or 50 MB of photo), so Papersync skipped it.',
 	NOTICE_DRIVE_ERROR: 'Google Drive could not complete a request. Your scans are safe, and Papersync will try again on the next sync.',
 	NOTICE_SCAN_REMOVED: 'A scan was removed from your Papersync folder before it synced.',
 	NOTICE_PROVIDER_UNAVAILABLE: (name: string) => `${name} is not available on this computer. Sign in and enable it, then select it again.`,

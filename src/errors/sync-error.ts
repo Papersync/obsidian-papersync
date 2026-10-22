@@ -10,6 +10,7 @@ export type SyncErrorType =
 	| 'folder_missing'
 	| 'scan_missing'
 	| 'folder_access'
+	| 'scan_too_large'
 	| 'drive_error'
 	| 'vault_write_failed';
 
@@ -59,6 +60,7 @@ export function createSyncError(
 		scan_missing: false,
 		// Set per errno code by the folder backend (EBUSY retriable, EACCES not).
 		folder_access: false,
+		scan_too_large: false,
 		// Set per status by the classifier (5xx retriable, other 4xx not).
 		drive_error: false,
 		vault_write_failed: true,
@@ -91,4 +93,9 @@ const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded'
 
 export function isRateLimitReason(reason: string | undefined): boolean {
 	return reason !== undefined && RATE_LIMIT_REASONS.has(reason);
+}
+
+export function scanTooLargeError(fileName: string, bytes: number, maxBytes: number): SyncError {
+	const mb = (n: number): string => (n / (1024 * 1024)).toFixed(1);
+	return createSyncError('scan_too_large', `${fileName} is ${mb(bytes)} MB, over the ${mb(maxBytes)} MB limit; not imported`);
 }

@@ -4,12 +4,12 @@ import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
-import { HttpStatusError, createSyncError, parseRetryAfter } from '@/errors/sync-error';
+import { HttpStatusError, createSyncError, parseRetryAfter, scanTooLargeError } from '@/errors/sync-error';
 import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 
-import { GOOGLE_SCANS_FOLDER } from '@/config';
+import { GOOGLE_SCANS_FOLDER, MAX_SCAN_IMAGE_BYTES, MAX_SCAN_JSON_BYTES } from '@/config';
 import { clampPollInterval } from '@/utils/poll-interval';
 import { resolveGoogleEndpoint } from '@/google-endpoints';
 import { DRIVE_COMPANION_GRACE_MS } from '@/sync/companion-grace';
@@ -19,6 +19,8 @@ interface DriveFile {
 	id: string;
 	name: string;
 	createdTime?: string;
+	// int64 as a decimal string; absent for Google Docs types.
+	size?: string;
 }
 
 interface DriveListResponse {
@@ -38,6 +40,25 @@ function headerValue(headers: Record<string, string> | undefined, name: string):
 // A string literal inside a Drive `q` query: backslash and quote escaped.
 function escapeQueryValue(value: string): string {
 	return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+function byteSize(file: DriveFile): number | undefined {
+	const bytes = Number(file.size);
+	return file.size !== undefined && Number.isFinite(bytes) ? bytes : undefined;
+}
+
+function downloadedBytes(response: RequestUrlResponse): number | undefined {
+	// Unknown when the response carries no body buffer.
+	const body: unknown = response.arrayBuffer;
+	return body instanceof ArrayBuffer ? body.byteLength : undefined;
+}
+
+// Refuses a file whose listed size, or (when Drive listed none) downloaded size,
+// is over the limit.
+function checkSize(name: string, bytes: number | undefined, maxBytes: number): void {
+	if (bytes !== undefined && bytes > maxBytes) {
+		throw scanTooLargeError(name, bytes, maxBytes);
+	}
 }
 
 function companionNames(baseName: string): string[] {
@@ -256,6 +277,8 @@ export class DriveBackend implements SyncBackend {
 				jsonPath: file.id,
 				imagePath: imageFile?.id ?? '',
 				createdTime: file.createdTime,
+				jsonBytes: byteSize(file),
+				imageBytes: imageFile ? byteSize(imageFile) : undefined,
 			});
 		}
 
@@ -270,7 +293,7 @@ export class DriveBackend implements SyncBackend {
 		let pageToken: string | undefined;
 
 		do {
-			let url = `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime),nextPageToken&orderBy=createdTime&pageSize=100`;
+			let url = `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime,size),nextPageToken&orderBy=createdTime&pageSize=100`;
 			if (pageToken) {
 				url += `&pageToken=${encodeURIComponent(pageToken)}`;
 			}
@@ -289,12 +312,7 @@ export class DriveBackend implements SyncBackend {
 	}
 
 	async fetchScan(ref: ScanReference): Promise<ScanFile> {
-		const token = await this.oauthManager.getValidAccessToken();
-
-		const response = await this.driveRequest({
-			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
-			headers: { Authorization: `Bearer ${token}` },
-		});
+		const response = await this.fetchRawJson(ref);
 
 		let raw: unknown;
 		try {
@@ -317,6 +335,7 @@ export class DriveBackend implements SyncBackend {
 			return null;
 		}
 
+		checkSize(`${ref.id} photo`, ref.imageBytes, MAX_SCAN_IMAGE_BYTES);
 		const token = await this.oauthManager.getValidAccessToken();
 
 		let response: RequestUrlResponse;
@@ -335,7 +354,21 @@ export class DriveBackend implements SyncBackend {
 			throw err;
 		}
 
+		checkSize(`${ref.id} photo`, downloadedBytes(response), MAX_SCAN_IMAGE_BYTES);
 		return response.arrayBuffer;
+	}
+
+	// The scan JSON's bytes, refused when over the size limit.
+	private async fetchRawJson(ref: ScanReference): Promise<RequestUrlResponse> {
+		const name = `${ref.id}.json`;
+		checkSize(name, ref.jsonBytes, MAX_SCAN_JSON_BYTES);
+		const token = await this.oauthManager.getValidAccessToken();
+		const response = await this.driveRequest({
+			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		checkSize(name, downloadedBytes(response), MAX_SCAN_JSON_BYTES);
+		return response;
 	}
 
 	async markSynced(ref: ScanReference): Promise<void> {
@@ -344,10 +377,7 @@ export class DriveBackend implements SyncBackend {
 		// Re-fetch the RAW JSON (not the zod-parsed ScanFile, which drops unmodeled fields
 		// and normalizes version, confidence and metadata) so the PATCH round-trips every
 		// original field untouched. Mirrors FolderBackend.markSynced.
-		const response = await this.driveRequest({
-			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
-			headers: { Authorization: `Bearer ${token}` },
-		});
+		const response = await this.fetchRawJson(ref);
 		const raw = (response.json ?? {}) as Record<string, unknown>;
 		raw.synced = true;
 

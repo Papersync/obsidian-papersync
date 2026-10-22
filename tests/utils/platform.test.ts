@@ -160,7 +160,7 @@ describe('resolvePickedFolder', () => {
 	beforeEach(() => {
 		root = realFs.mkdtempSync(path.join(realOs.tmpdir(), 'pickres-'));
 		// Route the module's fs calls at the real filesystem for this suite.
-		for (const fn of ['readdirSync', 'readFileSync', 'accessSync'] as const) {
+		for (const fn of ['readdirSync', 'readFileSync', 'accessSync', 'statSync'] as const) {
 			(fs[fn] as unknown as jest.Mock).mockImplementation(
 				(...args: unknown[]) => (realFs[fn] as (...a: unknown[]) => unknown)(...args)
 			);
@@ -169,6 +169,14 @@ describe('resolvePickedFolder', () => {
 
 	afterEach(() => {
 		realFs.rmSync(root, { recursive: true, force: true });
+	});
+
+	it('does not read an oversized JSON to decide whether a folder holds scans', () => {
+		const dir = mkdir('Big', 'Stuff');
+		realFs.writeFileSync(path.join(dir, 'huge.json'), JSON.stringify({ markdown: 'x'.repeat(1024 * 1024) }));
+		(fs.readFileSync as unknown as jest.Mock).mockClear();
+		expect(resolvePickedFolder(path.join(root, 'Big'))).toBe(path.join(root, 'Big'));
+		expect(fs.readFileSync).not.toHaveBeenCalled();
 	});
 
 	it('keeps a pick that already holds scans', () => {

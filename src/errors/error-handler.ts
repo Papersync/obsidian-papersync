@@ -23,6 +23,7 @@ const USER_MESSAGES: Record<SyncErrorType, string> = {
 	folder_missing: STRINGS.NOTICE_FOLDER_MISSING,
 	scan_missing: STRINGS.NOTICE_SCAN_REMOVED,
 	folder_access: STRINGS.NOTICE_FOLDER_ACCESS,
+	scan_too_large: STRINGS.NOTICE_SCAN_TOO_LARGE,
 	drive_error: STRINGS.NOTICE_DRIVE_ERROR,
 	vault_write_failed: 'Failed to write note to vault',
 };

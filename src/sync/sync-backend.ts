@@ -6,6 +6,10 @@ export interface ScanReference {
 	jsonPath: string;
 	imagePath: string;
 	createdTime?: string;
+	// File sizes in bytes when the backend lists them (Drive), so an oversized
+	// file is refused before it is downloaded.
+	jsonBytes?: number;
+	imageBytes?: number;
 }
 
 export interface SyncBackend {

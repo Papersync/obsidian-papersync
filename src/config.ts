@@ -36,6 +36,11 @@ export const MIN_POLL_INTERVAL_S = 5;
 // overflows to ~1 ms and polls Drive in a tight loop. One day is plenty.
 export const MAX_POLL_INTERVAL_S = 86_400;
 export const MAX_RETRIES = 2;
+// Largest scan files read from the synced folder or Drive. A real scan JSON is a
+// few KB and a photo a few MB; anything bigger is refused before it is read, so a
+// huge or hostile file cannot freeze Obsidian or fill the vault.
+export const MAX_SCAN_JSON_BYTES = 1024 * 1024;
+export const MAX_SCAN_IMAGE_BYTES = 50 * 1024 * 1024;
 export const OAUTH_TIMEOUT_MS = 3 * 60 * 1000;
 declare const __DEV_MODE__: boolean;
 export const DEV_MODE: boolean = typeof __DEV_MODE__ !== 'undefined' ? __DEV_MODE__ : false;

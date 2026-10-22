@@ -2,6 +2,7 @@ import { Platform } from 'obsidian';
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs';
+import { MAX_SCAN_JSON_BYTES } from '@/config';
 
 export type SyncLocationType = 'icloud' | 'folder';
 
@@ -101,6 +102,9 @@ export function isOnline(): boolean {
 // arbitrary folder that happens to contain JSON.
 function looksLikeScan(filePath: string): boolean {
 	try {
+		// Never read a huge (or non-regular) file on the main thread just to sniff it.
+		const stat = fs.statSync(filePath);
+		if (!stat.isFile() || stat.size > MAX_SCAN_JSON_BYTES) {return false;}
 		const parsed: unknown = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
 		return typeof parsed === 'object' && parsed !== null && 'markdown' in parsed;
 	} catch {
