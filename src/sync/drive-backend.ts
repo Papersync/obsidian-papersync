@@ -4,7 +4,7 @@ import type { RequestUrlParam, RequestUrlResponse } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { validateScanFile } from '@/validation/scan-file-schema';
-import { createSyncError } from '@/errors/sync-error';
+import { HttpStatusError, createSyncError, parseRetryAfter } from '@/errors/sync-error';
 import type { OAuthManager } from '@/auth/oauth-manager';
 import { logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
@@ -29,6 +29,11 @@ interface DriveListResponse {
 // Drive's query length limit and inside a single 100-file page.
 const COMPANION_LOOKUP_BATCH = 30;
 
+function headerValue(headers: Record<string, string> | undefined, name: string): string | undefined {
+	const key = Object.keys(headers ?? {}).find((k) => k.toLowerCase() === name);
+	return key === undefined ? undefined : headers![key];
+}
+
 function companionNames(baseName: string): string[] {
 	return IMAGE_EXTENSIONS.map((extension) => `${baseName}${extension}`);
 }
@@ -45,6 +50,7 @@ export class DriveBackend implements SyncBackend {
 	private intervalId: number | null = null;
 	private onScanDiscovered: ((refs: ScanReference[]) => void) | null = null;
 	private lastSyncTimestamp: string;
+	private backoffUntil = 0;
 	// Same call-time supplier form as OAuthManager (main.ts hands the SAME supplier
 	// to both), so OAuth and Drive can never split-brain across two snapshots of the
 	// endpoint seam (token grant to one host, Drive calls to another).
@@ -70,19 +76,33 @@ export class DriveBackend implements SyncBackend {
 
 	// Wraps requestUrl so a failed Drive call surfaces Google's real error message
 	// (e.g. "Google Drive API has not been used in project ...") instead of a bare
-	// status code. The status is kept in the message so ErrorHandler can still
-	// classify it (403 -> permission, 401 -> token, 429 -> rate limit).
+	// status code, as an HttpStatusError carrying the status, Drive's error reason
+	// and Retry-After for the classifier. A request that never got a response
+	// (offline, DNS, reset) is a retriable network error.
 	private async driveRequest(params: RequestUrlParam): Promise<RequestUrlResponse> {
-		const response = await requestUrl({ ...params, throw: false });
+		let response: RequestUrlResponse;
+		try {
+			response = await requestUrl({ ...params, throw: false });
+		} catch (err) {
+			throw createSyncError('network_timeout', `Drive request failed: ${errorMessage(err)}`);
+		}
 		if (response.status >= 400) {
 			let detail = `status ${response.status}`;
+			let reason: string | undefined;
 			try {
-				const body = response.json as { error?: { message?: string } } | null | undefined;
-				if (body?.error?.message) {detail = body.error.message;}
+				const body = response.json as { error?: { message?: unknown; errors?: Array<{ reason?: unknown }> } } | null | undefined;
+				if (typeof body?.error?.message === 'string' && body.error.message) {detail = body.error.message;}
+				const first = body?.error?.errors?.[0]?.reason;
+				if (typeof first === 'string') {reason = first;}
 			} catch {
 				// Non-JSON error body; keep the status-only detail.
 			}
-			throw new Error(`Drive request failed (${response.status}): ${detail}`);
+			throw new HttpStatusError(
+				response.status,
+				`Drive request failed (${response.status}): ${detail}`,
+				reason,
+				headerValue(response.headers, 'retry-after')
+			);
 		}
 		return response;
 	}
@@ -132,6 +152,11 @@ export class DriveBackend implements SyncBackend {
 	}
 
 	private async poll(): Promise<void> {
+		// Google asked for a pause (Retry-After on a 429 or 503): skip polls until then.
+		if (Date.now() < this.backoffUntil) {
+			logger.info('Drive poll skipped: waiting out Retry-After');
+			return;
+		}
 		logger.info('Drive poll cycle starting...');
 		try {
 			const refs = await this.discoverUnsynced();
@@ -141,6 +166,12 @@ export class DriveBackend implements SyncBackend {
 			}
 		} catch (err) {
 			logger.warn(`Drive poll failed: ${errorMessage(err)}`);
+			if (err instanceof HttpStatusError) {
+				const retryAfterMs = parseRetryAfter(err.retryAfter);
+				if (retryAfterMs) {
+					this.backoffUntil = Date.now() + retryAfterMs;
+				}
+			}
 		}
 	}
 
@@ -247,7 +278,13 @@ export class DriveBackend implements SyncBackend {
 			headers: { Authorization: `Bearer ${token}` },
 		});
 
-		const raw = response.json;
+		let raw: unknown;
+		try {
+			raw = response.json;
+		} catch (err) {
+			// A truncated or non-JSON file: retrying reads the same bytes.
+			throw createSyncError('schema_mismatch', `Scan file is not valid JSON: ${errorMessage(err)}`);
+		}
 		const validated = validateScanFile(raw);
 
 		if ('error' in validated) {
@@ -264,12 +301,21 @@ export class DriveBackend implements SyncBackend {
 
 		const token = await this.oauthManager.getValidAccessToken();
 
-		const response = await this.driveRequest(
-			{
+		let response: RequestUrlResponse;
+		try {
+			response = await this.driveRequest({
 				url: `${this.endpoint('driveApiBase')}/files/${ref.imagePath}?alt=media`,
 				headers: { Authorization: `Bearer ${token}` },
+			});
+		} catch (err) {
+			// Deleted since discovery: the companion is absent, like the folder
+			// backend's removed photo. A 404 must not read as "scan removed", which
+			// would skip the scan's text too.
+			if (err instanceof HttpStatusError && err.status === 404) {
+				return null;
 			}
-		);
+			throw err;
+		}
 
 		return response.arrayBuffer;
 	}

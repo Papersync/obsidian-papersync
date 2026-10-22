@@ -2,7 +2,7 @@ import * as obsidian from 'obsidian';
 
 import { ErrorHandler, stateMessageFor } from '@/errors/error-handler';
 import { STRINGS } from '@/utils/strings';
-import { createSyncError } from '@/errors/sync-error';
+import { HttpStatusError, createSyncError } from '@/errors/sync-error';
 
 describe('ErrorHandler', () => {
 	let handler: ErrorHandler;
@@ -18,102 +18,65 @@ describe('ErrorHandler', () => {
 			expect(classified.type).toBe('network_timeout');
 		});
 
-		it('classifies timeout errors', () => {
-			const classified = handler.classify(new Error('Request timed out'));
-			expect(classified.type).toBe('network_timeout');
-			expect(classified.retriable).toBe(true);
+		const http = (status: number, message = `Drive request failed (${status})`, reason?: string, retryAfter?: string) =>
+			new HttpStatusError(status, message, reason, retryAfter);
+
+		it('classifies 429 as a rate limit and honors Retry-After', () => {
+			const classified = handler.classify(http(429, 'x', undefined, '7'));
+			expect(classified).toMatchObject({ type: 'rate_limit', retriable: true, retryAfterMs: 7000 });
+			expect(handler.classify(http(429)).retryAfterMs).toBeUndefined();
 		});
 
-		it('classifies 429 rate limit errors', () => {
-			const classified = handler.classify(new Error('HTTP 429 Too Many Requests'));
-			expect(classified.type).toBe('rate_limit');
-			expect(classified.retriable).toBe(true);
+		it('classifies a 403 with a Drive rate-limit reason as a rate limit', () => {
+			expect(handler.classify(http(403, 'quota', 'userRateLimitExceeded')).type).toBe('rate_limit');
+			expect(handler.classify(http(403, 'quota', 'rateLimitExceeded')).type).toBe('rate_limit');
 		});
 
-		it('classifies 403 permission errors', () => {
-			const classified = handler.classify(new Error('HTTP 403 Forbidden'));
-			expect(classified.type).toBe('permission_denied');
-			expect(classified.retriable).toBe(false);
+		it.each([
+			['Request had invalid_grant', undefined, 'Reconnect Google Drive'],
+			['token has been revoked by user', undefined, 'Reconnect Google Drive'],
+			['Request had insufficient authentication scopes.', 'insufficientPermissions', 'Disconnect and reconnect'],
+			['The user does not have sufficient permissions for this file.', 'insufficientFilePermissions', 'Disconnect and reconnect'],
+			['Something else', 'forbidden', 'verify the Papersync folder'],
+		])('classifies a 403 as permission denied with guidance (%s)', (message, reason, guidance) => {
+			const classified = handler.classify(http(403, message, reason));
+			expect(classified).toMatchObject({ type: 'permission_denied', retriable: false });
+			expect(classified.guidance).toContain(guidance);
 		});
 
-		it('classifies 403 with invalid_grant as token revoked guidance', () => {
-			const classified = handler.classify(new Error('403 invalid_grant token revoked'));
-			expect(classified.type).toBe('permission_denied');
-			expect(classified.guidance).toContain('Reconnect Google Drive');
+		it.each([
+			[401, 'token_expired', true],
+			[404, 'scan_missing', false],
+			[408, 'network_timeout', true],
+			[500, 'drive_error', true],
+			[503, 'drive_error', true],
+			[400, 'drive_error', false],
+		])('classifies HTTP %i as %s', (status, type, retriable) => {
+			expect(handler.classify(http(status))).toMatchObject({ type, retriable });
 		});
 
-		it('classifies 403 with insufficient scope as scope denied guidance', () => {
-			const classified = handler.classify(new Error('403 insufficient scope for drive.file'));
-			expect(classified.type).toBe('permission_denied');
-			expect(classified.guidance).toContain('Disconnect and reconnect');
+		it('keeps Retry-After on a 503', () => {
+			expect(handler.classify(http(503, 'x', undefined, '2')).retryAfterMs).toBe(2000);
 		});
 
-		it('classifies unknown 403 with generic guidance', () => {
-			const classified = handler.classify(new Error('403 something unknown'));
-			expect(classified.type).toBe('permission_denied');
-			expect(classified.guidance).toContain('verify the Papersync folder');
+		it.each([
+			"EACCES: permission denied, open '/Users/me/Papersync/x.json'",
+			'Unexpected token } in JSON at position 403 timeout 429 401',
+			"ENOENT: no such file or directory, scandir '/gone'",
+		])('never classifies a plain error by its wording (%s)', (message) => {
+			expect(handler.classify(new Error(message)).type).toBe('vault_write_failed');
 		});
 
-		it('classifies 401 unauthorized errors', () => {
-			const classified = handler.classify(new Error('HTTP 401 Unauthorized'));
-			expect(classified.type).toBe('token_expired');
-			expect(classified.retriable).toBe(true);
-		});
-
-		it('defaults unknown errors to vault_write_failed', () => {
-			const classified = handler.classify(new Error('Something went wrong'));
-			expect(classified.type).toBe('vault_write_failed');
-		});
-
-		it('classifies raw ENOENT errors as folder_missing', () => {
-			const classified = handler.classify(new Error("ENOENT: no such file or directory, scandir '/gone'"));
-			expect(classified.type).toBe('folder_missing');
-			expect(classified.retriable).toBe(false);
+		it('classifies a JSON SyntaxError as a non-retriable schema mismatch', () => {
+			let syntaxError: unknown;
+			try { JSON.parse('{"a":'); } catch (err) { syntaxError = err; }
+			expect(handler.classify(syntaxError)).toMatchObject({ type: 'schema_mismatch', retriable: false });
 		});
 
 		it('handles non-Error objects', () => {
 			const classified = handler.classify('string error');
 			expect(classified.type).toBe('vault_write_failed');
 			expect(classified.message).toBe('string error');
-		});
-
-		it('reads retry-after from an Obsidian requestUrl error object (case-insensitive)', () => {
-			// Simulate an Obsidian requestUrl error: object with headers attached, not an Error instance.
-			const fakeErr = Object.assign(new Error('HTTP 429 Too Many Requests'), {
-				headers: { 'Retry-After': '7' },
-			});
-
-			const classified = handler.classify(fakeErr);
-			expect(classified.type).toBe('rate_limit');
-			expect(classified.retryAfterMs).toBe(7000);
-		});
-
-		it('falls back to default backoff when retry-after header is absent on rate_limit', () => {
-			const classified = handler.classify(new Error('HTTP 429 Too Many Requests'));
-			expect(classified.type).toBe('rate_limit');
-			expect(classified.retryAfterMs).toBeUndefined();
-		});
-
-		it('returns undefined from header lookup when headers is missing on the error', () => {
-			// Drive past the early `if (!headers) return undefined` short-circuit by using a non-object input.
-			const classified = handler.classify(123 as unknown);
-			expect(classified.type).toBe('vault_write_failed');
-		});
-
-		it('returns undefined when headers is present but does not contain retry-after', () => {
-			// Drives the `return key ? headers[key] : undefined` else branch in extractHeader.
-			const errWithUnrelatedHeader = Object.assign(new Error('HTTP 429'), {
-				headers: { 'Content-Type': 'application/json' },
-			});
-			const classified = handler.classify(errWithUnrelatedHeader);
-			expect(classified.type).toBe('rate_limit');
-			expect(classified.retryAfterMs).toBeUndefined();
-		});
-
-		it('classifies 403 with "token revoked" wording (separate from invalid_grant) as token-revoked guidance', () => {
-			const classified = handler.classify(new Error('403 token has been revoked by user'));
-			expect(classified.type).toBe('permission_denied');
-			expect(classified.guidance).toContain('Reconnect Google Drive');
 		});
 	});
 
@@ -183,10 +146,7 @@ describe('ErrorHandler', () => {
 				const op = jest.fn(async () => {
 					attempts++;
 					if (attempts < 2) {
-						// Obsidian requestUrl-style error: not a plain Error, headers attached.
-						throw Object.assign(new Error('HTTP 429 Too Many Requests'), {
-							headers: { 'Retry-After': '1' },
-						});
+						throw new HttpStatusError(429, 'Too Many Requests', undefined, '1');
 					}
 					return 'ok';
 				});
@@ -201,6 +161,14 @@ describe('ErrorHandler', () => {
 			} finally {
 				jest.useRealTimers();
 			}
+		});
+
+		it('does not wait out a Retry-After longer than a minute inside a batch', async () => {
+			const op = jest.fn(async () => {
+				throw new HttpStatusError(429, 'Too Many Requests', undefined, '3600');
+			});
+			await expect(handler.handleWithRetry('scan-long-wait', op)).resolves.toBeNull();
+			expect(op).toHaveBeenCalledTimes(1);
 		});
 	});
 

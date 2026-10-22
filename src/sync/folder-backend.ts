@@ -28,6 +28,33 @@ export function isENOENT(err: unknown): boolean {
 	return (err as NodeJS.ErrnoException | null)?.code === 'ENOENT';
 }
 
+// A filesystem error other than ENOENT (EACCES, EPERM, EROFS, a sync client's
+// EBUSY lock) becomes a folder_access error naming the file and the code, so the
+// user is not told a Drive or vault problem. Errors without a code pass through.
+// Codes a sync client or the OS clears on its own (a held lock, too many open
+// files, a flaky read); the rest (EACCES, EROFS, EISDIR) need the user.
+const TRANSIENT_FS_CODES = new Set(['EBUSY', 'EAGAIN', 'EPERM', 'EMFILE', 'ENFILE', 'EIO']);
+
+function folderAccessError(err: unknown, filePath: string): unknown {
+	const code = (err as NodeJS.ErrnoException).code;
+	return typeof code === 'string'
+		? createSyncError(
+			'folder_access',
+			`Cannot access ${path.basename(filePath)} in the Papersync folder (${code})`,
+			TRANSIENT_FS_CODES.has(code)
+		)
+		: err;
+}
+
+function parseScanJson(content: string, filePath: string): unknown {
+	try {
+		return JSON.parse(content);
+	} catch (err) {
+		// A truncated or half-synced file: retrying reads the same bytes.
+		throw createSyncError('schema_mismatch', `${path.basename(filePath)} is not valid JSON: ${errorMessage(err)}`);
+	}
+}
+
 // iCloud represents an evicted (offloaded) file as a hidden `.name.icloud`
 // placeholder in the same directory; the real name reappears once downloaded.
 const ICLOUD_PLACEHOLDER_RE = /^\.(.+)\.icloud$/;
@@ -216,7 +243,7 @@ export class FolderBackend implements SyncBackend {
 				this.lost = true;
 				throw this.folderMissingError();
 			}
-			throw err;
+			throw folderAccessError(err, this.folderPath);
 		}
 		const presentSet = new Set(entries);
 		// Evicted iCloud files are listed only as `.name.icloud` placeholders;
@@ -287,7 +314,7 @@ export class FolderBackend implements SyncBackend {
 				if (await this.isNotYetDownloaded(filePath)) {
 					throw createSyncError('icloud_offloaded', `File not downloaded yet: ${path.basename(filePath)}`);
 				}
-				throw err;
+				throw folderAccessError(err, filePath);
 			}
 			if (fs.existsSync(placeholderPath(filePath))) {
 				const downloaded = await triggerICloudDownload(filePath);
@@ -346,7 +373,7 @@ export class FolderBackend implements SyncBackend {
 		}
 
 		const content = (await this.readScanFile(ref.jsonPath)).toString('utf-8');
-		const raw = JSON.parse(content);
+		const raw = parseScanJson(content, ref.jsonPath);
 
 		const validated = validateScanFile(raw);
 		if ('error' in validated) {
@@ -373,9 +400,13 @@ export class FolderBackend implements SyncBackend {
 
 	async markSynced(ref: ScanReference): Promise<void> {
 		const content = (await this.readScanFile(ref.jsonPath)).toString('utf-8');
-		const parsed = JSON.parse(content) as Record<string, unknown>;
+		const parsed = parseScanJson(content, ref.jsonPath) as Record<string, unknown>;
 		parsed.synced = true;
-		await fs.promises.writeFile(ref.jsonPath, JSON.stringify(parsed, null, 2), 'utf-8');
+		try {
+			await fs.promises.writeFile(ref.jsonPath, JSON.stringify(parsed, null, 2), 'utf-8');
+		} catch (err) {
+			throw folderAccessError(err, ref.jsonPath);
+		}
 		logger.info(`Marked scan ${ref.id} as synced on Folder`);
 	}
 }

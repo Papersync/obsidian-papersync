@@ -498,6 +498,55 @@ describe('DriveBackend', () => {
 			);
 		});
 
+		it('carries the status, Drive reason and Retry-After for the classifier', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({
+				status: 403,
+				headers: { 'Retry-After': '9' },
+				json: { error: { message: 'Rate Limit Exceeded', errors: [{ reason: 'userRateLimitExceeded' }] } },
+			} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toMatchObject({
+				status: 403,
+				reason: 'userRateLimitExceeded',
+				retryAfter: '9',
+			});
+		});
+
+		it('ignores a non-string error message and reason', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({
+				status: 400,
+				json: { error: { message: 7, errors: [{ reason: 1 }] } },
+			} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toMatchObject({
+				message: 'Drive request failed (400): status 400',
+				reason: undefined,
+				retryAfter: undefined,
+			});
+		});
+
+		it('turns a request that got no response into a retriable network error', async () => {
+			mockedRequestUrl.mockRejectedValueOnce(new Error('net::ERR_INTERNET_DISCONNECTED'));
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.discoverUnsynced()).rejects.toMatchObject({ type: 'network_timeout', retriable: true });
+		});
+
+		it('reports a scan body that is not JSON as a schema mismatch', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({
+				status: 200,
+				get json() { throw new SyntaxError('Unexpected end of JSON input'); },
+			} as never);
+
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+			await expect(backend.fetchScan({ id: 's', jsonPath: 'j', imagePath: '' })).rejects.toMatchObject({
+				type: 'schema_mismatch',
+				retriable: false,
+			});
+		});
+
 		it('keeps the status detail when the error body is not JSON', async () => {
 			mockedRequestUrl.mockResolvedValueOnce({
 				status: 502,
@@ -520,10 +569,47 @@ describe('Drive companion absence classification', () => {
 		const backend = new DriveBackend(makeOAuthManager(), 30);
 		const ref = { id: 'scan', jsonPath: 'json', imagePath: 'photo' };
 		mockedRequestUrl.mockResolvedValueOnce({ status: 404, json: {} } as never);
-		await expect(backend.fetchImage(ref)).rejects.toThrow("404");
+		await expect(backend.fetchImage(ref)).resolves.toBeNull();
 		mockedRequestUrl.mockResolvedValueOnce({ status: 403, json: {} } as never);
 		await expect(backend.fetchImage(ref)).rejects.toThrow('403');
 		mockedRequestUrl.mockResolvedValueOnce({ status: 404, json: {} } as never);
 		await expect(backend.fetchScan(ref)).rejects.toThrow('404');
+	});
+});
+
+describe('Drive poll Retry-After', () => {
+	afterEach(() => { jest.useRealTimers(); });
+
+	it('skips polls until a Retry-After from a failed poll has passed', async () => {
+		jest.useFakeTimers();
+		jest.setSystemTime(new Date('2026-10-22T10:00:00Z'));
+		mockedRequestUrl.mockReset();
+		const backend = new DriveBackend(makeOAuthManager(), 30);
+		const poll = (): Promise<void> => (backend as unknown as { poll: () => Promise<void> }).poll();
+		mockedRequestUrl.mockResolvedValueOnce({ status: 429, headers: { 'retry-after': '120' }, json: {} } as never);
+		await poll();
+		expect(mockedRequestUrl).toHaveBeenCalledTimes(1);
+
+		jest.setSystemTime(new Date('2026-10-22T10:01:00Z'));
+		await poll();
+		expect(mockedRequestUrl).toHaveBeenCalledTimes(1);
+
+		jest.setSystemTime(new Date('2026-10-22T10:02:01Z'));
+		mockedRequestUrl.mockResolvedValueOnce({ json: { files: [] } } as never);
+		await poll();
+		expect(mockedRequestUrl).toHaveBeenCalledTimes(2);
+	});
+
+	it('keeps polling after a failure without Retry-After', async () => {
+		mockedRequestUrl.mockReset();
+		const backend = new DriveBackend(makeOAuthManager(), 30);
+		const poll = (): Promise<void> => (backend as unknown as { poll: () => Promise<void> }).poll();
+		mockedRequestUrl.mockResolvedValueOnce({ status: 500, json: {} } as never);
+		await poll();
+		mockedRequestUrl.mockRejectedValueOnce(new Error('offline'));
+		await poll();
+		mockedRequestUrl.mockResolvedValueOnce({ json: { files: [] } } as never);
+		await poll();
+		expect(mockedRequestUrl).toHaveBeenCalledTimes(3);
 	});
 });

@@ -102,7 +102,7 @@ describe('FolderBackend.fetchScan — iCloud-offloaded JSON paths', () => {
 		const backend = new FolderBackend(dir);
 		await expect(
 			backend.fetchScan({ id: 'empty', jsonPath, imagePath: path.join(dir, 'empty.jpg') })
-		).rejects.toThrow(); // JSON.parse of '' — never an offload path
+		).rejects.toMatchObject({ type: 'schema_mismatch' }); // JSON.parse of '': never an offload path
 		expect(mockedTrigger).not.toHaveBeenCalled();
 	});
 

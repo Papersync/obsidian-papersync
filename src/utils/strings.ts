@@ -30,6 +30,8 @@ export const STRINGS = {
 	NOTICE_FOLDER_MISSING: 'Your Papersync folder is missing. Re-select or recreate it from the plugin settings.',
 	SETTINGS_FOLDER_MISSING_TITLE: (name: string) => `\u26A0 Your Papersync folder "${name}" is missing`,
 	SETTINGS_FOLDER_MISSING_DESC: 'Pick it again below, or reconnect the drive it lives on.',
+	NOTICE_FOLDER_ACCESS: 'Papersync could not read or update a scan in your Papersync folder. Check that the folder and its files are not read-only.',
+	NOTICE_DRIVE_ERROR: 'Google Drive could not complete a request. Your scans are safe, and Papersync will try again on the next sync.',
 	NOTICE_SCAN_REMOVED: 'A scan was removed from your Papersync folder before it synced.',
 	NOTICE_PROVIDER_UNAVAILABLE: (name: string) => `${name} is not available on this computer. Sign in and enable it, then select it again.`,
 	NOTICE_FOLDER_CREATE_FAILED: (folderPath: string) => `Could not create ${folderPath}. Check the folder permissions and try again.`,

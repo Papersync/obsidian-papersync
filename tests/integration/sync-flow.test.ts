@@ -2,6 +2,7 @@ import { TFile } from 'obsidian';
 import { SyncEngine } from '@/sync/sync-engine';
 import { SyncState } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
+import { HttpStatusError, createSyncError } from '@/errors/sync-error';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import type { ScanFile } from '@/validation/scan-file-schema';
 
@@ -164,7 +165,7 @@ describe('SyncEngine integration', () => {
 	it('retries only the synced write-back after the note was written', async () => {
 		jest.useFakeTimers();
 		(backend.markSynced as jest.Mock)
-			.mockRejectedValueOnce(new Error('Drive request failed (503): backend error'))
+			.mockRejectedValueOnce(new HttpStatusError(503, 'Drive request failed (503): backend error'))
 			.mockImplementation(async (ref: ScanReference) => { backend.markSyncedCalls.push(ref); });
 		try {
 			const sync = engine.forceSyncNow();
@@ -192,7 +193,7 @@ describe('SyncEngine integration', () => {
 		mockVault.create.mockImplementation(async (_p: string, content: string) => { note = content; });
 		const process = jest.fn(async (_f: unknown, fn: (d: string) => string) => { note = fn(note ?? ''); });
 		const vault = { ...mockVault, process };
-		(backend.markSynced as jest.Mock).mockRejectedValue(new Error('Drive request failed (503): backend error'));
+		(backend.markSynced as jest.Mock).mockRejectedValue(new HttpStatusError(503, 'Drive request failed (503): backend error'));
 		engine = new SyncEngine(backend, { vault, internalPlugins: { getPluginById: () => null } } as any, noteConfig, errorHandler, syncState);
 		try {
 			for (let pass = 0; pass < 2; pass++) {
@@ -268,7 +269,7 @@ it('stops companion polling when an expired wait hits a real image access error'
 	try {
 		await engine.forceSyncNow();
 		jest.setSystemTime(Date.now()+60_000);
-		(backend.fetchImage as jest.Mock).mockRejectedValue(new Error('permission denied'));
+		(backend.fetchImage as jest.Mock).mockRejectedValue(createSyncError('folder_access', 'Cannot access scan.jpg (EACCES)', false));
 		await engine.forceSyncNow();
 		const count=(backend.discoverUnsynced as jest.Mock).mock.calls.length;
 		await jest.advanceTimersByTimeAsync(10_000);

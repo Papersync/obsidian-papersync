@@ -1,12 +1,15 @@
 import { Notice } from 'obsidian';
 import type { SyncErrorType } from '@/errors/sync-error';
 import type { SyncError } from '@/errors/sync-error';
-import { createSyncError, parseRetryAfter } from '@/errors/sync-error';
+import { HttpStatusError, createSyncError, isRateLimitReason, parseRetryAfter } from '@/errors/sync-error';
 import { logger } from '@/utils/logger';
 import { STRINGS } from '@/utils/strings';
 
 const MAX_RETRIES = 2;
 const BACKOFF_MS = [1000, 3000] as const;
+// A longer Retry-After is not waited out inside a batch (it holds the sync lock);
+// the scan stays unsynced and the next sync picks it up.
+const MAX_RETRY_AFTER_MS = 60_000;
 
 const USER_MESSAGES: Record<SyncErrorType, string> = {
 	network_timeout: 'Network timeout, retrying shortly',
@@ -19,6 +22,8 @@ const USER_MESSAGES: Record<SyncErrorType, string> = {
 	icloud_offloaded: STRINGS.NOTICE_DOWNLOADING_OFFLOADED,
 	folder_missing: STRINGS.NOTICE_FOLDER_MISSING,
 	scan_missing: STRINGS.NOTICE_SCAN_REMOVED,
+	folder_access: STRINGS.NOTICE_FOLDER_ACCESS,
+	drive_error: STRINGS.NOTICE_DRIVE_ERROR,
 	vault_write_failed: 'Failed to write note to vault',
 };
 
@@ -48,7 +53,8 @@ export class ErrorHandler {
 		} catch (err) {
 			const syncError = this.classify(err);
 
-			if (syncError.retriable && retryCount < MAX_RETRIES) {
+			const waitable = (syncError.retryAfterMs ?? 0) <= MAX_RETRY_AFTER_MS;
+			if (syncError.retriable && waitable && retryCount < MAX_RETRIES) {
 				this.retryCountMap.set(scanId, retryCount + 1);
 				const defaultDelay = BACKOFF_MS[Math.min(retryCount, BACKOFF_MS.length - 1)]!;
 				const delay = syncError.retryAfterMs ?? defaultDelay;
@@ -64,44 +70,50 @@ export class ErrorHandler {
 		}
 	}
 
+	// Classifies on structured fields only (the SyncError type, the HTTP status
+	// and Drive reason, the error class), never on message wording: a local path
+	// or a JSON parse position can contain "403" or "permission".
 	classify(err: unknown): SyncError {
 		if (isSyncError(err)) {return err;}
 
-		// Extract Retry-After header if available (Obsidian requestUrl errors may have headers)
-		const retryAfterHeader = extractHeader(err, 'retry-after');
-		const retryAfterMs = parseRetryAfter(retryAfterHeader);
-
-		if (err instanceof Error) {
-			const msg = err.message.toLowerCase();
-			if (msg.includes('timeout') || msg.includes('timed out')) {
-				return createSyncError('network_timeout', err.message);
-			}
-			if (msg.includes('429') || msg.includes('rate limit')) {
-				if (retryAfterMs) {
-					logger.info(`429 retry-after ${retryAfterMs}ms (source=header)`);
-				}
-				return createSyncError('rate_limit', err.message, undefined, retryAfterMs);
-			}
-			if (msg.includes('403') || msg.includes('permission')) {
-				const guidance = this.classify403Guidance(msg);
-				const error = createSyncError('permission_denied', err.message);
-				error.guidance = guidance;
-				return error;
-			}
-			if (msg.includes('401') || msg.includes('unauthorized')) {
-				return createSyncError('token_expired', err.message);
-			}
-			// Raw fs errors that escaped backend-level conversion (belt for the
-			// folder backend's watched folder disappearing mid-operation).
-			if (msg.includes('enoent') || msg.includes('no such file')) {
-				return createSyncError('folder_missing', err.message);
-			}
-			return createSyncError('vault_write_failed', err.message);
+		if (err instanceof HttpStatusError) {
+			return this.classifyHttp(err);
 		}
-
-		return createSyncError('vault_write_failed', String(err));
+		// A corrupt or half-synced scan JSON: retrying reads the same bytes.
+		if (err instanceof SyntaxError) {
+			return createSyncError('schema_mismatch', err.message);
+		}
+		// Anything else escaped the backends' own conversion, so it comes from
+		// writing the note (the Vault API) or from a bug.
+		return createSyncError('vault_write_failed', err instanceof Error ? err.message : String(err));
 	}
 
+	private classifyHttp(err: HttpStatusError): SyncError {
+		const retryAfterMs = parseRetryAfter(err.retryAfter);
+		if (retryAfterMs) {
+			logger.info(`HTTP ${err.status} retry-after ${retryAfterMs}ms (source=header)`);
+		}
+		if (err.status === 429 || (err.status === 403 && isRateLimitReason(err.reason))) {
+			return createSyncError('rate_limit', err.message, undefined, retryAfterMs);
+		}
+		if (err.status === 401) {
+			return createSyncError('token_expired', err.message);
+		}
+		if (err.status === 403) {
+			const error = createSyncError('permission_denied', err.message);
+			error.guidance = this.classify403Guidance(`${err.reason ?? ''} ${err.message}`.toLowerCase());
+			return error;
+		}
+		if (err.status === 404) {
+			return createSyncError('scan_missing', err.message);
+		}
+		if (err.status === 408) {
+			return createSyncError('network_timeout', err.message);
+		}
+		return createSyncError('drive_error', err.message, err.status >= 500, retryAfterMs);
+	}
+
+	// Google's own error text for a 403 (not a local message) picks the guidance.
 	private classify403Guidance(msg: string): string {
 		if (msg.includes('invalid_grant') || (msg.includes('token') && msg.includes('revoked'))) {
 			return STRINGS.NOTICE_DRIVE_403_TOKEN_REVOKED;
@@ -135,17 +147,6 @@ export function isSyncError(err: unknown): err is SyncError {
 		'message' in err &&
 		'retriable' in err
 	);
-}
-
-function extractHeader(err: unknown, headerName: string): string | undefined {
-	if (typeof err !== 'object' || err === null) {return undefined;}
-	const e = err as Record<string, unknown>;
-	// Obsidian requestUrl errors may include headers as a Record
-	const headers = e.headers as Record<string, string> | undefined;
-	if (!headers) {return undefined;}
-	// Case-insensitive header lookup
-	const key = Object.keys(headers).find(k => k.toLowerCase() === headerName.toLowerCase());
-	return key ? headers[key] : undefined;
 }
 
 function sleep(ms: number): Promise<void> {

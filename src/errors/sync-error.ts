@@ -9,6 +9,8 @@ export type SyncErrorType =
 	| 'icloud_offloaded'
 	| 'folder_missing'
 	| 'scan_missing'
+	| 'folder_access'
+	| 'drive_error'
 	| 'vault_write_failed';
 
 export interface SyncError {
@@ -55,6 +57,10 @@ export function createSyncError(
 		icloud_offloaded: true,
 		folder_missing: false,
 		scan_missing: false,
+		// Set per errno code by the folder backend (EBUSY retriable, EACCES not).
+		folder_access: false,
+		// Set per status by the classifier (5xx retriable, other 4xx not).
+		drive_error: false,
 		vault_write_failed: true,
 	};
 
@@ -64,4 +70,25 @@ export function createSyncError(
 		retriable: retriable ?? defaultRetriable[type],
 		retryAfterMs,
 	};
+}
+
+// A failed HTTP call to Google, thrown by the Drive backend with what the
+// classifier needs: the status, Drive's error reason and the Retry-After header.
+export class HttpStatusError extends Error {
+	constructor(
+		readonly status: number,
+		message: string,
+		readonly reason?: string,
+		readonly retryAfter?: string
+	) {
+		super(message);
+		this.name = 'HttpStatusError';
+	}
+}
+
+// Drive reports per-user and per-project quota as 403 with these reasons.
+const RATE_LIMIT_REASONS = new Set(['rateLimitExceeded', 'userRateLimitExceeded']);
+
+export function isRateLimitReason(reason: string | undefined): boolean {
+	return reason !== undefined && RATE_LIMIT_REASONS.has(reason);
 }

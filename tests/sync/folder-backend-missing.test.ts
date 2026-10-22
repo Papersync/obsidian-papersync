@@ -78,13 +78,14 @@ describe('FolderBackend — missing folder', () => {
 		await expectSyncErrorType(backend.discoverUnsynced(), 'folder_missing');
 	});
 
-	it('discoverUnsynced rethrows non-ENOENT readdir errors untouched', async () => {
+	it('discoverUnsynced reports a non-ENOENT readdir error as folder access with its code', async () => {
 		fs.rmSync(tmp, { recursive: true, force: true });
 		fs.writeFileSync(tmp, 'a file where the folder should be');
 		try {
-			await expect(backend.discoverUnsynced()).rejects.toThrow();
-			await backend.discoverUnsynced().catch((err: unknown) => {
-				expect(isSyncError(err)).toBe(false);
+			await expect(backend.discoverUnsynced()).rejects.toMatchObject({
+				type: 'folder_access',
+				retriable: false,
+				message: expect.stringContaining('(ENOTDIR)'),
 			});
 		} finally {
 			fs.rmSync(tmp, { force: true });
@@ -130,14 +131,49 @@ describe('FolderBackend — scan removed after discovery', () => {
 		await expectSyncErrorType(backend.markSynced(ref), 'scan_missing');
 	});
 
-	it('rethrows non-ENOENT read errors untouched', async () => {
+	it('reports a non-ENOENT read error as folder access with its code', async () => {
 		const dirAsJson = path.join(tmp, 'dir.json');
 		fs.mkdirSync(dirAsJson);
 		const ref = { id: 'dir', jsonPath: dirAsJson, imagePath: '' };
-		await backend.fetchScan(ref).then(
-			() => { throw new Error('expected rejection'); },
-			(err: unknown) => { expect(isSyncError(err)).toBe(false); }
-		);
+		await expect(backend.fetchScan(ref)).rejects.toMatchObject({ type: 'folder_access', retriable: false });
+	});
+
+	it('rethrows a read error that carries no errno code untouched', async () => {
+		const jsonPath = path.join(tmp, 'odd.json');
+		fs.writeFileSync(jsonPath, '{}');
+		const spy = jest.spyOn(fs.promises, 'readFile').mockRejectedValue(new Error('no code'));
+		try {
+			await backend.fetchScan({ id: 'odd', jsonPath, imagePath: '' }).then(
+				() => { throw new Error('expected rejection'); },
+				(err: unknown) => { expect(isSyncError(err)).toBe(false); }
+			);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it('reports a scan JSON that is not valid JSON as a schema mismatch, not a retry', async () => {
+		const jsonPath = path.join(tmp, 'half.json');
+		fs.writeFileSync(jsonPath, '{"version": 1, "mark');
+		await expect(backend.fetchScan({ id: 'half', jsonPath, imagePath: '' })).rejects.toMatchObject({
+			type: 'schema_mismatch',
+			retriable: false,
+		});
+		await expect(backend.markSynced({ id: 'half', jsonPath, imagePath: '' })).rejects.toMatchObject({ type: 'schema_mismatch' });
+	});
+
+	it('reports a scan JSON it cannot write back as folder access', async () => {
+		const jsonPath = path.join(tmp, 'locked.json');
+		fs.writeFileSync(jsonPath, '{}');
+		const spy = jest.spyOn(fs.promises, 'writeFile').mockRejectedValue(Object.assign(new Error('busy'), { code: 'EBUSY' }));
+		try {
+			await expect(backend.markSynced({ id: 'locked', jsonPath, imagePath: '' })).rejects.toMatchObject({
+				type: 'folder_access',
+				retriable: true,
+			});
+		} finally {
+			spy.mockRestore();
+		}
 	});
 });
 
@@ -181,7 +217,7 @@ describe('FolderBackend — a read that fails on a not-yet-downloaded file', () 
 		);
 	});
 
-	it('rethrows a non-ENOENT read failure untouched when the file is materialized', async () => {
+	it('reports a non-ENOENT read failure as folder access when the file is materialized', async () => {
 		const jsonPath = path.join(tmp, 'broken.json');
 		fs.writeFileSync(jsonPath, JSON.stringify({ a: 1 }));
 		jest.spyOn(fs.promises, 'readFile').mockRejectedValue(
@@ -191,11 +227,11 @@ describe('FolderBackend — a read that fails on a not-yet-downloaded file', () 
 		const backend = new FolderBackend(tmp);
 		await backend.fetchImage({ id: 'broken', jsonPath: '', imagePath: jsonPath }).then(
 			() => { throw new Error('expected rejection'); },
-			(err: unknown) => { expect(isSyncError(err)).toBe(false); }
+			(err: unknown) => { expect(err).toMatchObject({ type: 'folder_access', retriable: true }); }
 		);
 	});
 
-	it('rethrows untouched when stat itself fails, since dataless is unknowable', async () => {
+	it('reports folder access when stat itself fails, since dataless is unknowable', async () => {
 		const jsonPath = path.join(tmp, 'vanished.json');
 		fs.writeFileSync(jsonPath, JSON.stringify({ a: 1 }));
 		jest.spyOn(fs.promises, 'readFile').mockRejectedValue(
@@ -206,7 +242,7 @@ describe('FolderBackend — a read that fails on a not-yet-downloaded file', () 
 		const backend = new FolderBackend(tmp);
 		await backend.fetchImage({ id: 'vanished', jsonPath: '', imagePath: jsonPath }).then(
 			() => { throw new Error('expected rejection'); },
-			(err: unknown) => { expect(isSyncError(err)).toBe(false); }
+			(err: unknown) => { expect(err).toMatchObject({ type: 'folder_access', retriable: true }); }
 		);
 	});
 });
