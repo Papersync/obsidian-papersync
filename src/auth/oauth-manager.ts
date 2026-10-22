@@ -332,7 +332,7 @@ export class OAuthManager {
 		}
 
 		if (response.status >= 400) {
-			const errorData = (response.json ?? {}) as GoogleTokenError;
+			const errorData = (jsonOrUndefined(response) ?? {}) as GoogleTokenError;
 			// The ONLY definitive "reconnect" signal is invalid_grant (the refresh token
 			// was actually revoked/expired). Every other 4xx/5xx is treated as transient
 			// so a single bad response cannot clear the token and disconnect the user.
@@ -345,14 +345,15 @@ export class OAuthManager {
 			throw createSyncError('network_timeout', `Token refresh failed (status ${response.status}); will retry`);
 		}
 
-		const tokenData = response.json as GoogleTokenResponse;
-		if (!tokenData.access_token) {
+		const tokenData = (jsonOrUndefined(response) ?? {}) as Partial<GoogleTokenResponse>;
+		if (typeof tokenData.access_token !== 'string' || !tokenData.access_token) {
 			// A 2xx with no access_token is anomalous but transient — keep the token.
 			throw createSyncError('network_timeout', 'Token refresh returned no access token; will retry');
 		}
 
 		this.accessToken = tokenData.access_token;
-		this.expiresAt = Date.now() + (tokenData.expires_in ?? 3600) * 1000;
+		const expiresIn = typeof tokenData.expires_in === 'number' && tokenData.expires_in > 0 ? tokenData.expires_in : 3600;
+		this.expiresAt = Date.now() + expiresIn * 1000;
 
 		logger.info('Access token refreshed successfully');
 		return this.accessToken;
@@ -411,6 +412,16 @@ export class OAuthManager {
 
 	cleanup(): void {
 		this.stopCallbackServer();
+	}
+}
+
+// response.json is a getter that throws on a body that is not JSON (an HTML error
+// page from a proxy or a captive portal).
+function jsonOrUndefined(response: RequestUrlResponse): unknown {
+	try {
+		return response.json;
+	} catch {
+		return undefined;
 	}
 }
 

@@ -23,14 +23,10 @@ interface DriveFile {
 	size?: string;
 }
 
-interface DriveListResponse {
-	files: DriveFile[];
-	nextPageToken?: string;
-}
-
 // Scans per by-name companion lookup: 3 names each keeps one query well under
 // Drive's query length limit and inside a single 100-file page.
 const COMPANION_LOOKUP_BATCH = 30;
+const SCANS_FOLDER_RECHECK_MS = 10 * 60 * 1000;
 
 function headerValue(headers: Record<string, string> | undefined, name: string): string | undefined {
 	const key = Object.keys(headers ?? {}).find((k) => k.toLowerCase() === name);
@@ -40,6 +36,31 @@ function headerValue(headers: Record<string, string> | undefined, name: string):
 // A string literal inside a Drive `q` query: backslash and quote escaped.
 function escapeQueryValue(value: string): string {
 	return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+
+// A Drive list response. A body that is not JSON (an HTML error page from a
+// proxy) is a retriable network error; a missing or odd field reads as empty.
+function parseListBody(response: RequestUrlResponse): { files: unknown[]; nextPageToken?: string } {
+	let body: unknown;
+	try {
+		body = response.json;
+	} catch (err) {
+		throw createSyncError('network_timeout', `Drive returned a response that is not JSON: ${errorMessage(err)}`);
+	}
+	const { files, nextPageToken } = (body ?? {}) as { files?: unknown; nextPageToken?: unknown };
+	return {
+		files: Array.isArray(files) ? files : [],
+		nextPageToken: typeof nextPageToken === 'string' && nextPageToken ? nextPageToken : undefined,
+	};
+}
+
+function hasStringId(entry: unknown): entry is { id: string } {
+	return typeof (entry as { id?: unknown } | null)?.id === 'string';
+}
+
+// Only entries with a string id and name are usable files.
+function isDriveFile(entry: unknown): entry is DriveFile {
+	return hasStringId(entry) && typeof (entry as { name?: unknown }).name === 'string';
 }
 
 function byteSize(file: DriveFile): number | undefined {
@@ -307,8 +328,8 @@ export class DriveBackend implements SyncBackend {
 				headers: { Authorization: `Bearer ${token}` },
 			});
 
-			const listData = response.json as DriveListResponse;
-			files.push(...(listData.files ?? []));
+			const listData = parseListBody(response);
+			files.push(...listData.files.filter(isDriveFile));
 			pageToken = listData.nextPageToken;
 		} while (pageToken);
 
@@ -399,9 +420,14 @@ export class DriveBackend implements SyncBackend {
 	}
 
 	private scansFolderId: string | null = null;
+	private scansFolderFoundAt = 0;
 
 	private async findScansFolder(token: string): Promise<string | null> {
-		if (this.scansFolderId) {return this.scansFolderId;}
+		// Looked up again now and then: a trashed and recreated Papersync folder
+		// has a new id, and the old one lists nothing.
+		if (this.scansFolderId && Date.now() - this.scansFolderFoundAt < SCANS_FOLDER_RECHECK_MS) {
+			return this.scansFolderId;
+		}
 
 		const parts = GOOGLE_SCANS_FOLDER.split('/');
 		let parentId = 'root';
@@ -409,12 +435,13 @@ export class DriveBackend implements SyncBackend {
 		for (const part of parts) {
 			const query = `name = '${part}' and '${parentId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`;
 			const response = await this.driveRequest({
-				url: `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id)`,
+				// Oldest first, so several folders with the same name always resolve to
+				// the same one (the one the app created first).
+				url: `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id)&orderBy=createdTime`,
 				headers: { Authorization: `Bearer ${token}` },
 			});
 
-			const folderData = response.json as DriveListResponse;
-			const folders = folderData.files ?? [];
+			const folders = parseListBody(response).files.filter(hasStringId);
 			if (folders.length === 0 || !folders[0]) {
 				logger.warn(`Papersync folder not found on Drive (missing: ${part})`);
 				return null;
@@ -423,6 +450,7 @@ export class DriveBackend implements SyncBackend {
 		}
 
 		this.scansFolderId = parentId;
+		this.scansFolderFoundAt = Date.now();
 		return parentId;
 	}
 }
