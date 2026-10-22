@@ -82,15 +82,25 @@ describe('OAuthManager.startCallbackServer — request handler branches (mocked 
 		expect(body).toContain('Unknown error');
 	});
 
-	it('short-circuits safely when a code arrives but no onAuthCallback is registered', async () => {
+	it('ignores a code when no sign-in is waiting for one', async () => {
 		const { getHandler } = installFakeServer({});
 		const mgr = new OAuthManager({} as Plugin, 'client-id');
-		// startCallbackServer (unlike startAuthFlow) never assigns onAuthCallback,
-		// so the `this.onAuthCallback?.(code)` optional chain must no-op.
+		// startCallbackServer (unlike startAuthFlow) sets no expected state.
 		await startServer(mgr);
 
 		const res = makeRes();
 		expect(() => getHandler()({ url: '/callback?code=ABC123' }, res)).not.toThrow();
+		expect(res.end.mock.calls[0][0] as string).toContain('Unexpected response');
+	});
+
+	it('accepts a matching state even with no callback registered', async () => {
+		const { getHandler } = installFakeServer({});
+		const mgr = new OAuthManager({} as Plugin, 'client-id');
+		await startServer(mgr);
+		(mgr as unknown as { expectedState: string }).expectedState = 'S';
+
+		const res = makeRes();
+		expect(() => getHandler()({ url: '/callback?code=ABC123&state=S' }, res)).not.toThrow();
 		expect(res.end.mock.calls[0][0] as string).toContain('Connected!');
 	});
 });

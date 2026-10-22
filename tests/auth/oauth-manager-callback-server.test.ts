@@ -9,7 +9,7 @@ import * as http from 'http';
 import { requestUrl } from 'obsidian';
 import type { Plugin } from 'obsidian';
 
-import { OAuthManager } from '@/auth/oauth-manager';
+import { OAuthManager, isAuthSuperseded } from '@/auth/oauth-manager';
 
 const mockedRequestUrl = requestUrl as jest.MockedFunction<typeof requestUrl>;
 
@@ -37,7 +37,7 @@ function httpGet(port: number, path: string): Promise<{ status: number; body: st
 	});
 }
 
-async function captureAuthUrl(mgr: OAuthManager): Promise<{ port: number; flowPromise: Promise<unknown> }> {
+async function captureAuthUrl(mgr: OAuthManager): Promise<{ port: number; state: string; flowPromise: Promise<unknown> }> {
 	let capturedUrl = '';
 	const originalOpen = window.open;
 	window.open = ((url: string) => { capturedUrl = String(url); return null; }) as typeof window.open;
@@ -48,7 +48,8 @@ async function captureAuthUrl(mgr: OAuthManager): Promise<{ port: number; flowPr
 	window.open = originalOpen;
 
 	const port = extractPortFromAuthUrl(capturedUrl);
-	return { port, flowPromise };
+	const state = new URL(capturedUrl).searchParams.get('state') ?? '';
+	return { port, state, flowPromise };
 }
 
 describe('OAuthManager.startAuthFlow — callback HTTP server', () => {
@@ -68,10 +69,16 @@ describe('OAuthManager.startAuthFlow — callback HTTP server', () => {
 		} as never);
 
 		const mgr = new OAuthManager(makePlugin(), 'client-id');
-		const { port, flowPromise } = await captureAuthUrl(mgr);
+		const { port, state, flowPromise } = await captureAuthUrl(mgr);
+
+		// A callback without this flow's state (another local page probing the
+		// port) is ignored and does not end the flow.
+		const stray = await httpGet(port, '/callback?code=FORGED&state=nope');
+		expect(stray.body).toContain('Unexpected response');
+		expect(mockedRequestUrl).not.toHaveBeenCalled();
 
 		// Deliver the success callback.
-		const res = await httpGet(port, '/callback?code=AUTHCODE');
+		const res = await httpGet(port, `/callback?code=AUTHCODE&state=${state}`);
 		expect(res.status).toBe(200);
 		expect(res.body).toContain('Connected!');
 
@@ -191,7 +198,8 @@ describe('OAuthManager.startAuthFlow — token-exchange failure surfaces through
 		window.open = originalOpen;
 
 		const port = extractPortFromAuthUrl(capturedUrl);
-		await httpGet(port, '/callback?code=BADCODE');
+		const state = new URL(capturedUrl).searchParams.get('state');
+		await httpGet(port, `/callback?code=BADCODE&state=${state}`);
 
 		const result = await settled;
 		expect(result.kind).toBe('rejected');
@@ -199,5 +207,61 @@ describe('OAuthManager.startAuthFlow — token-exchange failure surfaces through
 			expect(result.e).toMatchObject({ type: 'token_revoked' });
 		}
 		mgr.cleanup();
+	});
+});
+
+describe('OAuthManager.startAuthFlow — state, replays and restarts', () => {
+	beforeEach(() => mockedRequestUrl.mockReset());
+
+	it('sends a random state and accepts only the first matching callback', async () => {
+		let release!: () => void;
+		mockedRequestUrl.mockImplementationOnce(() => new Promise((resolve) => {
+			release = () => resolve({
+				status: 200,
+				json: { access_token: 'a', refresh_token: 'r', expires_in: 3600, token_type: 'Bearer' },
+			} as never);
+		}) as never);
+		const mgr = new OAuthManager(makePlugin(), 'client-id');
+		const { port, state, flowPromise } = await captureAuthUrl(mgr);
+		expect(state.length).toBeGreaterThanOrEqual(43);
+
+		await httpGet(port, `/callback?code=FIRST&state=${state}`);
+		const replay = await httpGet(port, `/callback?code=SECOND&state=${state}`);
+		expect(replay.body).toContain('Unexpected response');
+		release();
+		await flowPromise;
+		expect(mockedRequestUrl).toHaveBeenCalledTimes(1);
+		expect(String((mockedRequestUrl.mock.calls[0]![0] as { body: string }).body)).toContain('code=FIRST');
+		mgr.cleanup();
+	});
+
+	it('a second Connect closes the first flow\'s server and cancels it as superseded', async () => {
+		const mgr = new OAuthManager(makePlugin(), 'client-id');
+		const first = await captureAuthUrl(mgr);
+		const firstSettled = first.flowPromise.catch((e: unknown) => e);
+		const second = await captureAuthUrl(mgr);
+
+		const err = await firstSettled;
+		expect(isAuthSuperseded(err)).toBe(true);
+		expect(isAuthSuperseded(new Error('x'))).toBe(false);
+		await expect(httpGet(first.port, '/callback')).rejects.toMatchObject({
+			code: expect.stringMatching(/^ECONN(REFUSED|RESET)$/),
+		});
+		expect(second.state).not.toBe(first.state);
+		mgr.cleanup();
+		second.flowPromise.catch(() => undefined);
+	});
+
+	it('never logs the authorization code', async () => {
+		const { clearLogBuffer, getLogBuffer } = await import('@/utils/logger');
+		clearLogBuffer();
+		const mgr = new OAuthManager(makePlugin(), 'client-id');
+		const { port, flowPromise } = await captureAuthUrl(mgr);
+		await httpGet(port, '/callback?code=SECRETCODE&state=wrong');
+		await httpGet(port, '/callback?scope=x');
+		expect(getLogBuffer().join('\n')).not.toContain('SECRETCODE');
+		expect(getLogBuffer().some((l) => l.includes('params: code, state'))).toBe(true);
+		mgr.cleanup();
+		flowPromise.catch(() => undefined);
 	});
 });

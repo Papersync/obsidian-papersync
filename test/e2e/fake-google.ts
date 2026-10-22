@@ -324,6 +324,10 @@ export class FakeGoogle {
 		// redirect_uri that already carries a query or fragment stays well-formed.
 		const location = new URL(q.redirect_uri);
 		location.searchParams.set('code', code);
+		// Google echoes the request's state; the plugin ignores a callback without it.
+		if (q.state) {
+			location.searchParams.set('state', q.state);
+		}
 		res.writeHead(302, { Location: location.toString() });
 		res.end();
 		return 302;

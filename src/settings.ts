@@ -8,6 +8,7 @@ import { errorMessage } from '@/utils/error-message';
 import { logger } from '@/utils/logger';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate, LEGACY_TOKENS } from '@/notes/template-engine';
+import { isAuthSuperseded } from '@/auth/oauth-manager';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsidian';
 import type { Setting } from 'obsidian';
@@ -320,6 +321,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			await this.plugin.startSync();
 			new Notice(STRINGS.SETTINGS_CONNECTED);
 		} catch (err) {
+			// Connect was pressed again: the newer sign-in owns the settings now.
+			if (isAuthSuperseded(err)) {return;}
 			this.plugin.settings.backendType = 'none';
 			await this.plugin.saveSettings();
 			new Notice(`Connection failed: ${errorMessage(err)}`);

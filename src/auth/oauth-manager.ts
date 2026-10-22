@@ -27,6 +27,12 @@ interface GoogleTokenResponse {
 	scope?: string;
 }
 
+// The rejection a pending sign-in gets when Connect is pressed again: the new
+// flow replaces it, so its caller must not treat it as a failure.
+export function isAuthSuperseded(err: unknown): boolean {
+	return isSyncError(err) && (err as { superseded?: unknown }).superseded === true;
+}
+
 interface GoogleTokenError {
 	error: string;
 	error_description?: string;
@@ -42,6 +48,11 @@ export class OAuthManager {
 	// window.setTimeout returns a DOM number (obsidianmd/prefer-window-timers).
 	private authTimeout: number | null = null;
 	private onTokenChange: ((token: string) => void) | null = null;
+	// The random state the pending flow sent to Google. A callback must echo it;
+	// anything else reaching the loopback port (another local page probing ports)
+	// is ignored.
+	private expectedState: string | null = null;
+	private rejectPendingFlow: ((err: unknown) => void) | null = null;
 	private endpointsSupplier: GoogleEndpointsSupplier | undefined;
 
 	constructor(plugin: Plugin, clientId: string, endpointsSupplier?: GoogleEndpointsSupplier) {
@@ -81,10 +92,16 @@ export class OAuthManager {
 			throw createSyncError('token_revoked', 'Google Client ID is not configured — check src/config.ts');
 		}
 
+		// Connect pressed again: end the previous flow (its server, its timeout and
+		// its promise) before starting a new one.
+		this.supersedePendingFlow();
+
 		const verifier = generateCodeVerifier();
 		const challenge = await computeCodeChallenge(verifier);
+		const state = generateCodeVerifier();
 
 		const { port, redirectUri } = await this.startCallbackServer(verifier);
+		this.expectedState = state;
 
 		const authUrl = new URL(this.endpoint('authUrl'));
 		authUrl.searchParams.set('client_id', this.clientId);
@@ -95,6 +112,7 @@ export class OAuthManager {
 		authUrl.searchParams.set('code_challenge_method', 'S256');
 		authUrl.searchParams.set('access_type', 'offline');
 		authUrl.searchParams.set('prompt', 'consent');
+		authUrl.searchParams.set('state', state);
 
 		logger.info('OAuth flow starting');
 		logger.info(`Redirect URI: ${redirectUri}`);
@@ -102,6 +120,7 @@ export class OAuthManager {
 		logger.info(`OAuth browser opened on port ${port}`);
 
 		return new Promise((resolve, reject) => {
+			this.rejectPendingFlow = reject;
 			this.authTimeout = window.setTimeout(() => {
 				this.authTimeout = null;
 				this.stopCallbackServer();
@@ -112,6 +131,7 @@ export class OAuthManager {
 				// Disarm the timeout before the (network-bound) token exchange so a slow
 				// exchange can't trip the 3-minute abort mid-flight.
 				this.clearAuthTimeout();
+				this.rejectPendingFlow = null;
 				try {
 					const tokens = await this.exchangeCodeForTokens(code, verifier, redirectUri);
 					this.storeTokens(tokens);
@@ -138,11 +158,13 @@ export class OAuthManager {
 					return;
 				}
 
-				logger.info(`OAuth callback received: ${reqUrl}`);
 				const url = new URL(reqUrl, `http://localhost`);
+				// Never log the query: it carries the one-time authorization code.
+				logger.info(`OAuth callback received (params: ${[...url.searchParams.keys()].join(', ') || 'none'})`);
 				const code = url.searchParams.get('code');
 				const error = url.searchParams.get('error');
 				const errorDescription = url.searchParams.get('error_description');
+				const stateMatches = this.expectedState !== null && url.searchParams.get('state') === this.expectedState;
 
 				res.writeHead(200, { 'Content-Type': 'text/html' });
 				if (error) {
@@ -150,12 +172,16 @@ export class OAuthManager {
 					const safeDesc = escapeHtml(errorDescription ?? 'Unknown error');
 					res.end(`<html><body><h1>Authorization failed</h1><p>${safeError}: ${safeDesc}</p><p>You can close this window.</p></body></html>`);
 					logger.error(`OAuth callback error: ${error} — ${errorDescription ?? 'no description'}`);
-				} else if (code) {
+				} else if (code && stateMatches) {
 					res.end('<html><body><h1>Connected!</h1><p>You can close this window and return to Obsidian.</p></body></html>');
 					logger.info(`OAuth callback received authorization code (${code.length} chars)`);
-					this.onAuthCallback?.(code);
+					// The first valid callback wins; any later one finds no state to match.
+					const onCode = this.onAuthCallback;
+					this.onAuthCallback = null;
+					this.expectedState = null;
+					onCode?.(code);
 				} else {
-					logger.warn(`OAuth callback at /callback but no code param — full URL: ${reqUrl}`);
+					logger.warn(code ? 'OAuth callback ignored: its state does not match this sign-in' : 'OAuth callback at /callback without a code');
 					res.end('<html><body><h1>Unexpected response</h1></body></html>');
 				}
 			});
@@ -191,6 +217,17 @@ export class OAuthManager {
 			this.authServer = null;
 		}
 		this.onAuthCallback = null;
+		this.expectedState = null;
+		this.rejectPendingFlow = null;
+	}
+
+	private supersedePendingFlow(): void {
+		const reject = this.rejectPendingFlow;
+		this.stopCallbackServer();
+		if (reject) {
+			logger.info('OAuth flow restarted; the previous one was cancelled');
+			reject(Object.assign(createSyncError('token_expired', 'Sign-in was restarted'), { superseded: true }));
+		}
 	}
 
 	private async exchangeCodeForTokens(
