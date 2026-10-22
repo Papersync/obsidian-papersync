@@ -15,7 +15,7 @@ const scan = { version: '1', createdAt: '2026-04-12T14:30:00.000Z', markdown: '#
 
 describe('FolderBackend size limits', () => {
 	let dir: string;
-	const realStat = fs.promises.stat;
+	const realStat = fs.promises.lstat;
 
 	beforeEach(() => {
 		dir = fs.mkdtempSync(path.join(os.tmpdir(), 'size-'));
@@ -27,7 +27,7 @@ describe('FolderBackend size limits', () => {
 
 	// Report a fake size for one file; everything else stats normally.
 	function fakeSize(file: string, size: number): void {
-		jest.spyOn(fs.promises, 'stat').mockImplementation(async (p: fs.PathLike) => {
+		jest.spyOn(fs.promises, 'lstat').mockImplementation(async (p: fs.PathLike) => {
 			const stat = await realStat(p);
 			return String(p) === file ? Object.assign(stat, { size }) : stat;
 		});
@@ -107,5 +107,35 @@ describe('DriveBackend size limits', () => {
 		await expect(backend.fetchImage({ id: 'a', jsonPath: 'j', imagePath: 'i' })).rejects.toMatchObject({ type: 'scan_too_large' });
 		mockedRequestUrl.mockResolvedValueOnce({ status: 200, json: scan, arrayBuffer: new ArrayBuffer(10) } as never);
 		await expect(backend.fetchScan({ id: 'a', jsonPath: 'j', imagePath: '' })).resolves.toMatchObject({ markdown: '# S' });
+	});
+});
+
+describe('FolderBackend links', () => {
+	let dir: string;
+	let outside: string;
+
+	beforeEach(() => {
+		dir = fs.mkdtempSync(path.join(os.tmpdir(), 'links-'));
+		outside = fs.mkdtempSync(path.join(os.tmpdir(), 'secret-'));
+		fs.writeFileSync(path.join(outside, 'id_ed25519'), 'PRIVATE KEY');
+		fs.writeFileSync(path.join(outside, 'scan.json'), JSON.stringify({ ...scan, imageFileName: 'x.jpg' }));
+	});
+	afterEach(() => {
+		fs.rmSync(dir, { recursive: true, force: true });
+		fs.rmSync(outside, { recursive: true, force: true });
+	});
+
+	it('never reads a linked photo: it counts as absent', async () => {
+		const imagePath = path.join(dir, 'a.jpg');
+		fs.symlinkSync(path.join(outside, 'id_ed25519'), imagePath);
+		await expect(new FolderBackend(dir).fetchImage({ id: 'a', jsonPath: '', imagePath })).resolves.toBeNull();
+	});
+
+	it('skips a linked scan JSON in discovery and refuses to fetch it', async () => {
+		const jsonPath = path.join(dir, 'linked.json');
+		fs.symlinkSync(path.join(outside, 'scan.json'), jsonPath);
+		const backend = new FolderBackend(dir);
+		await expect(backend.discoverUnsynced()).resolves.toEqual([]);
+		await expect(backend.fetchScan({ id: 'linked', jsonPath, imagePath: '' })).rejects.toMatchObject({ type: 'scan_missing' });
 	});
 });

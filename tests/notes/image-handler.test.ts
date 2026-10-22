@@ -1,4 +1,4 @@
-import { saveImageToVault } from '@/notes/image-handler';
+import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 
 const mockVault = {
 	getAbstractFileByPath: jest.fn(),
@@ -85,5 +85,20 @@ describe('saveImageToVault', () => {
 			saveImageToVault(mockVault as any, imageData, 'attachments/papersync', 'scan-race')
 		).resolves.toBe('attachments/papersync/papersync-scan-race.jpg');
 		expect(mockVault.createBinary).toHaveBeenCalled();
+	});
+});
+
+describe('attachmentBaseName', () => {
+	it.each([
+		['2026-04-12-143000', 'papersync-2026-04-12-143000'],
+		['x/../../../../tmp/evil', 'papersync-x_________tmp_evil'],
+		['..', 'papersync-_'],
+		['...hidden', 'papersync-_hidden'],
+		['a\\b:c|d#e^f[g]', 'papersync-a_b_c_d_e_f_g_'],
+		['  .  ', 'papersync-scan'],
+		['line\nbreak', 'papersync-line_break'],
+		['Notes from café', 'papersync-Notes from café'],
+	])('makes %j safe as %j', (id, expected) => {
+		expect(attachmentBaseName(id)).toBe(expected);
 	});
 });

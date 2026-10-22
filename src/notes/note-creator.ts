@@ -3,7 +3,7 @@ import { scanTitle } from '@papersync/scan-format';
 import { renderTemplate } from '@/notes/template-engine';
 import { neutralizeMarkdown } from '@/notes/untrusted-text';
 import type { TemplateContext } from '@/notes/template-engine';
-import { saveImageToVault } from '@/notes/image-handler';
+import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { getDailyNotesConfig, formatDateWithPattern, defaultNotesFolder } from '@/utils/daily-notes';
 import { ensureFolderExists } from '@/utils/vault';
@@ -182,7 +182,7 @@ export class NoteCreator {
 			return override;
 		}
 		const obsidianPath = await this.app.fileManager.getAvailablePathForAttachment(
-			`papersync-${scanId}.jpg`,
+			`${attachmentBaseName(scanId)}.jpg`,
 			notePath
 		);
 		const dir = obsidianPath.includes('/')

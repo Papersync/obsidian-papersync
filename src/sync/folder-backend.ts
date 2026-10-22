@@ -58,10 +58,21 @@ function parseScanJson(content: string, filePath: string): unknown {
 
 // Refuses a file over maxBytes before reading it. A stat failure is left to the
 // read, which reports it the usual way.
+//
+// Symlinks are never followed (lstat): a synced folder can carry one (Syncthing
+// keeps them), and `scan.jpg -> ~/.ssh/id_ed25519` would copy that file into the
+// vault. Only regular files are read.
 async function readCapped(filePath: string, maxBytes: number): Promise<Buffer<ArrayBuffer>> {
-	const size = await fs.promises.stat(filePath).then((stat) => stat.size, () => 0);
-	if (size > maxBytes) {
-		throw scanTooLargeError(path.basename(filePath), size, maxBytes);
+	const stat = await fs.promises.lstat(filePath).catch(() => null);
+	if (stat?.isSymbolicLink()) {
+		// Treated as no file at all: a linked photo is absent, a linked JSON skipped.
+		throw createSyncError('scan_missing', `${path.basename(filePath)} is a link; links are not followed`);
+	}
+	if (stat && !stat.isFile()) {
+		throw createSyncError('folder_access', `${path.basename(filePath)} is not a regular file`, false);
+	}
+	if (stat && stat.size > maxBytes) {
+		throw scanTooLargeError(path.basename(filePath), stat.size, maxBytes);
 	}
 	return fs.promises.readFile(filePath);
 }
@@ -275,11 +286,16 @@ export class FolderBackend implements SyncBackend {
 				// evicted JSON can't be read yet — its synced flag is unknowable
 				// until fetchScan triggers the download, so discover it anyway.
 				let imageFileName = '';
-				if (presentSet.has(jsonFile) && (await fs.promises.stat(jsonPath)).size > MAX_SCAN_JSON_BYTES) {
+				const stat = presentSet.has(jsonFile) ? await fs.promises.lstat(jsonPath) : null;
+				if (stat?.isSymbolicLink()) {
+					logger.warn(`${jsonFile} is a link; links are not followed`);
+					continue;
+				}
+				if (stat && stat.size > MAX_SCAN_JSON_BYTES) {
 					// Discovered unread, so fetchScan reports it instead of every pass
 					// loading it.
 					logger.warn(`${jsonFile} is over the scan size limit`);
-				} else if (presentSet.has(jsonFile)) {
+				} else if (stat) {
 					const content = await fs.promises.readFile(jsonPath, 'utf-8');
 					const parsed = JSON.parse(content) as { synced?: boolean; imageFileName?: string };
 

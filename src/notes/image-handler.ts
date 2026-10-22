@@ -13,6 +13,19 @@ function imageExtension(data: ArrayBuffer): 'png' | 'jpg' {
 	return isPng ? 'png' : 'jpg';
 }
 
+// The vault file name for a scan's photo, without extension. The scan id comes
+// from a file name in the synced folder or on Drive, where it can hold '/', '..'
+// or characters Obsidian rejects; Obsidian's path check does not stop '..', so a
+// crafted id could otherwise write outside the attachments folder (or the vault).
+// Wikilink characters are replaced too, so the embed always resolves.
+export function attachmentBaseName(scanId: string): string {
+	const safe = scanId
+		.replace(/[\\/:*?"<>|#^[\]\p{Cc}]/gu, '_')
+		.replace(/\.{2,}/g, '_')
+		.replace(/^[.\s]+|[.\s]+$/g, '');
+	return `papersync-${safe || 'scan'}`;
+}
+
 export async function saveImageToVault(
 	vault: Vault,
 	imageData: ArrayBuffer,
@@ -20,7 +33,7 @@ export async function saveImageToVault(
 	scanId: string
 ): Promise<string> {
 	const folderPath = attachmentsFolder;
-	const fileName = `papersync-${scanId}.${imageExtension(imageData)}`;
+	const fileName = `${attachmentBaseName(scanId)}.${imageExtension(imageData)}`;
 	// An empty folder means the vault root: save the file there with no leading slash and
 	// no folder to create. normalizePath collapses any stray '//' so the embed never breaks.
 	const filePath = normalizePath(folderPath ? `${folderPath}/${fileName}` : fileName);
