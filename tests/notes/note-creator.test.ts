@@ -7,6 +7,12 @@ import type { ScanFile } from '@/validation/scan-file-schema';
 // getAbstractFileByPath must return a real TFile for the append path (instanceof check).
 const asTFile = (path: string): TFile => Object.assign(new TFile(), { path });
 
+// What a saved block ends with: its rendered text, then the scan's import marker.
+const marked = (text: string, scanId = 'scan-nophoto'): string => {
+	const body = text.trimEnd();
+	return `${body}${body === '' ? '' : '\n\n'}%% papersync:${scanId} %%\n`;
+};
+
 const mockApp = {
 	internalPlugins: {
 		getPluginById: () => null,
@@ -91,7 +97,7 @@ describe('NoteCreator', () => {
 		creator.config.templateString = '# {{ps_title}}\n{{ps_summary}}';
 		try {
 			await creator.createOrAppend(makeScanFile(overrides), new ArrayBuffer(10), 'scan-title');
-			expect(mockVault.create.mock.calls[0]?.[1]).toBe(expected);
+			expect(mockVault.create.mock.calls[0]?.[1]).toBe(marked(expected, 'scan-title'));
 		} finally {
 			creator.config.templateString = original;
 		}
@@ -150,6 +156,29 @@ describe('NoteCreator', () => {
 		expect(written).toContain('# Existing content');
 		expect(written).toContain('***');
 		expect(written).toContain('# Test Notes');
+	});
+
+	it('does not append a scan whose marker is already in the note', async () => {
+		mockVault.getAbstractFileByPath.mockImplementation((path: string) =>
+			path === 'PaperSync/2026-04-12.md' ? asTFile(path) : null
+		);
+		const existing = '# Earlier\n\n%% papersync:scan-dup %%\n';
+		let written = '';
+		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => {
+			written = fn(existing);
+			return written;
+		});
+
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-dup');
+
+		expect(written).toBe(existing);
+	});
+
+	it('ends every saved block with the scan marker, encoding the id', async () => {
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'a %% b\nc');
+
+		const content = mockVault.create.mock.calls[0]?.[1] as string;
+		expect(content.endsWith('\n\n%% papersync:a%20%25%25%20b%0Ac %%\n')).toBe(true);
 	});
 
 	it('preserves existing content when appending', async () => {
@@ -415,7 +444,7 @@ describe('NoteCreator', () => {
 			const content = await renderWithoutPhoto('{{ps_markdown}}\n![[{{ps_image_file}}|300]]\nSee ![[{{ps_image_file}}]] here\n');
 
 			expect(content).not.toMatch(/!\[\[/);
-			expect(content).toBe('# Test Notes\n\nSome content here.\nSee here\n');
+			expect(content).toBe(marked('# Test Notes\n\nSome content here.\nSee here\n'));
 		});
 
 		it('drops empty embed lines under numbered, plus and task markers and nested quotes, but not other images', async () => {
@@ -423,31 +452,37 @@ describe('NoteCreator', () => {
 				'{{ps_markdown}}\n1. ![[{{ps_image_file}}]]\n+ ![[{{ps_image_file}}|300]]\n- [ ] ![[{{ps_image_file}}]]\n> > ![[{{ps_image_file}}]]\r\n![[other.png|300]]\n'
 			);
 
-			expect(content).toBe('# Test Notes\n\nSome content here.\n![[other.png|300]]\n');
+			expect(content).toBe(marked('# Test Notes\n\nSome content here.\n![[other.png|300]]\n'));
 		});
 
 		it('keeps the scan text when the template only places the photo', async () => {
 			const content = await renderWithoutPhoto('![[{{ps_image_file}}]]\n');
 
-			expect(content).toBe('# Test Notes\n\nSome content here.\n');
+			expect(content).toBe(marked('# Test Notes\n\nSome content here.\n'));
 		});
 
 		it('adds the scan text under the rest of a template that never places it', async () => {
 			const content = await renderWithoutPhoto('## {{ps_scan_time_24h}}\n\n![[{{ps_image_file}}]]\n');
 
-			expect(content).toBe('## 14:30\n\n# Test Notes\n\nSome content here.\n');
+			expect(content).toBe(marked('## 14:30\n\n# Test Notes\n\nSome content here.\n'));
 		});
 
 		it('adds nothing for a scan with no text', async () => {
 			const content = await renderWithoutPhoto('## {{ps_scan_time_24h}}\n![[{{ps_image_file}}]]\n', makeScanFile({ markdown: '  ' }));
 
-			expect(content).toBe('## 14:30\n');
+			expect(content).toBe(marked('## 14:30\n'));
+		});
+
+		it('saves only the marker when nothing else is left', async () => {
+			const content = await renderWithoutPhoto('![[{{ps_image_file}}]]\n', makeScanFile({ markdown: '  ' }));
+
+			expect(content).toBe(marked(''));
 		});
 
 		it('leaves a template that already places the text unchanged', async () => {
 			const content = await renderWithoutPhoto('{{ps_markdown}}\n![[{{ps_image_file}}]]\n');
 
-			expect(content).toBe('# Test Notes\n\nSome content here.\n');
+			expect(content).toBe(marked('# Test Notes\n\nSome content here.\n'));
 		});
 	});
 

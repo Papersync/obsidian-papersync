@@ -15,6 +15,20 @@ import { logger } from '@/utils/logger';
 // rather than depend on moment's typings directly (it is only a transitive dep).
 const momentOf = moment as unknown as (date: Date) => { format(pattern: string): string };
 
+// An Obsidian comment (hidden in Reading view and Live Preview) that records which
+// scan a block of a note came from. The import checks for it before appending, so
+// a scan whose "synced" flag could not be written back (a failed Drive PATCH, a
+// read-only JSON) is never appended twice when it is retried or rediscovered.
+// encodeURIComponent keeps any id character from ending the comment early.
+export function scanMarker(scanId: string): string {
+	return `%% papersync:${encodeURIComponent(scanId)} %%`;
+}
+
+function withMarker(rendered: string, scanId: string): string {
+	const body = rendered.trimEnd();
+	return `${body}${body === '' ? '' : '\n\n'}${scanMarker(scanId)}\n`;
+}
+
 export interface NoteCreatorConfig {
 	templateString: string;
 	targetFolder: string;
@@ -122,16 +136,27 @@ export class NoteCreator {
 			}
 		}
 
+		rendered = withMarker(rendered, scanId);
+
 		if (existingFile instanceof TFile) {
 			// vault.process is an atomic read-modify-write that goes through Obsidian's
 			// cache and fires modify events, unlike adapter.read/write which bypasses both.
+			// The marker check runs inside it, on the content it is about to change.
+			const marker = scanMarker(scanId);
+			let alreadyImported = false;
 			await this.vault.process(existingFile, (existingContent) => {
+				if (existingContent.includes(marker)) {
+					alreadyImported = true;
+					return existingContent;
+				}
 				const trimmed = existingContent.trimEnd();
 				return trimmed.length > 0
 					? trimmed + '\n\n' + rendered
 					: rendered;
 			});
-			logger.info(`Appended scan ${scanId} to ${notePath}`);
+			logger.info(alreadyImported
+				? `Scan ${scanId} is already in ${notePath}, not appending it again`
+				: `Appended scan ${scanId} to ${notePath}`);
 		} else {
 			await this.vault.create(notePath, rendered);
 			logger.info(`Created new note ${notePath} for scan ${scanId}`);

@@ -1,3 +1,4 @@
+import { TFile } from 'obsidian';
 import { SyncEngine } from '@/sync/sync-engine';
 import { SyncState } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
@@ -158,6 +159,57 @@ describe('SyncEngine integration', () => {
 		expect(mockVault.createBinary).not.toHaveBeenCalled();
 		expect(mockVault.create.mock.calls[0][1]).not.toContain('![[');
 		expect(backend.markSyncedCalls).toHaveLength(1);
+	});
+
+	it('retries only the synced write-back after the note was written', async () => {
+		jest.useFakeTimers();
+		(backend.markSynced as jest.Mock)
+			.mockRejectedValueOnce(new Error('Drive request failed (503): backend error'))
+			.mockImplementation(async (ref: ScanReference) => { backend.markSyncedCalls.push(ref); });
+		try {
+			const sync = engine.forceSyncNow();
+			await jest.advanceTimersByTimeAsync(5_000);
+			await sync;
+		} finally {
+			engine.stop();
+			jest.useRealTimers();
+		}
+
+		expect(mockVault.create).toHaveBeenCalledTimes(1);
+		expect(backend.fetchScan).toHaveBeenCalledTimes(1);
+		expect(backend.markSynced).toHaveBeenCalledTimes(2);
+		expect(backend.markSyncedCalls).toHaveLength(1);
+	});
+
+	it('does not append a scan again when its synced write-back keeps failing', async () => {
+		jest.useFakeTimers();
+		// A vault that keeps what was written, so the next pass appends to it.
+		let note: string | null = null;
+		const notePath = 'PaperSync/2026-04-12.md';
+		mockVault.getAbstractFileByPath.mockImplementation((path: string) =>
+			path === notePath && note !== null ? Object.assign(new TFile(), { path }) : null
+		);
+		mockVault.create.mockImplementation(async (_p: string, content: string) => { note = content; });
+		const process = jest.fn(async (_f: unknown, fn: (d: string) => string) => { note = fn(note ?? ''); });
+		const vault = { ...mockVault, process };
+		(backend.markSynced as jest.Mock).mockRejectedValue(new Error('Drive request failed (503): backend error'));
+		engine = new SyncEngine(backend, { vault, internalPlugins: { getPluginById: () => null } } as any, noteConfig, errorHandler, syncState);
+		try {
+			for (let pass = 0; pass < 2; pass++) {
+				const sync = engine.forceSyncNow();
+				await jest.advanceTimersByTimeAsync(10_000);
+				await sync;
+			}
+		} finally {
+			engine.stop();
+			jest.useRealTimers();
+		}
+
+		expect(mockVault.create).toHaveBeenCalledTimes(1);
+		expect(process).toHaveBeenCalledTimes(1);
+		expect(note!.match(/# Integration Test/g)).toHaveLength(1);
+		expect(backend.markSynced).toHaveBeenCalledTimes(6);
+		mockVault.create.mockReset().mockResolvedValue(undefined);
 	});
 
 	it('does not mark synced if fetch fails', async () => {

@@ -2,6 +2,7 @@ import { App, Notice } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import { NoteCreator } from '@/notes/note-creator';
 import type { NoteCreatorConfig } from '@/notes/note-creator';
+import type { ScanFile } from '@/validation/scan-file-schema';
 import { ErrorHandler, isSyncError, stateMessageFor } from '@/errors/error-handler';
 import { SyncState } from '@/sync/sync-state';
 import { isOnline } from '@/utils/platform';
@@ -169,8 +170,17 @@ export class SyncEngine {
 				const chunk = unsyncedRefs.slice(i, i + BATCH_SIZE);
 
 				for (const ref of chunk) {
+					// Set once the note holds this scan. A retry after that point (the
+					// "synced" write-back failed) retries only the write-back: appending
+					// again would duplicate the scan in the note.
+					let written: ScanFile | null = null;
 					const result = await this.errorHandler.handleWithRetry(ref.id, async () => {
 						try {
+							if (written) {
+								await this.backend.markSynced(ref, written);
+								this.pendingNetwork.delete(ref.id);
+								return 'synced';
+							}
 							const scanFile = await this.backend.fetchScan(ref);
 
 							if (scanFile.synced) {
@@ -192,6 +202,7 @@ export class SyncEngine {
 								return 'waiting-image';
 							}
 							await this.noteCreator.createOrAppend(scanFile, imageData, ref.id);
+							written = scanFile;
 							await this.backend.markSynced(ref, scanFile);
 							this.pendingNetwork.delete(ref.id);
 							this.companionGrace.complete(ref.id);
