@@ -15,9 +15,12 @@ import { SyncState } from '@/sync/sync-state';
 import type { SyncStateSnapshot } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
 
-import { GOOGLE_CLIENT_ID, DEV_MODE, OAUTH_TOKEN_SECRET_ID } from '@/config';
+import { GOOGLE_CLIENT_ID, OAUTH_TOKEN_SECRET_ID } from '@/config';
 import { getDailyNotesConfig, defaultNotesFolder } from '@/utils/daily-notes';
 import { createFakeScanOnDrive } from '@/utils/dev-tools';
+
+// Set by esbuild `define` (esbuild.config.mjs): true only for `npm run dev`.
+declare const __DEV_MODE__: boolean;
 
 // A read-through view of the committed settings, so the engine always sees the
 // latest commit without being handed a new object.
@@ -55,7 +58,7 @@ export default class PaperSyncPlugin extends Plugin {
 
 		await this.loadSettings();
 		// Console logging is a development-phase aid, gated to dev builds (no user toggle).
-		setDebugLogging(DEV_MODE);
+		setDebugLogging(__DEV_MODE__);
 
 		this.settingsTab = new PaperSyncSettingTab(this.app, this);
 		this.addSettingTab(this.settingsTab);
@@ -79,7 +82,9 @@ export default class PaperSyncPlugin extends Plugin {
 			callback: () => { void this.openSettings(); },
 		});
 
-		if (DEV_MODE) {
+		// Build-time constant (esbuild `define`): false in production, so the
+		// minifier drops this block and, with it, src/utils/dev-tools.ts.
+		if (__DEV_MODE__) {
 			this.addCommand({
 				id: 'dev-fake-scan',
 				name: 'DEV: Add fake scan to Drive',

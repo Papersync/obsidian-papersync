@@ -33,6 +33,8 @@ module.exports = {
 		'^@/(.*)$': '<rootDir>/src/$1',
 		'^obsidian$': '<rootDir>/tests/__mocks__/obsidian.ts',
 	},
+	// esbuild `define` replaces this in real builds; tests run as production.
+	globals: { __DEV_MODE__: false },
 	setupFiles: ['<rootDir>/tests/setup.ts'],
 	transform: {
 		'^.+\\.[tj]s$': ['ts-jest', {
