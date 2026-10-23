@@ -108,7 +108,7 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 - Default to local/offline operation. Only make network requests when essential to the feature.
 - No telemetry or analytics, not even opt-in: Obsidian's directory policy bans client-side telemetry. Document any network call in `README.md`.
 - Never execute remote code, fetch and eval scripts, or auto-update plugin code outside of normal releases.
-- Minimize scope: read/write only what's necessary inside the vault. Do not access files outside the vault.
+- Minimize scope: read/write only what's necessary inside the vault. Outside the vault, touch only the sync folder the user picked in Settings (iCloud Drive, Dropbox, OneDrive, Syncthing or any folder): read its scan files and mark them synced, regular files only, never through a symlink (lstat, see `readCapped` in `src/sync/folder-backend.ts`); on macOS `brctl download` may fetch an evicted file in it. Never read, list or write any other path outside the vault.
 - Clearly disclose any external services used, data sent, and risks.
 - Respect user privacy. Do not collect vault contents, filenames, or personal information unless absolutely necessary and explicitly consented.
 - Avoid deceptive patterns, ads, or spammy notifications.
