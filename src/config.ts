@@ -41,5 +41,3 @@ export const MAX_POLL_INTERVAL_S = 86_400;
 export const MAX_SCAN_JSON_BYTES = 1024 * 1024;
 export const MAX_SCAN_IMAGE_BYTES = 50 * 1024 * 1024;
 export const OAUTH_TIMEOUT_MS = 3 * 60 * 1000;
-declare const __DEV_MODE__: boolean;
-export const DEV_MODE: boolean = typeof __DEV_MODE__ !== 'undefined' ? __DEV_MODE__ : false;
