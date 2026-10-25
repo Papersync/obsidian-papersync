@@ -25,11 +25,13 @@ const scan = (id: string, synced = false): ScanFile =>
 const app = {
 	vault: {
 		getAbstractFileByPath: () => null,
-		create: () => Promise.resolve(),
+		create: () => Promise.resolve({ path: 'P/note.md' }),
 		createBinary: () => Promise.resolve(),
 		createFolder: () => Promise.resolve(),
 		adapter: { read: () => Promise.resolve(''), write: () => Promise.resolve() },
 	},
+	metadataCache: { getFileCache: () => null },
+	fileManager: { processFrontMatter: async () => undefined },
 };
 const noteConfig = {
 	templateString: '{{ps_markdown}}',

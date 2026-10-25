@@ -16,18 +16,25 @@ import { logger } from '@/utils/logger';
 // rather than depend on moment's typings directly (it is only a transitive dep).
 const momentOf = moment as unknown as (date: Date) => { format(pattern: string): string };
 
-// An Obsidian comment (hidden in Reading view and Live Preview) that records which
-// scan a block of a note came from. The import checks for it before appending, so
-// a scan whose "synced" flag could not be written back (a failed Drive PATCH, a
-// read-only JSON) is never appended twice when it is retried or rediscovered.
-// encodeURIComponent keeps any id character from ending the comment early.
-export function scanMarker(scanId: string): string {
-	return `%% papersync:${encodeURIComponent(scanId)} %%`;
-}
+// The plugin-owned frontmatter list of scan ids already written into a note. The
+// import checks it before appending, so a scan whose "synced" flag could not be
+// written back (a failed Drive PATCH, a read-only JSON) is never appended twice when
+// it is retried or rediscovered. Ids are stored raw.
+//
+// Write order (append first, id second): the append and the property update are two
+// writes, and a crash can fall between them. With the id written first, a crash would
+// leave the id listed with no block, and the scan would be skipped forever (silent
+// data loss). With the block written first, a crash leaves a block with no id, and the
+// retry appends it once more (a visible duplicate the user can delete). A duplicate is
+// recoverable, a lost scan is not, so the block goes first. The window is two adjacent
+// local writes. The id is added with processFrontMatter, never by editing YAML by hand.
+export const SCANS_PROPERTY = 'papersync-scans';
 
-function withMarker(rendered: string, scanId: string): string {
-	const body = rendered.trimEnd();
-	return `${body}${body === '' ? '' : '\n\n'}${scanMarker(scanId)}\n`;
+// Closed-test notes carry `%% papersync:<id> %% ` comments from the earlier scheme.
+// They still count as "already imported" (matched in their URI-encoded form); the
+// plugin never writes them any more.
+function legacyMarker(scanId: string): string {
+	return `%% papersync:${encodeURIComponent(scanId)} %%`;
 }
 
 export interface NoteCreatorConfig {
@@ -139,13 +146,20 @@ export class NoteCreator {
 			}
 		}
 
-		rendered = withMarker(rendered, scanId);
+		rendered = `${rendered.trimEnd()}\n`;
 
+		let target: TFile;
 		if (existingFile instanceof TFile) {
+			target = existingFile;
+			const listed = this.app.metadataCache.getFileCache(existingFile)?.frontmatter?.[SCANS_PROPERTY];
+			if ([listed].flat().map(String).includes(scanId)) {
+				logger.info(`Scan ${scanId} is already listed in ${notePath}, not appending it again`);
+				return notePath;
+			}
 			// vault.process is an atomic read-modify-write that goes through Obsidian's
 			// cache and fires modify events, unlike adapter.read/write which bypasses both.
-			// The marker check runs inside it, on the content it is about to change.
-			const marker = scanMarker(scanId);
+			// The legacy marker check runs inside it, on the content it is about to change.
+			const marker = legacyMarker(scanId);
 			let alreadyImported = false;
 			await this.vault.process(existingFile, (existingContent) => {
 				if (existingContent.includes(marker)) {
@@ -157,15 +171,36 @@ export class NoteCreator {
 					? trimmed + '\n\n' + rendered
 					: rendered;
 			});
-			logger.info(alreadyImported
-				? `Scan ${scanId} is already in ${notePath}, not appending it again`
-				: `Appended scan ${scanId} to ${notePath}`);
+			if (alreadyImported) {
+				logger.info(`Scan ${scanId} is already in ${notePath} (legacy marker), not appending it again`);
+				return notePath;
+			}
+			logger.info(`Appended scan ${scanId} to ${notePath}`);
 		} else {
-			await this.vault.create(notePath, rendered);
+			target = await this.vault.create(notePath, rendered);
 			logger.info(`Created new note ${notePath} for scan ${scanId}`);
 		}
 
+		await this.listScan(target, scanId);
+
 		return notePath;
+	}
+
+	// Adds the id to the note's papersync-scans list: every other property is kept,
+	// the frontmatter is created when absent, and an id is never listed twice. A
+	// failure (e.g. unparseable YAML) must not fail the import: the block is already
+	// written, and throwing would make the retry append it again.
+	private async listScan(file: TFile, scanId: string): Promise<void> {
+		try {
+			await this.app.fileManager.processFrontMatter(file, (frontmatter: Record<string, unknown>) => {
+				const current = [frontmatter[SCANS_PROPERTY]].flat().filter((id) => id != null);
+				if (!current.map(String).includes(scanId)) {
+					frontmatter[SCANS_PROPERTY] = [...current, scanId];
+				}
+			});
+		} catch (err) {
+			logger.warn(`Could not record scan ${scanId} in ${file.path} frontmatter: ${String(err)}`);
+		}
 	}
 
 	// Where scan images are saved. A user override is used verbatim; otherwise mirror

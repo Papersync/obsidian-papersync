@@ -22,11 +22,13 @@ const scan: ScanFile = {
 const app = {
 	vault: {
 		getAbstractFileByPath: () => null,
-		create: jest.fn().mockResolvedValue(undefined),
+		create: jest.fn().mockResolvedValue({ path: 'P/note.md' }),
 		createBinary: jest.fn().mockResolvedValue(undefined),
 		createFolder: jest.fn().mockResolvedValue(undefined),
 	},
 	internalPlugins: { getPluginById: () => null },
+	metadataCache: { getFileCache: () => null },
+	fileManager: { processFrontMatter: async () => undefined },
 };
 
 const noteConfig = { templateString: '{{ps_markdown}}', targetFolder: 'P', attachmentsFolder: '', downloadImages: false };

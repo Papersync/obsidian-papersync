@@ -48,7 +48,7 @@ function createMockBackend(scans: ScanReference[] = [scanRef]): SyncBackend & {
 
 const mockVault = {
 	getAbstractFileByPath: jest.fn().mockReturnValue(null),
-	create: jest.fn().mockResolvedValue(undefined),
+	create: jest.fn().mockResolvedValue(Object.assign(new TFile(), { path: 'PaperSync/note.md' })),
 	createBinary: jest.fn().mockResolvedValue(undefined),
 	createFolder: jest.fn().mockResolvedValue(undefined),
 	adapter: {
@@ -56,6 +56,23 @@ const mockVault = {
 		write: jest.fn().mockResolvedValue(undefined),
 	},
 };
+
+// An app whose frontmatter behaves like Obsidian's: processFrontMatter edits it, the
+// metadata cache reads it back. `frontmatter` maps a note path to its properties.
+function makeApp(vault: unknown, frontmatter = new Map<string, Record<string, unknown>>()): any {
+	return {
+		vault,
+		internalPlugins: { getPluginById: () => null },
+		metadataCache: { getFileCache: (f: { path: string }) => ({ frontmatter: frontmatter.get(f.path) }) },
+		fileManager: {
+			processFrontMatter: async (f: { path: string }, fn: (fm: Record<string, unknown>) => void) => {
+				const fm = frontmatter.get(f.path) ?? {};
+				fn(fm);
+				frontmatter.set(f.path, fm);
+			},
+		},
+	};
+}
 
 const noteConfig = {
 	templateString: '{{ps_separator}}\n\n## {{ps_scan_time}}\n\n{{ps_markdown}}\n\n> [!abstract]- Original scan\n> ![[{{ps_image_file}}]]',
@@ -84,7 +101,7 @@ describe('SyncEngine integration', () => {
 			stateChanges.push({ status: snap.status, count: snap.pendingCount });
 		});
 
-		engine = new SyncEngine(backend, { vault: mockVault, internalPlugins: { getPluginById: () => null } } as any, noteConfig, errorHandler, syncState);
+		engine = new SyncEngine(backend, makeApp(mockVault), noteConfig, errorHandler, syncState);
 	});
 
 	it('discovers, processes, and marks a scan as synced', async () => {
@@ -128,7 +145,7 @@ describe('SyncEngine integration', () => {
 	it('handles empty scan list gracefully', async () => {
 		backend = createMockBackend([]);
 		syncState = new SyncState('');
-		engine = new SyncEngine(backend, { vault: mockVault, internalPlugins: { getPluginById: () => null } } as any, noteConfig, errorHandler, syncState);
+		engine = new SyncEngine(backend, makeApp(mockVault), noteConfig, errorHandler, syncState);
 
 		await engine.forceSyncNow();
 
@@ -143,7 +160,7 @@ describe('SyncEngine integration', () => {
 		(backend.fetchImage as jest.Mock).mockResolvedValue(null);
 		engine = new SyncEngine(
 			backend,
-			{ vault: mockVault, internalPlugins: { getPluginById: () => null } } as any,
+			makeApp(mockVault),
 			noteConfig,
 			errorHandler,
 			new SyncState('')
@@ -186,15 +203,16 @@ describe('SyncEngine integration', () => {
 		jest.useFakeTimers();
 		// A vault that keeps what was written, so the next pass appends to it.
 		let note: string | null = null;
+		const frontmatter = new Map<string, Record<string, unknown>>();
 		const notePath = 'PaperSync/2026-04-12.md';
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) =>
 			path === notePath && note !== null ? Object.assign(new TFile(), { path }) : null
 		);
-		mockVault.create.mockImplementation(async (_p: string, content: string) => { note = content; });
+		mockVault.create.mockImplementation(async (path: string, content: string) => { note = content; return Object.assign(new TFile(), { path }); });
 		const process = jest.fn(async (_f: unknown, fn: (d: string) => string) => { note = fn(note ?? ''); });
 		const vault = { ...mockVault, process };
 		(backend.markSynced as jest.Mock).mockRejectedValue(new HttpStatusError(503, 'Drive request failed (503): backend error'));
-		engine = new SyncEngine(backend, { vault, internalPlugins: { getPluginById: () => null } } as any, noteConfig, errorHandler, syncState);
+		engine = new SyncEngine(backend, makeApp(vault, frontmatter), noteConfig, errorHandler, syncState);
 		try {
 			for (let pass = 0; pass < 2; pass++) {
 				const sync = engine.forceSyncNow();
@@ -207,10 +225,13 @@ describe('SyncEngine integration', () => {
 		}
 
 		expect(mockVault.create).toHaveBeenCalledTimes(1);
-		expect(process).toHaveBeenCalledTimes(1);
+		// The second pass finds the id in papersync-scans and never touches the note.
+		expect(process).toHaveBeenCalledTimes(0);
 		expect(note!.match(/# Integration Test/g)).toHaveLength(1);
+		expect(note).not.toContain('%% papersync:');
+		expect(frontmatter.get(notePath)).toEqual({ 'papersync-scans': ['2026-04-12-143000'] });
 		expect(backend.markSynced).toHaveBeenCalledTimes(6);
-		mockVault.create.mockReset().mockResolvedValue(undefined);
+		mockVault.create.mockReset().mockResolvedValue(Object.assign(new TFile(), { path: 'PaperSync/note.md' }));
 	});
 
 	it('does not mark synced if fetch fails', async () => {
@@ -241,7 +262,7 @@ it('holds the Drive cursor below a fresh missing companion then imports it after
 	const state = new SyncState('');
 	const engine = new SyncEngine(
 		backend,
-		{ vault: mockVault } as any,
+		makeApp(mockVault),
 		noteConfig,
 		new ErrorHandler(state),
 		state
@@ -265,7 +286,7 @@ it('stops companion polling when an expired wait hits a real image access error'
 	const backend=createMockBackend();
 	(backend.fetchImage as jest.Mock).mockResolvedValue(null);
 	const state=new SyncState('');
-	const engine=new SyncEngine(backend,{vault:mockVault} as any,noteConfig,new ErrorHandler(state),state);
+	const engine=new SyncEngine(backend,makeApp(mockVault),noteConfig,new ErrorHandler(state),state);
 	try {
 		await engine.forceSyncNow();
 		jest.setSystemTime(Date.now()+60_000);
@@ -284,7 +305,7 @@ it('stops companion polling when discovery loses access to its source',async () 
 	const backend=createMockBackend();
 	(backend.fetchImage as jest.Mock).mockResolvedValue(null);
 	const state=new SyncState('');
-	const engine=new SyncEngine(backend,{vault:mockVault} as any,noteConfig,new ErrorHandler(state),state);
+	const engine=new SyncEngine(backend,makeApp(mockVault),noteConfig,new ErrorHandler(state),state);
 	try {
 		await engine.forceSyncNow();
 		(backend.discoverUnsynced as jest.Mock).mockRejectedValue(new Error('permission denied'));
