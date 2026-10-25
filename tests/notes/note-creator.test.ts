@@ -7,21 +7,33 @@ import type { ScanFile } from '@/validation/scan-file-schema';
 // getAbstractFileByPath must return a real TFile for the append path (instanceof check).
 const asTFile = (path: string): TFile => Object.assign(new TFile(), { path });
 
-// What a saved block ends with: its rendered text, then the scan's import marker.
-const marked = (text: string, scanId = 'scan-nophoto'): string => {
-	const body = text.trimEnd();
-	return `${body}${body === '' ? '' : '\n\n'}%% papersync:${scanId} %%\n`;
-};
+// What a saved block ends with: its rendered text and one trailing newline. The scan
+// id is recorded in frontmatter, never as a comment in the body.
+const marked = (text: string): string => `${text.trimEnd()}\n`;
+
+// Frontmatter of the notes the fake app knows, by path (what processFrontMatter edits
+// and the metadata cache reads back).
+const frontmatter = new Map<string, Record<string, unknown>>();
 
 const mockApp = {
 	internalPlugins: {
 		getPluginById: () => null,
 	},
+	metadataCache: {
+		getFileCache: (f: { path: string }) => ({ frontmatter: frontmatter.get(f.path) }),
+	},
+	fileManager: {
+		processFrontMatter: jest.fn(async (f: { path: string }, fn: (fm: Record<string, unknown>) => void) => {
+			const fm = frontmatter.get(f.path) ?? {};
+			fn(fm);
+			frontmatter.set(f.path, fm);
+		}),
+	},
 };
 
 const mockVault = {
 	getAbstractFileByPath: jest.fn(),
-	create: jest.fn().mockResolvedValue(undefined),
+	create: jest.fn(async (path: string, _content: string) => asTFile(path)),
 	createBinary: jest.fn().mockResolvedValue(undefined),
 	createFolder: jest.fn().mockResolvedValue(undefined),
 	// Atomic read-modify-write. Default no-op over empty content; append tests supply
@@ -82,6 +94,7 @@ describe('NoteCreator', () => {
 
 	beforeEach(() => {
 		jest.clearAllMocks();
+		frontmatter.clear();
 		mockVault.getAbstractFileByPath.mockReturnValue(null);
 		creator = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, defaultConfig);
 	});
@@ -159,27 +172,99 @@ describe('NoteCreator', () => {
 		expect(written).toContain('# Test Notes');
 	});
 
-	it('does not append a scan whose marker is already in the note', async () => {
-		mockVault.getAbstractFileByPath.mockImplementation((path: string) =>
-			path === 'PaperSync/2026-04-12.md' ? asTFile(path) : null
-		);
-		const existing = '# Earlier\n\n%% papersync:scan-dup %%\n';
-		let written = '';
+	const NOTE = 'PaperSync/2026-04-12.md';
+	const existingNote = (existing: string): { written: () => string } => {
+		mockVault.getAbstractFileByPath.mockImplementation((path: string) => (path === NOTE ? asTFile(path) : null));
+		let written = existing;
 		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => {
 			written = fn(existing);
 			return written;
 		});
+		return { written: () => written };
+	};
 
-		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-dup');
-
-		expect(written).toBe(existing);
-	});
-
-	it('ends every saved block with the scan marker, encoding the id', async () => {
+	it('records the raw scan id in a new note\'s papersync-scans property, with no comment marker', async () => {
 		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'a %% b\nc');
 
-		const content = mockVault.create.mock.calls[0]?.[1] as string;
-		expect(content.endsWith('\n\n%% papersync:a%20%25%25%20b%0Ac %%\n')).toBe(true);
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['a %% b\nc'] });
+		expect(mockVault.create.mock.calls[0]?.[1] as string).not.toContain('%% papersync:');
+	});
+
+	it('appends the id to an existing list, keeping every other property', async () => {
+		const note = existingNote('# Earlier\n');
+		frontmatter.set(NOTE, { tags: ['x'], 'papersync-scans': ['scan-old'], title: 'T' });
+
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-new');
+
+		expect(note.written()).toContain('# Test Notes');
+		expect(frontmatter.get(NOTE)).toEqual({ tags: ['x'], 'papersync-scans': ['scan-old', 'scan-new'], title: 'T' });
+	});
+
+	it('creates the property on a note that has none, and lifts a scalar value into a list', async () => {
+		existingNote('# Earlier\n');
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-1');
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['scan-1'] });
+
+		frontmatter.set(NOTE, { 'papersync-scans': 'scan-0' });
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-2');
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['scan-0', 'scan-2'] });
+	});
+
+	it('does not append a scan already listed in papersync-scans', async () => {
+		const note = existingNote('# Earlier\n');
+		frontmatter.set(NOTE, { 'papersync-scans': ['scan-dup'] });
+
+		const path = await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-dup');
+
+		expect(path).toBe(NOTE);
+		expect(mockVault.process).not.toHaveBeenCalled();
+		expect(note.written()).toBe('# Earlier\n');
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['scan-dup'] });
+	});
+
+	it('never lists an id twice when it is already in the list at write time', async () => {
+		existingNote('# Earlier\n');
+		// The cache is stale (reports nothing), but the file already lists the id.
+		frontmatter.set(NOTE, { 'papersync-scans': ['scan-x'] });
+		const getFileCache = jest.spyOn(mockApp.metadataCache, 'getFileCache').mockReturnValueOnce({ frontmatter: undefined });
+
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-x');
+
+		getFileCache.mockRestore();
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['scan-x'] });
+	});
+
+	it('appends when the metadata cache has no entry for the note yet', async () => {
+		const note = existingNote('# Earlier\n');
+		jest.spyOn(mockApp.metadataCache, 'getFileCache').mockReturnValueOnce(null as never);
+
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-uncached');
+
+		expect(note.written()).toContain('# Test Notes');
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['scan-uncached'] });
+	});
+
+	it('treats a legacy %% papersync:<id> %% marker as already imported, without writing a new one', async () => {
+		const existing = '# Earlier\n\n%% papersync:a%20b %%\n';
+		const note = existingNote(existing);
+
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'a b');
+
+		expect(note.written()).toBe(existing);
+		expect(frontmatter.has(NOTE)).toBe(false);
+	});
+
+	it('after a crash between the append and the property write, the retry appends once more rather than losing the scan', async () => {
+		// First pass: the block is written, then the property write dies.
+		const note = existingNote('# Earlier\n');
+		mockApp.fileManager.processFrontMatter.mockRejectedValueOnce(new Error('crashed'));
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-crash');
+		expect(note.written()).toContain('# Test Notes');
+		expect(frontmatter.has(NOTE)).toBe(false);
+
+		// Retry (id unlisted): appends again (a duplicate block, never a lost scan) and lists the id.
+		await creator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-crash');
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['scan-crash'] });
 	});
 
 	it('preserves existing content when appending', async () => {

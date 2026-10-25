@@ -48,7 +48,11 @@ describe('missing companion through real filesystem and sync engine', () => {
 		state = new SyncState('');
 		engine = new SyncEngine(
 			backend,
-			{ vault } as unknown as App,
+			{
+				vault,
+				metadataCache: { getFileCache: () => null },
+				fileManager: { processFrontMatter: async () => undefined },
+			} as unknown as App,
 			config,
 			new ErrorHandler(state),
 			state

@@ -32,18 +32,22 @@ const noteConfig = {
 };
 
 function makeApp(): {
+	metadataCache: { getFileCache: () => null };
+	fileManager: { processFrontMatter: () => Promise<void> };
 	vault: {
 		getAbstractFileByPath: () => null;
-		create: () => Promise<void>;
+		create: () => Promise<{ path: string }>;
 		createBinary: () => Promise<void>;
 		createFolder: () => Promise<void>;
 		adapter: { read: () => Promise<string>; write: () => Promise<void> };
 	};
 } {
 	return {
+		metadataCache: { getFileCache: () => null },
+		fileManager: { processFrontMatter: async () => undefined },
 		vault: {
 			getAbstractFileByPath: () => null,
-			create: () => Promise.resolve(),
+			create: () => Promise.resolve({ path: 'P/note.md' }),
 			createBinary: () => Promise.resolve(),
 			createFolder: () => Promise.resolve(),
 			adapter: {
