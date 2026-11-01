@@ -16,7 +16,7 @@ describe('Folder backend settings', function () {
 	it('shows storage section with folder and drive options when not connected', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		if (!text.includes('Change Storage')) {
+		if (!text.includes('Change storage')) {
 			expect(text).toContain('Google Drive');
 			expect(text).toContain('Select your Papersync folder');
 		}
@@ -25,7 +25,7 @@ describe('Folder backend settings', function () {
 	it('shows Browse button for folder selection', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		if (!text.includes('Change Storage')) {
+		if (!text.includes('Change storage')) {
 			expect(text).toContain('Browse');
 		}
 	});
@@ -143,7 +143,7 @@ for (const host of ['window', 'modal'] as const) {
 			expect(ui.warning).not.toContain(dir); // names the folder, never its absolute path
 			expect(ui.connectedRow).toBe(false);
 			expect(ui.buttons).toContain('Browse');
-			expect(ui.buttons).not.toContain('Change Storage');
+			expect(ui.buttons).not.toContain('Change storage');
 			expect(ui.buttons).not.toContain('Sync now');
 		}
 

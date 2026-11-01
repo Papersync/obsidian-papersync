@@ -89,7 +89,7 @@ export class OAuthManager {
 
 	async startAuthFlow(): Promise<OAuthTokens> {
 		if (!this.clientId) {
-			throw createSyncError('token_revoked', 'Google Client ID is not configured — check src/config.ts');
+			throw createSyncError('token_revoked', 'Google Client ID is not configured. Check src/config.ts');
 		}
 
 		// Connect pressed again: end the previous flow (its server, its timeout and
@@ -282,7 +282,7 @@ export class OAuthManager {
 
 		if (!tokenData.access_token || !tokenData.refresh_token) {
 			logger.error('Token response missing required fields');
-			throw createSyncError('token_revoked', `Token exchange incomplete — missing ${!tokenData.access_token ? 'access_token' : 'refresh_token'}`);
+			throw createSyncError('token_revoked', `Token exchange incomplete: missing ${!tokenData.access_token ? 'access_token' : 'refresh_token'}`);
 		}
 
 		logger.info('Token exchange successful — got access_token + refresh_token');
@@ -300,7 +300,7 @@ export class OAuthManager {
 		}
 
 		if (!this.refreshToken) {
-			throw createSyncError('token_revoked', 'No refresh token available — reconnect in settings');
+			throw createSyncError('token_revoked', 'No refresh token available. Reconnect in settings');
 		}
 
 		return this.refreshAccessToken();
@@ -340,7 +340,7 @@ export class OAuthManager {
 				this.accessToken = null;
 				this.refreshToken = null;
 				this.onTokenChange?.('');
-				throw createSyncError('token_revoked', 'Refresh token revoked — reconnect in settings');
+				throw createSyncError('token_revoked', 'Refresh token revoked. Reconnect in settings');
 			}
 			throw createSyncError('network_timeout', `Token refresh failed (status ${response.status}); will retry`);
 		}

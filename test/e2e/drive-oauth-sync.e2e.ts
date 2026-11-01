@@ -391,9 +391,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// The settings UI re-rendered into the connected state. state() above moved
 		// the driver to the main window; the settings DOM is elsewhere on 1.13+.
 		await focusSettingsUI();
-		await browser.waitUntil(async () => (await (await browser.$('body')).getText()).includes('Change Storage'), {
+		await browser.waitUntil(async () => (await (await browser.$('body')).getText()).includes('Change storage'), {
 			timeout: 5000, interval: 250,
-			timeoutMsg: 'Settings UI never showed the connected (Change Storage) state',
+			timeoutMsg: 'Settings UI never showed the connected (Change storage) state',
 		});
 		await closeSettings();
 	});
@@ -532,11 +532,11 @@ describe('Drive OAuth + sync against fake Google', function () {
 		await openSettings();
 		const text = await (await browser.$('body')).getText();
 		expect(text).toContain('Connect');
-		expect(text).not.toContain('Change Storage');
+		expect(text).not.toContain('Change storage');
 		await closeSettings();
 	});
 
-	it('revokes the refresh token at Google when the user disconnects via Change Storage', async function () {
+	it('revokes the refresh token at Google when the user disconnects via Change storage', async function () {
 		// Own precondition (retry-safe): seed a fresh fake-issued refresh token and reload
 		// so OAuthManager restores it into memory — the exact "connected" state a real
 		// UI connect leaves behind, without re-driving the whole browser hop.
@@ -550,11 +550,11 @@ describe('Drive OAuth + sync against fake Google', function () {
 		const refreshToken = connected.refreshToken;
 		expect(refreshToken.startsWith('refresh-')).toBe(true);
 
-		// Real UI disconnect: the Google-connected row renders exactly one "Change Storage"
+		// Real UI disconnect: the Google-connected row renders exactly one "Change storage"
 		// button (the handler returns before the folder branch), so clicking it exercises
 		// the plugin's genuine disconnect path — no direct oauthManager call.
 		await openSettings();
-		await clickButtonWhenPresent('Change Storage');
+		await clickButtonWhenPresent('Change storage');
 
 		// The disconnect POSTed the refresh token to the fake /revoke endpoint — a real
 		// server-side sign-out, fired AFTER the local clear with the captured token.

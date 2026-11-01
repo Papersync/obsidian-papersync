@@ -7,7 +7,7 @@ describe('Settings tab', function () {
 		await openPluginSettings();
 		const body = await browser.$('body');
 		const text = await body.getText();
-		isConnected = text.includes('Change Storage');
+		isConnected = text.includes('Change storage');
 	});
 
 	afterEach(async function () {
@@ -17,9 +17,9 @@ describe('Settings tab', function () {
 	it('shows the storage connection or picker in the Sync section', async function () {
 		const body = await browser.$('body');
 		const text = await body.getText();
-		// Storage lives in the Sync section: a Change Storage button when connected (Drive
+		// Storage lives in the Sync section: a Change storage button when connected (Drive
 		// OR a local folder), or a Browse option in the picker when not connected.
-		expect(text.includes('Change Storage') || text.includes('Browse')).toBe(true);
+		expect(text.includes('Change storage') || text.includes('Browse')).toBe(true);
 	});
 
 	it('shows notes folder setting when connected', async function () {

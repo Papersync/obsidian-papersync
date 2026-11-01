@@ -4,7 +4,7 @@ import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSetting
 
 // The Template section only renders once a backend is connected, so this spec
 // connects the folder backend itself rather than skipping when it happens to
-// find one. It previously gated on `text.includes('Change Storage')` and called
+// find one. It previously gated on `text.includes('Change storage')` and called
 // this.skip() — a condition a clean test vault never satisfies, so all three
 // tests silently never ran while the suite still reported the file as passed.
 
