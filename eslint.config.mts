@@ -23,6 +23,8 @@ export default tseslint.config(
 	},
 	...obsidianmd.configs.recommended,
 	globalIgnores([
+		// Node-only maintainer commands are exercised by test:release, not Obsidian UI rules.
+		"scripts/release*.mjs",
 		"node_modules",
 		"dist",
 		"esbuild.config.mjs",

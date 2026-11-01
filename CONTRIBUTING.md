@@ -24,3 +24,9 @@ To try a build in your own vault, copy `main.js`, `manifest.json` and `styles.cs
 - Keep CI green: lint, type-check, unit tests at 100% coverage, bundle size budget and the E2E suite.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`fix(sync): ...`, `feat(template): ...`).
 - The plugin must stay free of telemetry and of network calls beyond Google Drive sync. Obsidian's directory policy does not allow client-side telemetry, even opt-in.
+
+## Releases
+
+Follow [RELEASING.md](RELEASING.md): prepare a version through a PR, request a
+draft from tested merged source, then publish after reviewing its notes and
+assets. Run `npm run release -- --help` to see the three commands.

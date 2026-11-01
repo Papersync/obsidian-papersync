@@ -23,10 +23,13 @@ cd plugin && npx tsc --noEmit
 
 ## Releasing
 ```bash
-npm run release                     # patch: checks, bump + tag, push, wait for the draft
-npm run release -- publish 0.1.4    # after editing the draft's notes
+npm run release -- prepare patch   # local checks, version bump and commit on a branch
+npm run release -- draft 0.1.4     # after PR merge + green default-branch CI, push only the tag
+npm run release -- publish 0.1.4   # after reviewing the draft's notes and assets
 ```
-Script: `scripts/release.sh`. Details in AGENTS.md § Versioning & releases.
+For already-bumped 0.1.4, skip prepare. Each remote stage needs the founder's
+explicit approval. Scripts: `scripts/release.sh` and `scripts/release.mjs`.
+Full process and recovery: [RELEASING.md](RELEASING.md).
 
 ## Key Patterns
 
