@@ -723,7 +723,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				this.addSyncNowButton(setting);
 				setting.addButton((button) =>
 					button
-						.setButtonText('Change Storage')
+						.setButtonText('Change storage')
 						.onClick(
 							asyncHandler(() =>
 								this.getConnectionState().isGoogleConnected
@@ -809,7 +809,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				// hidden. visible() alone decides whether it shows.
 				setting.setClass('papersync-warning-row');
 				setting.setDesc(
-					'Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the Template section to make it explicit.'
+					'Your template still embeds the scan image, but saving is off, so that embed is dropped from synced notes. Remove the image line in the template section to make it explicit.'
 				);
 			},
 		});

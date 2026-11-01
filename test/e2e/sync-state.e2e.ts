@@ -32,7 +32,7 @@ describe('Sync state management', function () {
 		const settingsText = await body.getText();
 		await closeSettings();
 
-		if (!settingsText.includes('Change Storage')) {
+		if (!settingsText.includes('Change storage')) {
 			// Not connected — sync now should show a notice
 			await browser.executeObsidianCommand('papersync:sync-now');
 			await browser.pause(500);

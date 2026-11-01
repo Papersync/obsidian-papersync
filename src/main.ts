@@ -87,7 +87,7 @@ export default class PaperSyncPlugin extends Plugin {
 		if (__DEV_MODE__) {
 			this.addCommand({
 				id: 'dev-fake-scan',
-				name: 'DEV: Add fake scan to Drive',
+				name: 'Add fake scan to Google Drive (development)',
 				callback: () => {
 					if (!this.oauthManager?.isAuthenticated) {
 						new Notice('Connect Google Drive first');

@@ -75,7 +75,7 @@ your vault is synced or backed up.
 
 ### Disconnecting
 
-- **Change Storage** and **Full reset** sign you out for real. Papersync clears
+- **Change storage** and **Full reset** sign you out for real. Papersync clears
   the token from your device first, then posts it to Google's revocation
   endpoint (`oauth2.googleapis.com/revoke`), which kills the refresh token
   server-side. Any access token already issued expires within about an hour.
@@ -85,7 +85,7 @@ your vault is synced or backed up.
   [remove Papersync's access](https://support.google.com/accounts/answer/3466521#remove-access)
   in your Google Account, or Google expires it after six months without use.
   The failure is logged, never surfaced as an error.
-- **Uninstalling does not disconnect.** Use Change Storage first. Otherwise the
+- **Uninstalling does not disconnect.** Use Change storage first. Otherwise the
   token stays in Obsidian's Keychain settings and stays valid at Google; remove
   it in both places yourself.
 - A revoked token that somehow reappears on a later load self-heals on first
