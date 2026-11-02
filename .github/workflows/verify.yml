@@ -44,9 +44,6 @@ jobs:
       - name: Type check
         run: npm run tsc
 
-      - name: Release script guards
-        run: npm run test:release
-
       # Production dependencies only: what can reach main.js. Dev/E2E tooling
       # advisories are tracked through Dependabot alerts instead, since several
       # have no upstream fix yet and would keep this red for nothing we ship.
@@ -57,6 +54,9 @@ jobs:
       # coverageThreshold; plain `npm test` never enforced it in CI.
       - name: Unit tests (coverage gate)
         run: npm run test:coverage
+
+      - name: Release script guards
+        run: npm run test:release
 
       - name: Build
         run: npm run build
