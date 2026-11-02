@@ -37,8 +37,8 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run tsc
-      - run: npm run test:release
       - run: npm run test:coverage
+      - run: npm run test:release
       - run: npm run build
 
       - name: Bundle size check
