@@ -13,11 +13,9 @@ export default tseslint.config(
 				projectService: {
 					allowDefaultProject: [
 						'eslint.config.js',
-						'manifest.json'
 					]
 				},
 				tsconfigRootDir: import.meta.dirname,
-				extraFileExtensions: ['.json']
 			},
 		},
 	},
@@ -45,7 +43,7 @@ export default tseslint.config(
 			"@typescript-eslint/no-unsafe-assignment": "error",
 			"@typescript-eslint/no-unsafe-member-access": "off",
 			"@typescript-eslint/no-unsafe-call": "off",
-			"@typescript-eslint/no-misused-promises": "error",
+			"obsidianmd/no-misused-promises": "error",
 			"@typescript-eslint/only-throw-error": "error",
 			"@typescript-eslint/prefer-promise-reject-errors": "error",
 			"@typescript-eslint/no-explicit-any": "error",
