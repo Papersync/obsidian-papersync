@@ -57,6 +57,11 @@ export async function focusSettingsUI(): Promise<boolean> {
 	return browser.execute(() => !!document.querySelector('.mod-settings'));
 }
 
+// Every spec opens Settings through this helper. Do not call the command from a
+// plain synchronous browser.execute: with WebdriverIO 10 on macOS, the plugin's
+// `await setting.open()` continuation then never runs on the first open of the
+// settings window, so openTabById is skipped and Settings stay on the General tab.
+// executeObsidianCommand runs inside an async script, where it does run.
 export async function openPluginSettings(): Promise<void> {
 	await switchToMainWindow();
 	await browser.executeObsidianCommand('papersync:open-settings');
