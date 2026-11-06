@@ -1,0 +1,56 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+# CodeRabbit review settings. Reviews are advice; CI (verify + e2e) is the merge gate.
+language: en-US
+
+chat:
+  auto_reply: true
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  sequence_diagrams: false
+  auto_approvals:
+    enabled: false
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - master
+    ignore_title_keywords:
+      - "WIP"
+      - "[skip review]"
+
+  path_filters:
+    - "!**/node_modules/**"
+    - "!**/package-lock.json"
+    - "!main.js"
+    - "!coverage/**"
+    - "!test/vault/**"
+    - "!**/*.png"
+    - "!**/*.svg"
+
+  path_instructions:
+    - path: "src/**/*.ts"
+      instructions: |
+        This is an Obsidian community plugin (desktop only, isDesktopOnly: true). Review against Obsidian's plugin guidelines:
+        - Use the Obsidian API (Vault, MetadataCache, Workspace) for files inside the vault; Node `fs` only for the synced folder outside the vault.
+        - No shell commands or `child_process`.
+        - Register listeners and intervals with `registerEvent` / `registerInterval` / `register` so they are cleaned up on unload.
+        - No `innerHTML` / `outerHTML` with dynamic content; use `createEl` / `setText`.
+        - No network calls except Google APIs in Google Drive mode. No telemetry or analytics.
+        - Throw and reject with Error objects (SyncError extends Error); no floating promises.
+        - User-facing strings (Notice, settings text) must not contain em dashes and must use sentence case.
+        - Never log or persist OAuth tokens outside Obsidian's secret storage.
+    - path: "tests/**"
+      instructions: |
+        Jest unit tests with Obsidian APIs mocked in tests/__mocks__. Coverage must stay at 100%. Check that edge and error paths are tested and that tests do not depend on wall-clock timing.
+    - path: "test/e2e/**"
+      instructions: |
+        WebdriverIO E2E specs running a real Obsidian instance. Flag fixed sleeps where an explicit wait on a state would work, and any reliance on the developer's real vault.
+    - path: "manifest.json"
+      instructions: |
+        Check against Obsidian's manifest rules: id/name without "obsidian" or "plugin", description under 250 characters ending with a period, minAppVersion accurate, version matching package.json and versions.json.
