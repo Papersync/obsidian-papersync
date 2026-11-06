@@ -71,9 +71,9 @@ function toLocation(type: SyncLocationType, displayName: string, basePath: strin
  * them speculatively would add rows to explain without adding capability.
  *
  * iCloud is macOS-only and always offered, so the option never vanishes when its
- * folder is deleted. iCloud Drive does run on Windows, but the offload nudge is
- * `brctl`, a macOS binary with no Windows counterpart, so a Windows row would
- * promise handling that is not there; those users go through Browse.
+ * folder is deleted. iCloud Drive does run on Windows, but the offload nudge
+ * (`triggerICloudDownload`) is only proven on macOS, so a Windows row would
+ * promise handling nobody has verified there; those users go through Browse.
  */
 export function detectSyncLocations(): SyncLocation[] {
 	const home = os.homedir();

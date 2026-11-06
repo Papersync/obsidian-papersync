@@ -31,7 +31,7 @@ Scans waiting there import right away. Edit the template first if you want a dif
 ## Privacy
 
 - No Papersync server, no account, no telemetry.
-- **Folder sync** reads your chosen folder outside the vault. On macOS it runs `brctl download` to fetch iCloud files. The plugin makes no network requests.
+- **Folder sync** reads your chosen folder outside the vault. On macOS, reading an iCloud file that was offloaded asks iCloud to download it. The plugin makes no network requests.
 - **Google Drive** talks only to Google, with the `drive.file` scope. The sign-in token stays in Obsidian's secret storage. See [SECURITY.md](SECURITY.md).
 
 ## Install

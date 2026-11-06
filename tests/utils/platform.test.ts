@@ -71,7 +71,7 @@ describe('detectSyncLocations', () => {
 		expect(detectSyncLocations()).toEqual([]);
 	});
 
-	// iCloud Drive exists on Windows, but the offload nudge is brctl (macOS only),
+	// iCloud Drive exists on Windows, but the offload nudge is only proven on macOS,
 	// so a Windows row would promise handling that is not there.
 	it('does not offer an iCloud row on Windows', () => {
 		(Platform as { isWin: boolean }).isWin = true;
