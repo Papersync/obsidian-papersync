@@ -579,7 +579,8 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 								buildScanPlaceholderSvg(PREVIEW_CONTEXT.ps_markdown),
 								'image/svg+xml'
 							);
-							figure.appendChild(document.importNode(scan.documentElement, true));
+							// The settings tab lives in its own window, not the global `document`.
+							figure.appendChild(figure.doc.importNode(scan.documentElement, true));
 						}
 					});
 				})
