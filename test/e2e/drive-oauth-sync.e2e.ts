@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { FakeGoogle } from './fake-google';
-import { MINIMAL_JPEG, waitForPlugin, triggerSyncNow, readNotes, isoStamp, switchToMainWindow, focusSettingsUI, closeSettings, clickButtonWhenPresent } from './helpers';
+import { MINIMAL_JPEG, openPluginSettings, waitForPlugin, triggerSyncNow, readNotes, isoStamp, switchToMainWindow, focusSettingsUI, closeSettings, clickButtonWhenPresent } from './helpers';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_TOKEN_SECRET_ID } from '../../src/config';
 
 // Drives the REAL Google Drive lane (PKCE OAuth + Drive v3 sync client) end-to-end
@@ -57,24 +57,6 @@ describe('Drive OAuth + sync against fake Google', function () {
 				isAuthenticated: plugin.oauthManager?.isAuthenticated ?? false,
 			};
 		});
-	}
-
-	// Command resolved by suffix (same id-agnostic pattern as helpers.ts) so the
-	// spec survives a manifest-id change.
-	async function openSettings(): Promise<void> {
-		await switchToMainWindow();
-		await browser.execute(() => {
-			const app = (window as unknown as { app: { commands: {
-				commands: Record<string, unknown>;
-				executeCommandById: (id: string) => void;
-			} } }).app;
-			const id = Object.keys(app.commands.commands).find((k) => k.endsWith(':open-settings'));
-			if (!id) { throw new Error('open-settings command not found'); }
-			app.commands.executeCommandById(id);
-		});
-		await browser.pause(800);
-		// 1.13+ hosts the settings UI in its own window; leave the driver there.
-		await focusSettingsUI();
 	}
 
 	// Patch window.open (in-spec only; afterEach restores it), then click the real
@@ -347,7 +329,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 			await plugin.saveSettings();
 		});
 
-		await openSettings();
+		await openPluginSettings();
 		await clickConnectWithPatchedOpen();
 
 		// Auth 302 → loopback callback → PKCE-verified exchange → tokens stored.
@@ -529,7 +511,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(faulted!.params.get('grant_type')).toBe('refresh_token');
 
 		// The settings UI is back to the storage picker — the user can reconnect.
-		await openSettings();
+		await openPluginSettings();
 		const text = await (await browser.$('body')).getText();
 		expect(text).toContain('Connect');
 		expect(text).not.toContain('Change storage');
@@ -553,7 +535,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// Real UI disconnect: the Google-connected row renders exactly one "Change storage"
 		// button (the handler returns before the folder branch), so clicking it exercises
 		// the plugin's genuine disconnect path — no direct oauthManager call.
-		await openSettings();
+		await openPluginSettings();
 		await clickButtonWhenPresent('Change storage');
 
 		// The disconnect POSTed the refresh token to the fake /revoke endpoint — a real
@@ -606,7 +588,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		fake.clearRequests();
 		fake.failNextTokenRequest(400, { error: 'invalid_grant', error_description: 'PKCE verification failed' });
 
-		await openSettings();
+		await openPluginSettings();
 		await clickConnectWithPatchedOpen();
 
 		// The Connect handler resets a failed attempt back to backendType 'none'.
