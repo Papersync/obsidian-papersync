@@ -231,23 +231,28 @@ export class FolderBackend implements SyncBackend {
 		if (this.debounceTimer) {
 			window.clearTimeout(this.debounceTimer);
 		}
-		this.debounceTimer = window.setTimeout(async () => {
-			try {
-				const refs = await this.discoverUnsynced();
-				if (!this.running) {return;}
-				if (refs.length > 0 || this.recovering) {
-					this.recovering = false;
-					await this.onScanDiscovered?.(refs);
-				}
-			} catch (err) {
-				logger.warn(`Folder discovery failed: ${errorMessage(err)}`);
-				// A background pass has no caller to report to, so a missing folder is
-				// handed to the engine here.
-				if (isSyncError(err) && err.type === 'folder_missing') {
-					this.folderGone();
-				}
-			}
+		this.debounceTimer = window.setTimeout(() => {
+			void this.runDebouncedDiscovery();
 		}, DEBOUNCE_MS);
+	}
+
+	// A debounced background pass: errors are logged and reported here.
+	private async runDebouncedDiscovery(): Promise<void> {
+		try {
+			const refs = await this.discoverUnsynced();
+			if (!this.running) {return;}
+			if (refs.length > 0 || this.recovering) {
+				this.recovering = false;
+				await this.onScanDiscovered?.(refs);
+			}
+		} catch (err) {
+			logger.warn(`Folder discovery failed: ${errorMessage(err)}`);
+			// A background pass has no caller to report to, so a missing folder is
+			// handed to the engine here.
+			if (isSyncError(err) && err.type === 'folder_missing') {
+				this.folderGone();
+			}
+		}
 	}
 
 	async discoverUnsynced(): Promise<ScanReference[]> {

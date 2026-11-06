@@ -131,7 +131,7 @@ export default class PaperSyncPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const loaded = await this.loadData();
+		const loaded: unknown = await this.loadData();
 		if (loaded && typeof loaded === 'object') {
 			const raw = loaded as Record<string, unknown>;
 			// The endpointOverrides seam is runtime-injected by E2E only — never honor a

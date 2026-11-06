@@ -2,7 +2,7 @@ import { requestUrl, Plugin } from 'obsidian';
 import type { RequestUrlResponse } from 'obsidian';
 import { generateCodeVerifier, computeCodeChallenge } from '@/auth/pkce';
 import { logger } from '@/utils/logger';
-import { errorMessage } from '@/utils/error-message';
+import { errorMessage, toError } from '@/utils/error-message';
 import { createSyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
 import * as http from 'http';
@@ -52,7 +52,7 @@ export class OAuthManager {
 	// anything else reaching the loopback port (another local page probing ports)
 	// is ignored.
 	private expectedState: string | null = null;
-	private rejectPendingFlow: ((err: unknown) => void) | null = null;
+	private rejectPendingFlow: ((err: Error) => void) | null = null;
 	private endpointsSupplier: GoogleEndpointsSupplier | undefined;
 
 	constructor(plugin: Plugin, clientId: string, endpointsSupplier?: GoogleEndpointsSupplier) {
@@ -127,20 +127,22 @@ export class OAuthManager {
 				reject(createSyncError('token_expired', 'OAuth flow timed out after 3 minutes'));
 			}, OAUTH_TIMEOUT_MS);
 
-			this.onAuthCallback = async (code: string) => {
+			this.onAuthCallback = (code: string) => {
 				// Disarm the timeout before the (network-bound) token exchange so a slow
 				// exchange can't trip the 3-minute abort mid-flight.
 				this.clearAuthTimeout();
 				this.rejectPendingFlow = null;
-				try {
-					const tokens = await this.exchangeCodeForTokens(code, verifier, redirectUri);
-					this.storeTokens(tokens);
-					resolve(tokens);
-				} catch (err) {
-					reject(err);
-				} finally {
-					this.stopCallbackServer();
-				}
+				void this.exchangeCodeForTokens(code, verifier, redirectUri)
+					.then((tokens) => {
+						this.storeTokens(tokens);
+						resolve(tokens);
+					})
+					.catch((err: unknown) => {
+						reject(toError(err));
+					})
+					.finally(() => {
+						this.stopCallbackServer();
+					});
 			};
 		});
 	}

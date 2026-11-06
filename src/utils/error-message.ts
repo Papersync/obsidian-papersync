@@ -1,7 +1,6 @@
 /**
  * Extracts a human-readable message from an unknown thrown value.
- * `Error` instances and message-carrying plain objects (SyncError is a plain
- * object, not an Error subclass — String() on it yields "[object Object]")
+ * `Error` instances (SyncError included) and message-carrying plain objects
  * surface their non-empty `.message`; anything else is coerced with `String()`.
  * The whole body is guarded because this runs inside catch paths: a throwing
  * `message` getter, or a null-prototype value (where `String(err)` itself
@@ -18,4 +17,9 @@ export function errorMessage(err: unknown): string {
 	} catch {
 		return 'Unknown error';
 	}
+}
+
+/** An unknown thrown value as an Error: an Error as is, anything else wrapped with its message. */
+export function toError(err: unknown): Error {
+	return err instanceof Error ? err : new Error(errorMessage(err));
 }

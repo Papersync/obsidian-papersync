@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-papersync",
-	"version": "0.1.4",
+	"version": "0.1.5",
 	"description": "Sync handwritten scans from Google Drive, iCloud Drive, or any synced folder into your vault as Markdown notes.",
 	"main": "main.js",
 	"type": "module",
