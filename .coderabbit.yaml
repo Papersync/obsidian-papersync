@@ -1,12 +1,34 @@
 # yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 # CodeRabbit review settings. Reviews are advice; CI (verify + e2e) is the merge gate.
+#
+# Security focus. This repository is on CodeRabbit's open-source plan (Team
+# features). That plan does NOT include CodeRabbit Security (continuous PR
+# security review, security_risk_instructions, max_security_risk: Advanced
+# plan), so the security review is steered here instead: the threat model in
+# path_instructions, SECURITY.md as a code guideline, custom pre-merge checks,
+# the security tools below and repo-local ast-grep rules in .coderabbit/ast-grep.
+# Fork PRs always use the base branch's copy of this file.
 language: en-US
+tone_instructions: >-
+  Security reviewer for a desktop Obsidian plugin that reads untrusted files and
+  holds Google tokens. Lead with exploitable issues and name the attack. Skip
+  style nits that lint or Prettier already enforce.
 
 chat:
   auto_reply: true
 
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    # AGENTS.md and CLAUDE.md are read by default; SECURITY.md documents the
+    # OAuth design and the intentionally public client secret.
+    filePatterns:
+      - "SECURITY.md"
+
 reviews:
-  profile: chill
+  # Assertive: more findings, and the tools use their stricter modes (zizmor
+  # pedantic persona, OSV-Scanner all severities, OpenGrep warning-level rules).
+  profile: assertive
   high_level_summary: true
   poem: false
   review_status: true
@@ -20,13 +42,17 @@ reviews:
     drafts: false
     base_branches:
       - master
+    # Dependabot PRs are reviewed on purpose (supply chain): never list
+    # dependabot[bot] here.
+    ignore_usernames: []
     ignore_title_keywords:
       - "WIP"
       - "[skip review]"
 
+  # package-lock.json is NOT excluded: path filters also limit the sandbox
+  # checkout, and OSV-Scanner and the supply-chain review need the lockfile.
   path_filters:
     - "!**/node_modules/**"
-    - "!**/package-lock.json"
     - "!main.js"
     - "!coverage/**"
     - "!test/vault/**"
@@ -44,13 +70,193 @@ reviews:
         - No network calls except Google APIs in Google Drive mode. No telemetry or analytics.
         - Throw and reject with Error objects (SyncError extends Error); no floating promises.
         - User-facing strings (Notice, settings text) must not contain em dashes and must use sentence case.
-        - Never log or persist OAuth tokens outside Obsidian's secret storage.
+
+        SECURITY REVIEW (do this on every PR that touches src/). Threat model: the attacker can write arbitrary files into the
+        user's synced folder or Drive app folder (a shared Dropbox/Syncthing folder, a compromised phone, a malicious page that
+        was scanned), can tamper with data.json in a synced vault, and can run a web page or local process on the same machine
+        during sign-in. Assets: the Google refresh/access tokens, files outside the vault, the vault's notes, and code
+        execution inside Obsidian (Node access). Report each finding with the concrete attack and severity.
+        1. Untrusted scan data: every field of a scan JSON (title, markdown, summary, ids, timestamps, image names) and every
+           image file is attacker-controlled. Check it is parsed through the zod schemas (@papersync/scan-format,
+           src/validation) before use, with size limits; no `as` casts or `any` on parsed data; malformed files are skipped,
+           not thrown into a crash loop.
+        2. Paths and the filesystem outside the vault: any path built from scan data (scan id, image name) must not escape
+           the chosen folder (`..`, absolute paths, drive letters, UNC, NUL, path separators, Unicode lookalikes). Symlinks
+           are never followed in the synced folder (lstat / O_NOFOLLOW, regular files only); flag new `stat`, `readFile`,
+           `writeFile`, `rename`, `rm`, `readdir` recursion on synced-folder paths that would follow a symlink or a
+           check-then-use (TOCTOU) race. Writes outside the vault are limited to the scan JSON `synced` flag the app expects.
+        3. Notes written into the vault: scan text must go through src/notes/untrusted-text.ts (sanitizeInlineValue,
+           neutralizeMarkdown, neutralizeTemplater, flattenLine, clampLength) before it reaches note bodies, YAML frontmatter,
+           file names, wikilinks or template tokens. Flag frontmatter injection (newlines, `---`, YAML specials), Templater
+           `<% %>`, Dataview/js-engine code fences and inline `$=`, remote embeds and `javascript:` links, and vault file names
+           built from raw scan text (reserved names, path separators, length).
+        4. DOM: UI text from scans or settings is set with createEl/setText only. MarkdownRenderer.render on untrusted text
+           needs the same neutralizing as notes. DOMParser output must be inert (no adoption of scripts or handlers).
+        5. OAuth (src/auth): PKCE S256 with a fresh verifier per attempt; a random `state` checked on the callback; the
+           loopback server binds 127.0.0.1 only, on an ephemeral port, accepts only the expected path, answers once and
+           closes (also on timeout and error); redirect_uri exactly matches; scopes stay `drive.file` (flag any broader scope).
+           The refresh token lives only in Obsidian secretStorage, the access token only in memory: never in data.json,
+           saveData, the vault, logs, Notice text, error messages or URLs. Disconnect clears locally first, then revokes.
+        6. Network allowlist: requests only via Obsidian `requestUrl` from src/auth/oauth-manager.ts and
+           src/sync/drive-backend.ts to Google hosts from src/config.ts. Endpoint overrides (src/google-endpoints.ts) must
+           stay loopback-only. Flag any other host, telemetry, analytics, crash reporting, remote config or update checks.
+        7. Drive API: query strings built with user or scan data must escape quotes (Drive `q` injection); file ids from
+           listings are treated as untrusted; no request follows a URL taken from a response body.
+        8. Secrets and logs: no credentials besides the documented Google installed-app client id/secret in src/config.ts
+           (public by design, see SECURITY.md; a secret-scanner hit on that exact value is expected). Logs must not contain
+           tokens, auth codes, PKCE verifiers, Authorization headers, or full file contents.
+        9. Resource abuse: unbounded file sizes, file counts, image dimensions, regexes over attacker text (ReDoS), or retry
+           loops that an attacker-controlled folder could trigger.
+        Do not report the fs/path/requestUrl/window.open usage itself as a problem when it follows the rules above; Obsidian's
+        directory scanner flags those patterns and the maintainers know.
+    - path: "src/config.ts"
+      instructions: |
+        Holds the Google OAuth installed-app client id and client secret. The secret is public by design (RFC 8252, Google's
+        installed-app docs; see SECURITY.md), so do not ask to remove or rotate it. DO flag any other credential, any change to
+        scopes beyond `https://www.googleapis.com/auth/drive.file`, or any endpoint host that is not a Google host.
     - path: "tests/**"
       instructions: |
         Jest unit tests with Obsidian APIs mocked in tests/__mocks__. Coverage must stay at 100%. Check that edge and error paths are tested and that tests do not depend on wall-clock timing.
+        For security-relevant source changes (untrusted scan data, paths, symlinks, OAuth, note sanitizing), check there is a
+        test for the hostile input (traversal names, symlinks, oversized files, frontmatter/Templater/Dataview payloads,
+        wrong OAuth state). No real tokens or personal data in fixtures. Skip style feedback here.
     - path: "test/e2e/**"
       instructions: |
         WebdriverIO E2E specs running a real Obsidian instance. Flag fixed sleeps where an explicit wait on a state would work, and any reliance on the developer's real vault.
+        The fake Google server must bind loopback only and must never be reachable from a production build.
+    - path: ".github/workflows/**"
+      instructions: |
+        Treat as security-critical (release.yml publishes the plugin that Obsidian users install). Check:
+        - Every `uses:` is pinned to a full 40-character commit SHA with a version comment; no branch or tag refs.
+        - Top-level `permissions: contents: read`; write scopes (contents, id-token, attestations) only on the job that needs
+          them, and that job runs no project code or npm scripts (dependency install scripts must never see a write token or
+          the OIDC token).
+        - `actions/checkout` keeps `persist-credentials: false`.
+        - No `pull_request_target` or `workflow_run` that checks out or runs PR code; no secrets exposed to fork PRs.
+        - No `${{ github.event.* }}`, `github.head_ref` or other attacker-controlled expressions interpolated into `run:`;
+          pass them through `env:` and quote them.
+        - Release integrity: the tag must match manifest.json, artifacts are built once and attested (actions/attest), and the
+          published files are exactly the attested ones; releases stay drafts until a human publishes them.
+        - `npm ci` (never `npm install`) with the committed lockfile; caches never shared from untrusted refs into release jobs.
+        - Timeouts on every job; pinned runner images.
+    - path: ".github/dependabot.yml"
+      instructions: |
+        Check update groups and that no ecosystem is configured to auto-merge. npm is intentionally not configured (planned manual batches).
+    - path: "package.json"
+      instructions: |
+        Supply chain: flag new runtime dependencies (the bundle ships to every user; justify each), new or changed install
+        lifecycle scripts (preinstall/install/postinstall/prepare), version ranges instead of exact pins, git/URL/tarball
+        dependency specs, and new npm scripts that download or execute remote code.
+    - path: "package-lock.json"
+      instructions: |
+        Review for supply-chain risk only, not formatting: new packages or new major versions (name the dependency path),
+        `resolved` URLs outside https://registry.npmjs.org, missing or changed `integrity` for an unchanged version, newly
+        added `hasInstallScript: true`, typosquat-like names, and packages that moved from dev to runtime. For Dependabot
+        and other bump PRs, say whether the bump fixes a known advisory and whether the release notes show breaking or
+        suspicious changes (new maintainers, new network or install behaviour).
+    - path: "scripts/**"
+      instructions: |
+        Release tooling run on the maintainer's machine. Flag shell injection (unquoted variables, eval, building commands
+        from tag names or git output), commands that push or publish without an explicit confirmation step, and secrets
+        echoed to the terminal.
     - path: "manifest.json"
       instructions: |
         Check against Obsidian's manifest rules: id/name without "obsidian" or "plugin", description under 250 characters ending with a period, minAppVersion accurate, version matching package.json and versions.json.
+        `isDesktopOnly` must stay true (the plugin uses Node fs and a loopback HTTP server).
+
+  pre_merge_checks:
+    docstrings:
+      mode: "off"
+    title:
+      mode: warning
+      requirements: >-
+        Conventional commit style: `type(scope): subject` or `type: subject`, type one of feat, fix, docs, style, refactor,
+        perf, test, build, ci, chore, revert; imperative subject, no trailing period.
+    description:
+      mode: warning
+    issue_assessment:
+      mode: "off"
+    custom_checks:
+      - name: "Network allowlist"
+        mode: warning
+        instructions: |
+          Inspect only the files under src/ changed by this PR.
+          Fail if the PR adds or changes an outbound network call (requestUrl, fetch, XMLHttpRequest, WebSocket,
+          EventSource, navigator.sendBeacon, Node http/https/net/tls clients) that can reach a host other than
+          accounts.google.com, oauth2.googleapis.com, www.googleapis.com or a loopback address, or adds analytics,
+          telemetry, crash reporting, remote configuration or update checks.
+          Fail if src/google-endpoints.ts stops restricting endpoint overrides to loopback hostnames.
+          Pass otherwise, including when no network code changed.
+      - name: "Token and secret handling"
+        mode: warning
+        instructions: |
+          Inspect the changed files.
+          Fail if any change lets an OAuth access token, refresh token, authorization code, PKCE code verifier, `state`
+          value or Authorization header reach: a log call (logger.*, console.*), a Notice, an Error message, a URL query
+          string other than the Google token/revoke request bodies, saveData/data.json, or any file in the vault or the
+          synced folder.
+          Fail if the refresh token is stored anywhere other than Obsidian secretStorage.
+          Fail if a new credential, API key or private key is committed. The Google installed-app client id and client
+          secret already in src/config.ts are public by design (SECURITY.md) and do not fail this check.
+          Pass otherwise.
+      - name: "Untrusted scan data"
+        mode: warning
+        instructions: |
+          Inspect the changed files under src/.
+          Fail if a value read from a scan JSON file or scan image (from the synced folder or Google Drive) is used
+          without first being validated by the zod schemas in @papersync/scan-format or src/validation, or reaches note
+          content, YAML frontmatter, a vault file name or path, or a filesystem path outside the vault without passing
+          through the helpers in src/notes/untrusted-text.ts or an explicit check that rejects `..`, path separators and
+          absolute paths.
+          Fail if new code follows symlinks in the synced folder (stat/readFile/open without an lstat or O_NOFOLLOW guard)
+          when the previous code did not.
+          Pass otherwise, including when the PR does not touch scan reading, note writing or synced-folder access.
+      - name: "Workflow hardening"
+        mode: warning
+        instructions: |
+          Inspect only changed files under .github/workflows/. Pass when none changed.
+          Fail if any `uses:` reference is not pinned to a full 40-hex-character commit SHA; if a workflow or job gains
+          write permissions it did not have without a comment explaining why; if `pull_request_target` or `workflow_run`
+          is added; if `persist-credentials: false` is removed from a checkout; if a `run:` step interpolates
+          `${{ github.event.* }}`, `github.head_ref` or other PR-controlled input directly; or if a job that has
+          contents: write, id-token: write or attestations: write also runs npm, node or project scripts.
+          Pass otherwise.
+
+  tools:
+    # Secret scanning on changed files (Betterleaks, the gitleaks key).
+    gitleaks:
+      enabled: true
+    # Dependency vulnerabilities from package-lock.json (OSV.dev).
+    osvScanner:
+      enabled: true
+    # SAST. OpenGrep uses CodeRabbit's generated security rules when the repo has
+    # no semgrep/opengrep config; Semgrep only runs with a repo config (none yet).
+    opengrep:
+      enabled: true
+    semgrep:
+      enabled: true
+    # GitHub Actions: syntax plus security (template injection, unpinned uses,
+    # excessive permissions).
+    actionlint:
+      enabled: true
+    zizmor:
+      enabled: true
+    shellcheck:
+      enabled: true
+    eslint:
+      enabled: true
+    yamllint:
+      enabled: true
+    markdownlint:
+      enabled: true
+    github-checks:
+      enabled: true
+    # ast-grep essentials (CodeRabbit's security rule pack) plus this repo's rules:
+    # no child_process, no eval/new Function, no HTML sinks, network allowlist.
+    # Run locally: npx -p @ast-grep/cli ast-grep scan -c .coderabbit/sgconfig.yml src
+    ast-grep:
+      essential_rules: true
+      rule_dirs:
+        - ".coderabbit/ast-grep"
+    # Not relevant to this repository (no Python, IaC, PHP, ...): left at defaults,
+    # CodeRabbit only runs a tool when matching files change.

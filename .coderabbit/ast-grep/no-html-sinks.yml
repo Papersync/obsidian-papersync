@@ -1,0 +1,20 @@
+id: no-html-sinks
+language: TypeScript
+severity: error
+message: Do not write HTML strings into the DOM. Build elements with createEl/createDiv/setText.
+note: |
+  Scan titles, previews and file names come from files anyone with write access
+  to the synced folder controls. Rendering them as HTML is DOM injection
+  (script, event handlers, remote loads) inside Obsidian. Obsidian's plugin
+  guidelines require createEl/setText instead of innerHTML.
+rule:
+  any:
+    - pattern: $E.innerHTML = $V
+    - pattern: $E.outerHTML = $V
+    - pattern: $E.innerHTML += $V
+    - pattern: $E.insertAdjacentHTML($$$)
+    - pattern: document.write($$$)
+    - pattern: document.writeln($$$)
+    - pattern: $R.createContextualFragment($$$)
+files:
+  - "src/**/*.ts"

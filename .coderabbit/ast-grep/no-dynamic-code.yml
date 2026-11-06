@@ -1,0 +1,24 @@
+id: no-dynamic-code
+language: TypeScript
+severity: error
+message: Do not evaluate strings as code (eval, new Function, string timers).
+note: |
+  Everything the plugin reads (scan JSON, image files, settings in data.json)
+  can be attacker-controlled. Code built from strings at runtime turns that
+  data into code execution inside Obsidian, which has full Node access.
+rule:
+  any:
+    - pattern: eval($$$)
+    - pattern: new Function($$$)
+    - pattern: Function($$$)
+    - pattern: setTimeout($S, $$$)
+    - pattern: setInterval($S, $$$)
+    - pattern: window.setTimeout($S, $$$)
+    - pattern: window.setInterval($S, $$$)
+constraints:
+  S:
+    any:
+      - kind: string
+      - kind: template_string
+files:
+  - "src/**/*.ts"

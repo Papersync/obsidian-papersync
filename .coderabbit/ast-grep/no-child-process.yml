@@ -1,0 +1,19 @@
+id: no-child-process
+language: TypeScript
+severity: error
+message: Do not use child_process. The plugin runs no shell commands or external programs.
+note: |
+  Obsidian's directory review rejects plugins that spawn processes, and a
+  process spawned from a path or argument built from scan data or settings is
+  a command-injection risk. The last use was removed on purpose.
+rule:
+  any:
+    - pattern: import $$$ from '$MOD'
+    - pattern: import '$MOD'
+    - pattern: require('$MOD')
+    - pattern: import('$MOD')
+constraints:
+  MOD:
+    regex: ^(node:)?child_process$
+files:
+  - "src/**/*.ts"

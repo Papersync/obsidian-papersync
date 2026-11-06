@@ -1,0 +1,33 @@
+id: network-allowlist
+language: TypeScript
+severity: warning
+message: Network call outside the Google API modules. The plugin may only talk to Google OAuth and Drive.
+note: |
+  The plugin's privacy promise is "no network except Google, no telemetry".
+  Outbound requests belong in src/auth/oauth-manager.ts (OAuth, loopback
+  callback) and src/sync/drive-backend.ts (Drive API), with hosts taken from
+  src/config.ts / src/google-endpoints.ts. Use Obsidian's requestUrl there; do
+  not add fetch, XMLHttpRequest, WebSocket, sendBeacon or Node http(s)/net
+  clients anywhere. If this call is intended, explain the host and why in the PR.
+rule:
+  any:
+    - pattern: fetch($$$)
+    - pattern: window.fetch($$$)
+    - pattern: new XMLHttpRequest($$$)
+    - pattern: new WebSocket($$$)
+    - pattern: new EventSource($$$)
+    - pattern: navigator.sendBeacon($$$)
+    - pattern: requestUrl($$$)
+    - pattern: $M.request($$$)
+    - pattern: $M.get($URL, $$$)
+    - pattern: $M.connect($$$)
+    - pattern: $M.createConnection($$$)
+constraints:
+  M:
+    regex: ^(https?|net|tls|http2)$
+files:
+  - "src/**/*.ts"
+ignores:
+  - "src/auth/oauth-manager.ts"
+  - "src/sync/drive-backend.ts"
+  - "src/utils/dev-tools.ts"
