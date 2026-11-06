@@ -1,9 +1,9 @@
-import momentImpl from 'moment';
+import { dirname } from 'node:path';
+import type { moment as ObsidianMoment } from 'obsidian';
 
-// Obsidian bundles moment and re-exports it; mirror that so note-creator formats the
-// daily-note filename exactly as Obsidian does. (ts-jest runs with esModuleInterop, so
-// the default import yields the callable moment function.)
-export const moment = momentImpl;
+// Obsidian re-exports its bundled moment; load the copy the obsidian package depends on.
+const obsidianDir = dirname(require.resolve('obsidian/package.json'));
+export const moment = require(require.resolve('moment', { paths: [obsidianDir] })) as typeof ObsidianMoment;
 
 // Faithful-enough stand-in for Obsidian's normalizePath: collapse slashes, trim ends.
 export function normalizePath(path: string): string {
