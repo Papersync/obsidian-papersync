@@ -59,11 +59,15 @@ function ghShim() {
     const head = () => execFileSync(process.env.REAL_GIT, ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
     const print = (obj) => console.log(JSON.stringify(obj));
     if (a[0] === 'api') {
-        if (!a[1].includes('/releases/tags/')) { print({ default_branch: state.defaultBranch ?? 'master' }); return; }
-        if (state.apiError || !state.release) {
-            print({ status: String(state.apiError ?? 404), message: 'fixture response' }); process.exit(1);
+        if (a[1].includes('/releases/tags/')) {
+            // Mirrors GitHub: this endpoint never returns drafts.
+            print({ status: '404', message: 'Not Found' }); process.exit(1);
         }
-        print(state.release); return;
+        if (!a[1].includes('/releases?')) { print({ default_branch: state.defaultBranch ?? 'master' }); return; }
+        if (state.apiError) {
+            print({ status: String(state.apiError), message: 'fixture response' }); process.exit(1);
+        }
+        print(state.release ? [{ tag_name: 'other' }, state.release] : []); return;
     }
     if (a[0] === 'run' && a[1] === 'list') {
         state.requestedSha = value('--commit');
@@ -248,6 +252,7 @@ test('publish follows the tested tag even after the default branch advances', ()
 });
 
 for (const [name, state, pattern] of [
+    ['a missing draft', { release: null }, /run the draft stage first/],
     ['empty notes', { release: { ...draftRelease(), body: ' ' } }, /notes first/],
     ['a missing asset', { release: { ...draftRelease(), assets: [] } }, /asset/],
     ['a published release', { release: { ...draftRelease(), draft: false } }, /unpublished normal draft/],

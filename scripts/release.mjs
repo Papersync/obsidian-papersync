@@ -28,15 +28,20 @@ async function command(name, args, options) {
 const git = (...args) => command('git', args);
 const gh = (...args) => command('gh', [...args, '--repo', REPO]);
 
-async function api(endpoint, optional = false) {
+async function api(endpoint) {
     const result = await run('gh', ['api', `repos/${REPO}${endpoint}`]);
     if (result.status !== 0) {
-        let error;
-        try { error = json(result.stdout); } catch { /* Non-JSON transport error. */ }
-        if (optional && String(error?.status) === '404') { return null; }
         throw new Error(`GitHub request failed: ${result.stderr || result.stdout}`);
     }
     return json(result.stdout);
+}
+
+// GitHub's /releases/tags/{tag} endpoint never returns draft releases, so a
+// draft is found by listing releases (drafts included for repo writers).
+async function releaseByTag(value) {
+    const releases = await api('/releases?per_page=100');
+    insist(Array.isArray(releases), 'unexpected GitHub releases response');
+    return releases.find((release) => release.tag_name === value) ?? null;
 }
 
 function metadata(read, expected) {
@@ -111,7 +116,7 @@ async function draft(value) {
     insist(sha === await git('rev-parse', `origin/${defaultBranch}`), 'pull the merged default branch before creating a draft');
     metadata((file) => readFileSync(file, 'utf8'), value);
     await passedWorkflow('verify.yml', defaultBranch, sha, ['verify', 'e2e']);
-    const existing = await api(`/releases/tags/${value}`, true);
+    const existing = await releaseByTag(value);
     insist(!existing || (existing.draft === true && existing.prerelease === false), `${value} is already published or is a prerelease`);
     const remote = await remoteTag(value);
     insist(!remote || remote === sha, `remote tag ${value} points to different source; tags must never be moved`);
@@ -149,7 +154,8 @@ async function publish(value) {
     const manifest = metadata((name) => files.get(name), value);
     await passedWorkflow('verify.yml', defaultBranch, sha, ['verify', 'e2e']);
     await passedWorkflow('release.yml', value, sha, ['build', 'publish']);
-    const release = await api(`/releases/tags/${value}`);
+    const release = await releaseByTag(value);
+    insist(release, `no GitHub release for ${value}; run the draft stage first`);
     insist(release.tag_name === value && release.draft === true && release.prerelease === false, `${value} must be an unpublished normal draft`);
     insist(typeof release.body === 'string' && release.body.trim(), 'write and review the draft release notes first');
     for (const name of ['main.js', 'manifest.json', 'styles.css']) {
