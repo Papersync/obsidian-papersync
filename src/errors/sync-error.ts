@@ -14,13 +14,21 @@ export type SyncErrorType =
 	| 'drive_error'
 	| 'vault_write_failed';
 
-export interface SyncError {
-	type: SyncErrorType;
-	message: string;
-	retriable: boolean;
-	retryAfterMs?: number;
+// A real Error (so it can be thrown and used as a rejection reason) that keeps
+// the fields every catch site reads: type, retriable, retryAfterMs, guidance.
+export class SyncError extends Error {
 	guidance?: string;
+
+	constructor(
+		readonly type: SyncErrorType,
+		message: string,
+		readonly retriable: boolean,
+		readonly retryAfterMs?: number
+	) {
+		super(message);
+	}
 }
+SyncError.prototype.name = 'SyncError';
 
 export function parseRetryAfter(headerValue: string | undefined | null): number | undefined {
 	if (!headerValue) {return undefined;}
@@ -66,12 +74,7 @@ export function createSyncError(
 		vault_write_failed: true,
 	};
 
-	return {
-		type,
-		message,
-		retriable: retriable ?? defaultRetriable[type],
-		retryAfterMs,
-	};
+	return new SyncError(type, message, retriable ?? defaultRetriable[type], retryAfterMs);
 }
 
 // A failed HTTP call to Google, thrown by the Drive backend with what the

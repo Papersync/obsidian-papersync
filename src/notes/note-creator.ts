@@ -151,7 +151,7 @@ export class NoteCreator {
 		let target: TFile;
 		if (existingFile instanceof TFile) {
 			target = existingFile;
-			const listed = this.app.metadataCache.getFileCache(existingFile)?.frontmatter?.[SCANS_PROPERTY];
+			const listed: unknown = this.app.metadataCache.getFileCache(existingFile)?.frontmatter?.[SCANS_PROPERTY];
 			if ([listed].flat().map(String).includes(scanId)) {
 				logger.info(`Scan ${scanId} is already listed in ${notePath}, not appending it again`);
 				return notePath;

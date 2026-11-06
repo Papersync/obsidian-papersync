@@ -1,4 +1,5 @@
-import { errorMessage } from '@/utils/error-message';
+import { errorMessage, toError } from '@/utils/error-message';
+import { createSyncError } from '@/errors/sync-error';
 
 describe('errorMessage', () => {
 	it('returns the message of an Error instance', () => {
@@ -44,5 +45,21 @@ describe('errorMessage', () => {
 	it('still surfaces a valid message carried by a null-prototype object', () => {
 		const err = Object.assign(Object.create(null) as Record<string, unknown>, { message: 'still readable' });
 		expect(errorMessage(err)).toBe('still readable');
+	});
+});
+
+describe('toError', () => {
+	it('returns an Error (a SyncError included) unchanged', () => {
+		const err = createSyncError('network_timeout', 'offline');
+		expect(toError(err)).toBe(err);
+		expect(err).toBeInstanceOf(Error);
+		expect(err.name).toBe('SyncError');
+	});
+
+	it('wraps a non-Error value in an Error carrying its message', () => {
+		const wrapped = toError({ message: 'plain object' });
+		expect(wrapped).toBeInstanceOf(Error);
+		expect(wrapped.message).toBe('plain object');
+		expect(toError('text').message).toBe('text');
 	});
 });
