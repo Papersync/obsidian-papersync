@@ -11,8 +11,10 @@ import { configureFolderBackend, vaultBasePath, openPluginSettings, closeSetting
 // Leave a settings field the way a user does, by clicking elsewhere (its row's
 // label). A WebDriver Tab key does not move focus on the Electron 28 row, so it
 // cannot stand in for leaving the field.
+// `name` is a setting's visible name, or a CSS selector for its row (starting with '.').
 async function leaveField(name: string): Promise<void> {
-	await (await browser.$(`.setting-item*=${name}`).$('.setting-item-name')).click();
+	const row = name.startsWith('.') ? browser.$(name) : browser.$(`.setting-item*=${name}`);
+	await (await row.$('.setting-item-name')).click();
 	await browser.waitUntil(async () => browser.execute(() => document.activeElement?.tagName !== 'INPUT'), {
 		timeout: 3000, interval: 100, timeoutMsg: `focus never left the ${name} field`,
 	});
@@ -164,7 +166,7 @@ describe('Template editor', function () {
 		await browser.waitUntil(async () => !(await warningShown()), { timeout: 10_000, interval: 250, timeoutMsg: 'the image warning row did not hide again' });
 	});
 
-	it('applies template and Notes folder edits to the next scan without restarting sync', async function () {
+	it('applies template and Folder edits to the next scan without restarting sync', async function () {
 		// startSync() used to hand the engine a COPY of these settings, so an edit in
 		// Settings changed the live preview but not the notes until Obsidian
 		// restarted. Edit both through the real UI, never call startSync(), then sync.
@@ -181,23 +183,22 @@ describe('Template editor', function () {
 
 		await focusSettingsUI();
 		const notesFolder = await browser.execute(() => {
-			const item = Array.from(document.querySelectorAll('.setting-item'))
-				.find((el) => el.querySelector('.setting-item-name')?.textContent?.trim() === 'Notes folder');
+			const item = document.querySelector('.papersync-custom-folder');
 			return !!item?.querySelector('input');
 		});
 		expect(notesFolder).toBe(true);
-		const input = await browser.$('.setting-item*=Notes folder').$('input');
+		const input = await browser.$('.papersync-custom-folder input');
 		await input.setValue(folder); // focusing this field left the template editor
-		await leaveField('Notes folder');
+		await leaveField('.papersync-custom-folder');
 
 		// Both edits persisted and reached the engine.
 		await switchToMainWindow();
 		await browser.waitUntil(async () => browser.execute((f: string, m: string) => {
-			type Cfg = { targetFolder: string; templateString: string };
+			type Cfg = { customFolder: string; templateString: string };
 			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Cfg; engineConfig: Cfg }> } } }).app.plugins.plugins;
 			const p = ps['papersync'] ?? ps['obsidian-papersync'];
-			return p?.settings.targetFolder === f && p.settings.templateString.includes(m)
-				&& p.engineConfig.targetFolder === f && p.engineConfig.templateString.includes(m);
+			return p?.settings.customFolder === f && p.settings.templateString.includes(m)
+				&& p.engineConfig.customFolder === f && p.engineConfig.templateString.includes(m);
 		}, folder, marker), { timeout: 10_000, interval: 250, timeoutMsg: 'the settings edits never reached the sync engine' });
 
 		const id = `live-${stamp}`;
@@ -217,12 +218,12 @@ describe('Template editor', function () {
 		// Restore for the rest of the file.
 		await focusSettingsUI();
 		await (await browser.$('.papersync-template-editor')).setValue(original);
-		await (await browser.$('.setting-item*=Notes folder').$('input')).setValue('TemplateTest');
-		await leaveField('Notes folder');
+		await (await browser.$('.papersync-custom-folder input')).setValue('TemplateTest');
+		await leaveField('.papersync-custom-folder');
 		await switchToMainWindow();
 		await browser.waitUntil(async () => browser.execute(() => {
-			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { engineConfig: { targetFolder: string } }> } } }).app.plugins.plugins;
-			return (ps['papersync'] ?? ps['obsidian-papersync'])?.engineConfig.targetFolder === 'TemplateTest';
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { engineConfig: { customFolder: string } }> } } }).app.plugins.plugins;
+			return (ps['papersync'] ?? ps['obsidian-papersync'])?.engineConfig.customFolder === 'TemplateTest';
 		}), { timeout: 10_000, interval: 250 });
 	});
 });

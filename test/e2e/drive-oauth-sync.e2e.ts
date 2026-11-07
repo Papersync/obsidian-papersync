@@ -202,7 +202,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 			// Belt-and-braces clear the secret so no token bleeds into the next spec file.
 			try { plugin.app.secretStorage.setSecret(secretId, ''); } catch { /* backend absent */ }
 			plugin.settings.lastSyncTimestamp = '';
-			plugin.settings.targetFolder = target;
+			plugin.settings.saveTo = 'custom';
+			plugin.settings.customFolder = target;
+			plugin.settings.customFileName = 'YYYY-MM-DD';
 			plugin.settings.attachmentsFolder = `${target}/attachments`;
 			plugin.settings.drivePollInterval = 300;
 			await plugin.saveSettings();
@@ -247,7 +249,9 @@ describe('Drive OAuth + sync against fake Google', function () {
 			// spec files, so leave no drive credential behind.
 			try { plugin.app.secretStorage.setSecret(secretId, ''); } catch { /* backend absent */ }
 			plugin.settings.lastSyncTimestamp = '';
-			plugin.settings.targetFolder = '';
+			plugin.settings.saveTo = '';
+			plugin.settings.customFolder = 'Papersync';
+			plugin.settings.customFileName = 'YYYY-MM-DD';
 			plugin.settings.attachmentsFolder = '';
 			plugin.settings.drivePollInterval = 30;
 			delete plugin.settings.endpointOverrides;

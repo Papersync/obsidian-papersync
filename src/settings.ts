@@ -15,6 +15,17 @@ import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsi
 import type { Setting } from 'obsidian';
 import type { SettingDefinition, SettingDefinitionItem } from 'obsidian';
 import type { GoogleEndpoints } from '@/config';
+import { getDailyNotesConfig } from '@/utils/daily-notes';
+import type { DailyNotesConfig } from '@/utils/daily-notes';
+import {
+	DEFAULT_CUSTOM_FILE_NAME,
+	DEFAULT_CUSTOM_FOLDER,
+	effectiveSaveTo,
+	isFixedDestination,
+	migrateNotesFolder,
+	resolveNotePath,
+} from '@/notes/scan-destination';
+import type { SaveTo } from '@/notes/scan-destination';
 import { DEFAULT_POLL_INTERVAL_S, MAX_POLL_INTERVAL_S, MIN_POLL_INTERVAL_S } from '@/config';
 
 // A fixed sample scan used to render the note-template live preview. Deterministic
@@ -51,6 +62,8 @@ const PRIOR_ENTRY_MD = '*...your earlier notes from today...*';
 // one saves the image but leaves the ![[ ]] embed unresolved.
 const RESERVED_WIKILINK_CHARS = /[#|[\]]/;
 
+const DAILY_NOTES_OFF_HINT = 'Turn on Daily notes in Obsidian to use this';
+
 function templateEmbedsImage(template: string): boolean {
 	return /\{\{\s*ps_image_file\s*\}\}/.test(template);
 }
@@ -64,7 +77,10 @@ export interface PluginSettings {
 	drivePollInterval: number;
 	folderPath: string;
 	folderType: string;
-	targetFolder: string;
+	// Where scans go (see notes/scan-destination.ts). saveTo '' = not chosen yet.
+	saveTo: SaveTo;
+	customFolder: string;
+	customFileName: string;
 	attachmentsFolder: string;
 	templateString: string;
 	downloadImages: boolean;
@@ -92,13 +108,15 @@ const DEFAULT_TEMPLATE = `{{ps_separator}}
 `;
 
 export const DEFAULT_SETTINGS: PluginSettings = {
-	settingsVersion: 4,
+	settingsVersion: 5,
 	setupComplete: false,
 	backendType: 'none',
 	drivePollInterval: DEFAULT_POLL_INTERVAL_S,
 	folderPath: '',
 	folderType: '',
-	targetFolder: '', // resolved on first setup from daily notes config
+	saveTo: '', // resolved on first setup (PaperSyncPlugin.resolveScanDestination)
+	customFolder: DEFAULT_CUSTOM_FOLDER,
+	customFileName: DEFAULT_CUSTOM_FILE_NAME,
 	attachmentsFolder: '', // empty => Obsidian's own attachment folder
 	templateString: DEFAULT_TEMPLATE,
 	downloadImages: true,
@@ -106,7 +124,11 @@ export const DEFAULT_SETTINGS: PluginSettings = {
 	lastSyncAt: 0,
 };
 
-export function migrateSettings(data: Record<string, unknown>): Record<string, unknown> {
+// `daily` is the core Daily notes config at load time; only the v5 step reads it.
+export function migrateSettings(
+	data: Record<string, unknown>,
+	daily: DailyNotesConfig = { enabled: false, folder: '', format: DEFAULT_CUSTOM_FILE_NAME }
+): Record<string, unknown> {
 	const version = typeof data.settingsVersion === 'number' ? data.settingsVersion : 0;
 
 	if (version < 2) {
@@ -143,12 +165,21 @@ export function migrateSettings(data: Record<string, unknown>): Record<string, u
 		data.settingsVersion = 4;
 	}
 
+	if (version < 5) {
+		// "Notes folder" (targetFolder) became "Save scans to". Map it so every scan
+		// keeps landing in the file 0.1.5 would have used (migrateNotesFolder).
+		const targetFolder = typeof data.targetFolder === 'string' ? data.targetFolder : '';
+		Object.assign(data, migrateNotesFolder(targetFolder, daily));
+		delete data.targetFolder;
+		data.settingsVersion = 5;
+	}
+
 	return data;
 }
 
-function asyncHandler(fn: () => Promise<void>): () => void {
-	return () => {
-		fn().catch(console.error);
+function asyncHandler<A extends unknown[]>(fn: (...args: A) => Promise<void>): (...args: A) => void {
+	return (...args: A) => {
+		fn(...args).catch(console.error);
 	};
 }
 
@@ -162,6 +193,14 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	private shownFolderMissing: boolean | null = null;
 	private previewComponent: Component | null = null;
 	private previewDebounce: number | null = null;
+	// The Save scans to row's live parts, while that row is rendered.
+	private destinationUI: {
+		descText: HTMLElement;
+		previewLabel: HTMLElement;
+		previewPath: HTMLElement;
+		dropdown: HTMLSelectElement;
+		dailyOption: HTMLOptionElement | null;
+	} | null = null;
 
 	constructor(app: App, plugin: PaperSyncPlugin) {
 		super(app, plugin);
@@ -332,7 +371,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			folderType,
 		};
 		await this.plugin.saveSettings();
-		await this.plugin.resolveTargetFolder();
+		// startSync re-runs the first-setup choice of where scans go (saveTo is '').
 		await this.plugin.startSync();
 		new Notice('Settings reset (account kept)');
 		this.refresh();
@@ -631,8 +670,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	getControlValue(key: string): unknown {
 		const s = this.plugin.settings;
 		switch (key) {
-			case 'targetFolder':
-				return s.targetFolder;
 			case 'downloadImages':
 				return s.downloadImages;
 			case 'attachmentsFolder':
@@ -649,9 +686,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	async setControlValue(key: string, value: unknown): Promise<void> {
 		const s = this.plugin.settings;
 		switch (key) {
-			case 'targetFolder':
-				s.targetFolder = String(value);
-				break;
 			case 'attachmentsFolder':
 				s.attachmentsFolder = String(value);
 				break;
@@ -673,6 +707,40 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				return;
 		}
 		await this.plugin.saveSettings();
+	}
+
+	// The mode that applies now: core Daily notes is read live, so turning it off
+	// shows Custom without touching a saved Daily note choice.
+	private currentSaveTo(): 'daily' | 'custom' {
+		return effectiveSaveTo(this.plugin.settings.saveTo, getDailyNotesConfig(this.app));
+	}
+
+	// Paints the Save scans to row from the current settings and Daily notes state:
+	// the selected option, the Daily note option's availability, the description
+	// and the preview of today's path.
+	private updateDestinationUI(): void {
+		const ui = this.destinationUI;
+		if (!ui) {
+			return;
+		}
+		const daily = getDailyNotesConfig(this.app);
+		const mode = effectiveSaveTo(this.plugin.settings.saveTo, daily);
+		ui.dropdown.value = mode;
+		if (ui.dailyOption) {
+			// A native <option> cannot show a second line, so the hint goes into the
+			// disabled option's label (and its tooltip).
+			ui.dailyOption.disabled = !daily.enabled;
+			ui.dailyOption.text = daily.enabled ? 'Daily note' : `Daily note (${DAILY_NOTES_OFF_HINT})`;
+			ui.dailyOption.title = daily.enabled ? '' : DAILY_NOTES_OFF_HINT;
+		}
+		ui.descText.setText(
+			mode === 'daily'
+				? 'Each scan is added to this note. Follows your Daily notes folder and date format.'
+				: 'Each scan is added to this note.'
+		);
+		const dest = this.plugin.settings;
+		ui.previewLabel.setText(isFixedDestination(dest, daily) ? 'Every scan: ' : 'Today: ');
+		ui.previewPath.setText(resolveNotePath(new Date(), dest, daily));
 	}
 
 	private isConnected(): boolean {
@@ -783,11 +851,84 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		});
 
 		// Everything below only means anything once a backend is chosen.
+		// Where scans go: the core daily note, or a custom folder and file. Render
+		// rows rather than controls: the dropdown needs a disabled option, the
+		// description carries a live preview of the path, and the two custom fields
+		// are indented under it.
 		defs.push({
-			name: 'Notes folder',
-			desc: 'Folder for synced notes (/ is the vault root). Supports date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).',
+			name: 'Save scans to',
+			desc: 'Each scan is added to this note. Daily note, or a custom folder and file.',
+			aliases: ['notes folder', 'daily note', 'folder', 'file name', 'destination', 'periodic notes'],
 			visible: () => this.isConnected(),
-			control: { type: 'text', key: 'targetFolder', placeholder: 'Papersync' },
+			render: (setting) => {
+				setting.setClass('papersync-save-to');
+				setting.descEl.empty();
+				const descText = setting.descEl.createDiv();
+				const preview = setting.descEl.createDiv({ cls: 'papersync-save-to-preview' });
+				const previewLabel = preview.createSpan();
+				const previewPath = preview.createEl('code');
+				setting.addDropdown((dropdown) => {
+					dropdown.addOption('daily', 'Daily note');
+					dropdown.addOption('custom', 'Custom folder and file');
+					const dailyOption = dropdown.selectEl.querySelector<HTMLOptionElement>('option[value="daily"]');
+					this.destinationUI = { descText, previewLabel, previewPath, dropdown: dropdown.selectEl, dailyOption };
+					dropdown.onChange(asyncHandler(async (value) => {
+						this.plugin.settings.saveTo = value === 'daily' ? 'daily' : 'custom';
+						await this.plugin.saveSettings();
+						this.plugin.commitSettings(); // a dropdown pick is a finished edit
+						// Shows or hides the Folder and File name rows: a visibility
+						// change only, no re-render.
+						this.refreshDomState();
+						this.updateDestinationUI();
+					}));
+				});
+				this.updateDestinationUI();
+				return () => {
+					this.destinationUI = null;
+				};
+			},
+		});
+
+		defs.push({
+			name: 'Folder',
+			desc: '/ is the vault root. Date tokens: YYYY, MM, DD (e.g. Journal/YYYY/MM).',
+			aliases: ['notes folder', 'custom folder'],
+			visible: () => this.isConnected() && this.currentSaveTo() === 'custom',
+			render: (setting) => {
+				setting.setClass('papersync-sub-setting');
+				setting.setClass('papersync-custom-folder');
+				setting.addText((text) =>
+					text
+						.setPlaceholder(DEFAULT_CUSTOM_FOLDER)
+						.setValue(this.plugin.settings.customFolder)
+						.onChange(asyncHandler(async (value) => {
+							this.plugin.settings.customFolder = value;
+							await this.plugin.saveSettings();
+							this.updateDestinationUI();
+						}))
+				);
+			},
+		});
+
+		defs.push({
+			name: 'File name',
+			desc: 'A date format like YYYY-MM-DD, or a fixed name like Inbox to keep every scan in one note. Using Periodic Notes? Enter its folder and date format here.',
+			aliases: ['file name', 'date format', 'periodic notes'],
+			visible: () => this.isConnected() && this.currentSaveTo() === 'custom',
+			render: (setting) => {
+				setting.setClass('papersync-sub-setting');
+				setting.setClass('papersync-custom-file');
+				setting.addText((text) =>
+					text
+						.setPlaceholder(DEFAULT_CUSTOM_FILE_NAME)
+						.setValue(this.plugin.settings.customFileName)
+						.onChange(asyncHandler(async (value) => {
+							this.plugin.settings.customFileName = value;
+							await this.plugin.saveSettings();
+							this.updateDestinationUI();
+						}))
+				);
+			},
 		});
 
 		defs.push({

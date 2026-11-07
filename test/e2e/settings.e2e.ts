@@ -22,12 +22,12 @@ describe('Settings tab', function () {
 		expect(text.includes('Change storage') || text.includes('Browse')).toBe(true);
 	});
 
-	it('shows notes folder setting when connected', async function () {
+	it('shows the Save scans to setting when connected', async function () {
 		if (!isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).toContain('Notes folder');
-		expect(text).toContain('date tokens');
+		expect(text).toContain('Save scans to');
+		expect(text).not.toContain('Save scans to');
 	});
 
 	it('shows save scan images toggle when connected', async function () {
@@ -117,7 +117,7 @@ describe('Settings tab', function () {
 		if (isConnected) {return;}
 		const body = await browser.$('body');
 		const text = await body.getText();
-		expect(text).not.toContain('Notes folder');
+		expect(text).not.toContain('Save scans to');
 		expect(text).not.toContain('Note Template');
 		expect(text).not.toContain('Sync now');
 	});
@@ -126,7 +126,7 @@ describe('Settings tab', function () {
 		// Regression test for settings.ts display-gate fix.
 		// Pre-fix, the gate was `backendType !== 'none'` — so a user mid-flow
 		// (backendType set to 'drive' but auth never completed) would see the
-		// Notes folder / Sync now / Note Template sections rendered even though
+		// Save scans to / Sync now / Note Template sections rendered even though
 		// no sync engine actually existed. Post-fix the gate requires either
 		// Google auth or Folder setupComplete.
 		// Close the settings opened by beforeEach so the re-open below is a full
@@ -163,7 +163,7 @@ describe('Settings tab', function () {
 		// The storage picker MUST still render — it's where the user fixes the half-state.
 		expect(text).toContain('Google Drive');
 		// But the sync/template sections MUST NOT render — there is no working sync.
-		expect(text).not.toContain('Notes folder');
+		expect(text).not.toContain('Save scans to');
 		expect(text).not.toContain('Note Template');
 		expect(text).not.toContain('Sync now');
 	});

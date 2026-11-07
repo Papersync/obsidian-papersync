@@ -35,7 +35,7 @@ const app = {
 };
 const noteConfig = {
 	templateString: '{{ps_markdown}}',
-	targetFolder: 'PaperSync',
+	saveTo: 'custom' as const, customFolder: 'PaperSync', customFileName: 'YYYY-MM-DD',
 	attachmentsFolder: 'attachments/PaperSync',
 	downloadImages: true,
 };

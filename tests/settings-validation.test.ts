@@ -45,6 +45,8 @@ describe('sanitizeSettings', () => {
 			downloadImages: 1,
 			lastSyncTimestamp: "2026' or name contains '",
 			lastSyncAt: -5,
+			saveTo: 'weekly',
+			customFolder: 3,
 			settingsVersion: Number.NaN,
 			somethingElse: true,
 		});
@@ -54,5 +56,10 @@ describe('sanitizeSettings', () => {
 
 	it('clamps a poll interval that would poll Drive in a tight loop', () => {
 		expect(sanitizeSettings({ drivePollInterval: 0 }).drivePollInterval).toBe(MIN_POLL_INTERVAL_S);
+	});
+
+	it('keeps a valid scan destination', () => {
+		expect(sanitizeSettings({ saveTo: 'daily', customFolder: 'Inbox', customFileName: 'Scans' }))
+			.toMatchObject({ saveTo: 'daily', customFolder: 'Inbox', customFileName: 'Scans' });
 	});
 });

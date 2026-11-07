@@ -16,7 +16,9 @@ import type { SyncStateSnapshot } from '@/sync/sync-state';
 import { ErrorHandler } from '@/errors/error-handler';
 
 import { GOOGLE_CLIENT_ID, OAUTH_TOKEN_SECRET_ID } from '@/config';
-import { getDailyNotesConfig, defaultNotesFolder } from '@/utils/daily-notes';
+import { getDailyNotesConfig } from '@/utils/daily-notes';
+import { readPeriodicDailySettings } from '@/utils/periodic-notes';
+import { firstSetupDestination } from '@/notes/scan-destination';
 import { createFakeScanOnDrive } from '@/utils/dev-tools';
 
 // Set by esbuild `define` (esbuild.config.mjs): true only for `npm run dev`.
@@ -27,7 +29,9 @@ declare const __DEV_MODE__: boolean;
 function committedView(read: () => PluginSettings): NoteCreatorConfig {
 	return {
 		get templateString() { return read().templateString; },
-		get targetFolder() { return read().targetFolder; },
+		get saveTo() { return read().saveTo; },
+		get customFolder() { return read().customFolder; },
+		get customFileName() { return read().customFileName; },
 		get attachmentsFolder() { return read().attachmentsFolder; },
 		get downloadImages() { return read().downloadImages; },
 	};
@@ -151,7 +155,8 @@ export default class PaperSyncPlugin extends Plugin {
 			const hadStrayToken = 'oauthRefreshToken' in raw;
 			delete raw.oauthRefreshToken;
 			const versionBefore = raw.settingsVersion;
-			const migrated = migrateSettings(raw);
+			// The v5 step maps the old Notes folder against core Daily notes.
+			const migrated = migrateSettings(raw, getDailyNotesConfig(this.app));
 			this.settings = sanitizeSettings(migrated);
 			// Re-persist on a version bump (existing behavior) OR when a stray plaintext
 			// token was present. The latter forces "discard" to overwrite data.json with
@@ -223,12 +228,16 @@ export default class PaperSyncPlugin extends Plugin {
 		void this.startSync();
 	}
 
-	async resolveTargetFolder(): Promise<void> {
-		if (this.settings.targetFolder) {return;}
+	// First setup (and Reset settings): choose where scans go, once. Core Daily
+	// notes on -> the daily note; else Periodic Notes' daily folder and format,
+	// copied once and never followed; else the Papersync defaults.
+	async resolveScanDestination(): Promise<void> {
+		if (this.settings.saveTo) {return;}
 
-		this.settings.targetFolder = defaultNotesFolder(getDailyNotesConfig(this.app));
+		const dest = firstSetupDestination(getDailyNotesConfig(this.app), readPeriodicDailySettings(this.app));
+		Object.assign(this.settings, dest);
 		await this.saveSettings();
-		logger.info(`Notes folder resolved to "${this.settings.targetFolder}"`);
+		logger.info(`Scan destination resolved to ${dest.saveTo} ("${dest.customFolder}" / "${dest.customFileName}")`);
 	}
 
 	// Stops the engine and forgets it, so Sync now (ribbon, command) cannot run a
@@ -243,7 +252,7 @@ export default class PaperSyncPlugin extends Plugin {
 		this.stopSync();
 		this.unsubscribeSyncState?.();
 
-		await this.resolveTargetFolder();
+		await this.resolveScanDestination();
 		if (this.unloaded) {
 			logger.info('Plugin unloaded while sync was starting; not starting it');
 			return;

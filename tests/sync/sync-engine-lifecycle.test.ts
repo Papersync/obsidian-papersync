@@ -26,7 +26,7 @@ function makeBackend(): SyncBackend & { startCalls: number; stopCalls: number } 
 
 const noteConfig = {
 	templateString: '{{ps_markdown}}',
-	targetFolder: 'PaperSync',
+	saveTo: 'custom' as const, customFolder: 'PaperSync', customFileName: 'YYYY-MM-DD',
 	attachmentsFolder: 'attachments/PaperSync',
 	downloadImages: false,
 };
