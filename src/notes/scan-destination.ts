@@ -1,5 +1,5 @@
-import { moment, normalizePath } from 'obsidian';
-import { formatDateWithPattern } from '@/utils/daily-notes';
+import { normalizePath } from 'obsidian';
+import { formatDateWithPattern, momentOf } from '@/utils/daily-notes';
 import type { DailyNotesConfig } from '@/utils/daily-notes';
 import type { PeriodicDailySettings } from '@/utils/periodic-notes';
 
@@ -17,11 +17,6 @@ export interface ScanDestination {
 
 export const DEFAULT_CUSTOM_FOLDER = 'Papersync';
 export const DEFAULT_CUSTOM_FILE_NAME = 'YYYY-MM-DD';
-
-// obsidian.d.ts types `moment` as a namespace import that is not callable under
-// esModuleInterop, although the runtime value is the moment function. Describe the
-// one call made here rather than depend on moment's typings directly.
-const momentOf = moment as unknown as (date: Date) => { format(pattern: string): string };
 
 // The mode that applies right now. A saved 'daily' only applies while core Daily
 // notes is on; otherwise the custom fields do, and the saved choice is kept, so it
@@ -67,8 +62,9 @@ export function resolveNotePath(date: Date, dest: ScanDestination, daily: DailyN
 		folder = daily.folder.replace(/\/+$/, '');
 		file = momentOf(date).format(daily.format);
 	} else {
-		// The folder keeps the Y/M/D replacer: literal folder names ("Journal") must
-		// survive, which moment would mangle. An empty field means the default.
+		// The folder formats only its date runs ("YYYY", "MMMM"): literal folder
+		// names ("Journal") must survive, which moment would mangle. An empty field
+		// means the default.
 		const pattern = folderPattern(dest.customFolder.trim() ? dest.customFolder : DEFAULT_CUSTOM_FOLDER);
 		folder = pattern ? formatDateWithPattern(date, pattern) : '';
 		// "Scans.md" means the note Scans, not Scans.md.md.
@@ -87,22 +83,25 @@ export function isFixedDestination(dest: ScanDestination, daily: DailyNotesConfi
 	return resolveNotePath(SAMPLE_A, dest, daily) === resolveNotePath(SAMPLE_B, dest, daily);
 }
 
-// The first-setup choice: the core daily note when Daily notes is on; else a copy
-// of Periodic Notes' daily folder and format when that is on (read once, never
-// followed); else the Papersync defaults.
+// The first-setup choice: a copy of Periodic Notes' daily folder and format when
+// that is on (read once, never followed); else the core daily note when Daily
+// notes is on; else the Papersync defaults. Periodic Notes comes first because,
+// when both are on, it is the one that creates the daily note: it takes over the
+// core command and keeps its own folder and format, so the core settings are
+// often stale leftovers.
 export function firstSetupDestination(
 	daily: DailyNotesConfig,
 	periodic: PeriodicDailySettings | null
 ): ScanDestination {
-	if (daily.enabled) {
-		return { saveTo: 'daily', customFolder: DEFAULT_CUSTOM_FOLDER, customFileName: DEFAULT_CUSTOM_FILE_NAME };
-	}
 	if (periodic) {
 		return {
 			saveTo: 'custom',
 			customFolder: periodic.folder.replace(/\/+$/, '') || '/',
 			customFileName: periodic.format || DEFAULT_CUSTOM_FILE_NAME,
 		};
+	}
+	if (daily.enabled) {
+		return { saveTo: 'daily', customFolder: DEFAULT_CUSTOM_FOLDER, customFileName: DEFAULT_CUSTOM_FILE_NAME };
 	}
 	return { saveTo: 'custom', customFolder: DEFAULT_CUSTOM_FOLDER, customFileName: DEFAULT_CUSTOM_FILE_NAME };
 }

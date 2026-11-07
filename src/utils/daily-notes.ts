@@ -1,4 +1,5 @@
-import { App } from 'obsidian';
+import { moment } from 'obsidian';
+import type { App } from 'obsidian';
 import { logger } from '@/utils/logger';
 
 export interface DailyNotesConfig {
@@ -50,28 +51,25 @@ export function getDailyNotesConfig(app: App): DailyNotesConfig {
 	}
 }
 
-type DateToken = 'YYYY' | 'YY' | 'MM' | 'DD' | 'M' | 'D';
-const DATE_TOKEN = /YYYY|YY|MM|DD|M|D/g;
-const ALL_DATE_TOKENS = /^(?:YYYY|YY|MM|DD|M|D)+$/;
+// obsidian.d.ts types `moment` as a namespace import that is not callable under
+// esModuleInterop, although the runtime value is the moment function.
+export const momentOf = moment as unknown as (date: Date) => { format(pattern: string): string };
+
+// The date tokens a folder may hold. Each is formatted by Obsidian's moment, so
+// month and weekday names follow the app language exactly as Daily notes and
+// Periodic Notes write them. The alternation lists longer tokens first (MMMM
+// before MMM before MM before M), so "MMMM" is the month name, never "MM" twice.
+const DATE_TOKEN = /YYYY|YY|MMMM|MMM|MM|M|dddd|ddd|DD|D/g;
+const ALL_DATE_TOKENS = /^(?:YYYY|YY|MMMM|MMM|MM|M|dddd|ddd|DD|D)+$/;
 
 export function formatDateWithPattern(date: Date, pattern: string): string {
-	const year = String(date.getFullYear());
-	const values: Record<DateToken, string> = {
-		YYYY: year,
-		YY: year.slice(2),
-		MM: String(date.getMonth() + 1).padStart(2, '0'),
-		DD: String(date.getDate()).padStart(2, '0'),
-		M: String(date.getMonth() + 1),
-		D: String(date.getDate()),
-	};
-
-	// Only a run of letters made entirely of tokens is a date ("YYYY", "YYYYMMDD");
-	// any other word is a literal folder name, so "SUMMARY" and "ADDRESS" survive.
-	// Single-letter tokens only count alone or beside a longer token ("M" or
-	// "YYYYMD"), so a folder named "MD" or "DM" stays a folder name. The
-	// alternation lists longer tokens first (YYYY before YY, MM before M).
+	const at = momentOf(date);
+	// Only a run of letters made entirely of tokens is a date ("YYYY", "YYYYMMDD",
+	// "MMMM"); any other word is a literal folder name, so "SUMMARY" and "ADDRESS"
+	// survive. Single-letter tokens only count alone or beside a longer token ("M"
+	// or "YYYYMD"), so a folder named "MD" or "DM" stays a folder name.
 	return pattern.replace(/[A-Za-z]+/g, (run) =>
-		ALL_DATE_TOKENS.test(run) && (run.length === 1 || /YY|MM|DD/.test(run))
-			? run.replace(DATE_TOKEN, (token) => values[token as DateToken])
+		ALL_DATE_TOKENS.test(run) && (run.length === 1 || /YY|MM|DD|ddd/.test(run))
+			? run.replace(DATE_TOKEN, (token) => at.format(token))
 			: run);
 }
