@@ -1,6 +1,6 @@
 // resolveScanDestination picks where scans go on first setup (and after Reset
-// settings), once: core Daily notes, else a copy of Periodic Notes' daily
-// settings, else the Papersync defaults.
+// settings), once: a copy of Periodic Notes' daily settings, else core Daily
+// notes, else the Papersync defaults.
 
 import PaperSyncPlugin from '@/main';
 import { DEFAULT_SETTINGS } from '@/settings';
@@ -26,13 +26,21 @@ function makePlugin(dailyNotes: unknown, periodic: unknown = null, saveTo: SaveT
 const periodicDaily = { settings: { daily: { enabled: true, folder: 'Journal/Daily', format: 'YYYY-MM-DD dddd' } } };
 
 describe('PaperSyncPlugin.resolveScanDestination', () => {
-	it('picks Daily note when core Daily notes is on', async () => {
-		const plugin = makePlugin({ enabled: true, instance: { options: { folder: 'Daily' } } }, periodicDaily);
+	it('picks Daily note when core Daily notes is on and Periodic Notes is not', async () => {
+		const plugin = makePlugin({ enabled: true, instance: { options: { folder: 'Daily' } } });
 
 		await plugin.resolveScanDestination();
 
 		expect(plugin.settings.saveTo).toBe('daily');
 		expect(plugin.saveData).toHaveBeenCalledTimes(1);
+	});
+
+	it('copies Periodic Notes daily settings even when core Daily notes is on', async () => {
+		const plugin = makePlugin({ enabled: true, instance: { options: { folder: 'Daily' } } }, periodicDaily);
+
+		await plugin.resolveScanDestination();
+
+		expect(plugin.settings).toMatchObject({ saveTo: 'custom', customFolder: 'Journal/Daily', customFileName: 'YYYY-MM-DD dddd' });
 	});
 
 	it('copies Periodic Notes daily settings into Custom when Daily notes is off', async () => {

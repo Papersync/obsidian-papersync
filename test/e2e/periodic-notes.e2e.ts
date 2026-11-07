@@ -4,7 +4,7 @@ import { closeSettings, focusSettingsUI, openPluginSettings, switchToMainWindow,
 import { getDestination, scanAndWait, setDailyNotes, setDestination, waitForDestinationUI } from './destination-helpers';
 
 // First setup copies Periodic Notes' daily folder and format into the custom
-// fields when core Daily notes is off and Periodic Notes (0.0.17, the real
+// fields, ahead of core Daily notes, when Periodic Notes (0.0.17, the real
 // community plugin) has daily notes on. A one-time copy: never followed after.
 
 type PeriodicDaily = { enabled: boolean; folder?: string; format?: string };
@@ -126,12 +126,27 @@ describe('First setup with Periodic Notes', function () {
 		expect(hits[0]!.startsWith('Journal/Daily/')).toBe(true);
 	});
 
-	it('picks Daily note when core Daily notes is on as well', async function () {
-		await setPeriodicDaily({ enabled: true, folder: 'Journal/Daily', format: 'YYYY-MM-DD dddd' });
+	it('prefers Periodic Notes over core Daily notes, month names included', async function () {
+		// Both on: Periodic Notes is the one that makes the daily note, so its folder
+		// and format win. The format nests a month-name folder, as real vaults do.
 		await setDailyNotes(true, 'CoreDaily', 'YYYY-MM-DD');
+		await setPeriodicDaily({ enabled: true, folder: 'Journal/Daily', format: 'YYYY/M-MMMM/YYYY-MM-DD' });
 		await firstSetup(dir);
 
-		expect((await getDestination()).saveTo).toBe('daily');
+		expect(await getDestination()).toMatchObject({ saveTo: 'custom', customFolder: 'Journal/Daily', customFileName: 'YYYY/M-MMMM/YYYY-MM-DD' });
+		await switchToMainWindow();
+		// Periodic Notes 0.0.17 does not create a missing folder, so make today's.
+		const monthFolder = await browser.execute(async () => {
+			const w = window as unknown as { moment: () => { format: (f: string) => string };
+				app: { vault: { createFolder: (p: string) => Promise<unknown>; getAbstractFileByPath: (p: string) => unknown } } };
+			const folder = `Journal/Daily/${w.moment().format('YYYY/M-MMMM')}`;
+			if (!w.app.vault.getAbstractFileByPath(folder)) {await w.app.vault.createFolder(folder);}
+			return folder;
+		});
+		expect(monthFolder).toMatch(/^Journal\/Daily\/\d{4}\/\d{1,2}-[A-Za-z]+$/);
+		const periodicNote = await periodicOpensToday();
+		expect(periodicNote.startsWith(`${monthFolder}/`)).toBe(true);
+		expect(await scanAndWait(dir, `PERIODIC_BOTH_${Date.now()}`)).toEqual([periodicNote]);
 	});
 
 	it('uses the Papersync defaults when Periodic Notes daily notes is off', async function () {
