@@ -117,6 +117,34 @@ describe('Save scans to', function () {
 			expect(await fileExists(`DailyNest/${today('YYYY/MM')}`)).toBe(true);
 		});
 
+		it('uses date codes in the Daily notes folder as written, exactly like Obsidian opens today', async function () {
+			// Core Daily notes formats only its date format, never its folder: its own
+			// "Open today's daily note" goes to a folder literally named YYYY/MM. The
+			// scan must land in that same note, not in a dated folder of its own.
+			await setDailyNotes(true, 'DailyLit/YYYY/MM', 'YYYY-MM-DD');
+			await switchToMainWindow();
+			// Obsidian's Daily notes does not create a missing folder, so make the
+			// literal one, as it exists for anyone whose daily notes already work.
+			await browser.execute(async () => {
+				const vault = (window as unknown as { app: { vault: { createFolder: (p: string) => Promise<unknown>; getAbstractFileByPath: (p: string) => unknown } } }).app.vault;
+				if (!vault.getAbstractFileByPath('DailyLit/YYYY/MM')) {await vault.createFolder('DailyLit/YYYY/MM');}
+			});
+			await browser.executeObsidianCommand('daily-notes');
+			let opened = '';
+			await browser.waitUntil(async () => {
+				opened = await browser.execute(() =>
+					(window as unknown as { app: { workspace: { getActiveFile: () => { path: string } | null } } }).app.workspace.getActiveFile()?.path ?? '');
+				return opened.startsWith('DailyLit/');
+			}, { timeout: 10_000, interval: 250 }).catch(async () => {
+				const files = await browser.execute(() =>
+					(window as unknown as { app: { vault: { getFiles: () => Array<{ path: string }> } } }).app.vault.getFiles()
+						.map((f) => f.path).filter((p) => p.startsWith('DailyLit')));
+				throw new Error(`Daily notes never opened today's note (active: "${opened}", DailyLit files: ${JSON.stringify(files)})`);
+			});
+			expect(opened).toBe(`DailyLit/YYYY/MM/${today()}.md`);
+			expect(await scanAndWait(dir, `LITERAL_${Date.now()}`)).toEqual([opened]);
+		});
+
 		it('follows a Daily notes folder and format change on the next scan, with no Papersync setting touched', async function () {
 			await setDailyNotes(true, 'DailyBefore', 'YYYY-MM-DD');
 			const before = await getDestination();
