@@ -228,9 +228,9 @@ export default class PaperSyncPlugin extends Plugin {
 		void this.startSync();
 	}
 
-	// First setup (and Reset settings): choose where scans go, once. Core Daily
-	// notes on -> the daily note; else Periodic Notes' daily folder and format,
-	// copied once and never followed; else the Papersync defaults.
+	// First setup (and Reset settings): choose where scans go, once. Periodic
+	// Notes' daily folder and format when it is on (copied once, never followed);
+	// else the daily note when core Daily notes is on; else the Papersync defaults.
 	async resolveScanDestination(): Promise<void> {
 		if (this.settings.saveTo) {return;}
 
