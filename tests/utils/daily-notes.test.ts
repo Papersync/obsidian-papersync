@@ -54,6 +54,13 @@ describe('formatDateWithPattern', () => {
 		expect(formatDateWithPattern(date, 'Notes/MD/DM/MDM')).toBe('Notes/MD/DM/MDM');
 	});
 
+	it('writes month and weekday names (MMMM is the month name, not MM twice)', () => {
+		expect(formatDateWithPattern(date, 'Journal/Daily/YYYY/M-MMMM')).toBe('Journal/Daily/2026/4-April');
+		expect(formatDateWithPattern(date, 'YYYY/MMM')).toBe('2026/Apr');
+		expect(formatDateWithPattern(date, 'Notes/dddd')).toBe('Notes/Sunday');
+		expect(formatDateWithPattern(date, 'Notes/ddd')).toBe('Notes/Sun');
+	});
+
 	it('still formats single-letter tokens beside a longer one', () => {
 		expect(formatDateWithPattern(date, 'YYYYMD')).toBe('2026412');
 	});

@@ -69,6 +69,11 @@ describe('resolveNotePath', () => {
 		expect(resolveNotePath(date, { ...daily, customFolder: 'Inbox', customFileName: 'Scans' }, dailyOff)).toBe('Inbox/Scans.md');
 	});
 
+	it('writes month names in a custom folder', () => {
+		expect(resolveNotePath(date, custom('Journal/Daily/YYYY/M-MMMM', 'YYYY-MM-DD'), dailyOn()))
+			.toBe('Journal/Daily/2026/11-November/2026-11-07.md');
+	});
+
 	it('formats custom folder tokens and the moment file name', () => {
 		expect(resolveNotePath(date, custom('Journal/YYYY/MM', 'YYYY-MM-DD'), dailyOn())).toBe('Journal/2026/11/2026-11-07.md');
 		expect(resolveNotePath(date, custom('Journal', 'YYYY/MM/YYYY-MM-DD'), dailyOff)).toBe('Journal/2026/11/2026-11-07.md');
@@ -95,8 +100,13 @@ describe('isFixedDestination', () => {
 });
 
 describe('firstSetupDestination', () => {
-	it('picks Daily note when core Daily notes is on, even with Periodic Notes on', () => {
-		expect(firstSetupDestination(dailyOn(), { folder: 'Journal', format: 'YYYY' }).saveTo).toBe('daily');
+	it('prefers Periodic Notes over core Daily notes when both are on', () => {
+		expect(firstSetupDestination(dailyOn(), { folder: 'Journal/Daily', format: 'YYYY/M-MMMM/YYYY-MM-DD' }))
+			.toEqual({ saveTo: 'custom', customFolder: 'Journal/Daily', customFileName: 'YYYY/M-MMMM/YYYY-MM-DD' });
+	});
+
+	it('picks Daily note when core Daily notes is on and Periodic Notes is not', () => {
+		expect(firstSetupDestination(dailyOn(), null).saveTo).toBe('daily');
 	});
 
 	it('copies the Periodic Notes daily folder and format into Custom', () => {

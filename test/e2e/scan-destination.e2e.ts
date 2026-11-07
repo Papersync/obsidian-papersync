@@ -202,6 +202,13 @@ describe('Save scans to', function () {
 			expect(await scanAndWait(dir, `JOURNAL_${Date.now()}`)).toEqual([`Journal/${today('YYYY/MM')}/${today()}.md`]);
 		});
 
+		it('writes month names in the folder (M-MMMM is 11-November, not 11-1111)', async function () {
+			await setDestination({ saveTo: 'custom', customFolder: 'Months/YYYY/M-MMMM', customFileName: 'YYYY-MM-DD' });
+			const expected = `Months/${today('YYYY/M-MMMM')}/${today()}.md`;
+			expect(expected).toMatch(/^Months\/\d{4}\/\d{1,2}-[A-Za-z]+\//);
+			expect(await scanAndWait(dir, `MONTHS_${Date.now()}`)).toEqual([expected]);
+		});
+
 		it('puts the note at the vault root for /', async function () {
 			await setDestination({ saveTo: 'custom', customFolder: '/', customFileName: '[Root] YYYY-MM-DD' });
 			expect(await scanAndWait(dir, `ROOT_${Date.now()}`)).toEqual([`Root ${today()}.md`]);
