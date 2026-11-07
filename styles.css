@@ -140,15 +140,17 @@
 	padding-left: 12px;
 }
 
-/* Warning rows: the missing-folder notice above the storage picker, and the
-   "template still embeds the image" notice. Same shape as the connected row, in
+/* Warning rows: the missing-folder and Drive signed-out notices above the storage
+   picker, and the "template still embeds the image" notice. Same shape as the connected row, in
    the warning colour the template editor's image warning already uses. */
 .papersync-folder-missing .setting-item-name,
+.papersync-drive-signed-out .setting-item-name,
 .papersync-warning-row .setting-item-name {
 	color: var(--color-orange);
 }
 
 .papersync-folder-missing,
+.papersync-drive-signed-out,
 .papersync-warning-row {
 	border-left: 3px solid var(--color-orange);
 	padding-left: 12px;

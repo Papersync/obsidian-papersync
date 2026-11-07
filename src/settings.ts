@@ -790,7 +790,6 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 				return this.getConnectionState().isDriveSignedOut;
 			},
 			render: (setting) => {
-				setting.setClass('papersync-warning-row');
 				setting.setClass('papersync-drive-signed-out');
 				setting.setName(STRINGS.SETTINGS_DRIVE_SIGNED_OUT_TITLE);
 				setting.setDesc(STRINGS.SETTINGS_DRIVE_SIGNED_OUT_DESC);
