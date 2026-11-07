@@ -29,7 +29,9 @@ export const config = {
 		'wdio:obsidianOptions': {
 			installerVersion,
 			vault: './test/vault',
-			plugins: ['.'],
+			// Periodic Notes is installed (disabled) only for periodic-notes.e2e.ts,
+			// which enables it: Papersync copies its daily settings on first setup.
+			plugins: ['.', { id: 'periodic-notes', version: '0.0.17', enabled: false }],
 		},
 	})),
 
