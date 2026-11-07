@@ -30,6 +30,8 @@ export const STRINGS = {
 	NOTICE_FOLDER_MISSING: 'Your Papersync folder is missing. Re-select or recreate it from the plugin settings.',
 	SETTINGS_FOLDER_MISSING_TITLE: (name: string) => `\u26A0 Your Papersync folder "${name}" is missing`,
 	SETTINGS_FOLDER_MISSING_DESC: 'Pick it again below, or reconnect the drive it lives on.',
+	SETTINGS_DRIVE_SIGNED_OUT_TITLE: '\u26A0 Google Drive signed out',
+	SETTINGS_DRIVE_SIGNED_OUT_DESC: 'Google no longer accepts the saved sign-in. Connect Google Drive again below to resume syncing. Your scans and notes are safe.',
 	NOTICE_FOLDER_ACCESS: 'Papersync could not read or update a scan in your Papersync folder. Check that the folder and its files are not read-only.',
 	NOTICE_SCAN_TOO_LARGE: 'A scan file is too large to import (over 1 MB of text or 50 MB of photo), so Papersync skipped it.',
 	NOTICE_DRIVE_ERROR: 'Google Drive could not complete a request. Your scans are safe, and Papersync will try again on the next sync.',

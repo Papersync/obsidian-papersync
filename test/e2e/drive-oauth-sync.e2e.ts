@@ -514,11 +514,14 @@ describe('Drive OAuth + sync against fake Google', function () {
 		expect(faulted).toBeDefined();
 		expect(faulted!.params.get('grant_type')).toBe('refresh_token');
 
-		// The settings UI is back to the storage picker — the user can reconnect.
+		// The settings UI is back to the storage picker, under a warning that says
+		// Drive was signed out (not a blank first-time picker), so the user can reconnect.
 		await openPluginSettings();
 		const text = await (await browser.$('body')).getText();
 		expect(text).toContain('Connect');
 		expect(text).not.toContain('Change storage');
+		expect(text).toContain('Google Drive signed out');
+		expect(await (await browser.$('.papersync-drive-signed-out')).isDisplayed()).toBe(true);
 		await closeSettings();
 	});
 
