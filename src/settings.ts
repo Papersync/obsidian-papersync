@@ -187,10 +187,11 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	plugin: PaperSyncPlugin;
 	private syncButton: HTMLButtonElement | null = null;
 	private syncDesc: HTMLElement | null = null;
-	// The folder state the open tab was last painted for (null = not painted since
-	// it was last hidden). A state update that disagrees means the folder just went
-	// missing or just came back, and the picker and connected row must swap.
-	private shownFolderMissing: boolean | null = null;
+	// The storage-loss state the open tab was last painted for: whether the folder
+	// is missing and whether Google Drive is signed out (null = not painted since it
+	// was last hidden). A state update that disagrees means storage was just lost
+	// or just came back, and the picker and connected row must swap.
+	private shownLoss: string | null = null;
 	private previewComponent: Component | null = null;
 	private previewDebounce: number | null = null;
 	// The Save scans to row's live parts, while that row is rendered.
@@ -224,9 +225,9 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		// last painted, which the missing-folder row's visible() records, never by
 		// which render callbacks ran: Obsidian runs every row's render(), hidden rows
 		// included, so "rendered" does not mean "on screen".
-		const { isFolderMissing } = this.getConnectionState();
-		if (this.shownFolderMissing !== null && this.shownFolderMissing !== isFolderMissing) {
-			this.shownFolderMissing = isFolderMissing;
+		const loss = this.getLossKey();
+		if (this.shownLoss !== null && this.shownLoss !== loss) {
+			this.shownLoss = loss;
 			this.swapFolderState();
 			// Fall through: the rows were not re-rendered, so the connected row coming
 			// back still carries the status text from before the loss.
@@ -274,18 +275,29 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// instead of a connected row that cannot sync. Read from disk on every call
 	// rather than from the last sync error: the disk is the truth at startup, before
 	// any sync has run, and after a drive is remounted, when a stale error would lie.
+	// Google Drive set up but signed out (Google refused the saved sign-in, so it
+	// was cleared) is the same kind of loss: the picker shows, under a warning that
+	// says why, instead of looking like storage was never chosen. Before the OAuth
+	// manager exists (startup) nothing is known yet, so it is not a loss.
 	private getConnectionState(): {
 		isGoogleConnected: boolean;
 		isFolderConnected: boolean;
 		isFolderMissing: boolean;
+		isDriveSignedOut: boolean;
 	} {
 		const { backendType, setupComplete, folderPath } = this.plugin.settings;
-		const isGoogleConnected =
-			backendType === 'drive' && (this.plugin.oauthManager?.isAuthenticated ?? false);
+		const oauth = this.plugin.oauthManager;
+		const isGoogleConnected = backendType === 'drive' && (oauth?.isAuthenticated ?? false);
+		const isDriveSignedOut = backendType === 'drive' && setupComplete && oauth !== null && !oauth.isAuthenticated;
 		const folderConfigured = backendType === 'folder' && setupComplete;
 		const isFolderMissing = folderConfigured && !isExistingDirectory(folderPath);
 		const isFolderConnected = folderConfigured && !isFolderMissing;
-		return { isGoogleConnected, isFolderConnected, isFolderMissing };
+		return { isGoogleConnected, isFolderConnected, isFolderMissing, isDriveSignedOut };
+	}
+
+	private getLossKey(): string {
+		const { isFolderMissing, isDriveSignedOut } = this.getConnectionState();
+		return `${String(isFolderMissing)}/${String(isDriveSignedOut)}`;
 	}
 
 	private getMissingFolderName(): string {
@@ -398,7 +410,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		// Closed: state updates must not re-render into (or write into) a hidden tab.
 		this.syncButton = null;
 		this.syncDesc = null;
-		this.shownFolderMissing = null;
+		this.shownLoss = null;
 		this.teardownPreview();
 		// Settings closed: whatever is in the fields now is final.
 		this.plugin.commitSettings();
@@ -760,14 +772,28 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 			// visible() runs on every paint (render() runs for hidden rows too), so
 			// this is where the tab records which folder state it painted.
 			visible: () => {
-				const { isFolderMissing } = this.getConnectionState();
-				this.shownFolderMissing = isFolderMissing;
-				return isFolderMissing;
+				this.shownLoss = this.getLossKey();
+				return this.getConnectionState().isFolderMissing;
 			},
 			render: (setting) => {
 				setting.setClass('papersync-folder-missing');
 				setting.setName(STRINGS.SETTINGS_FOLDER_MISSING_TITLE(this.getMissingFolderName()));
 				setting.setDesc(STRINGS.SETTINGS_FOLDER_MISSING_DESC);
+			},
+		});
+
+		defs.push({
+			name: 'Google Drive signed out',
+			searchable: false,
+			visible: () => {
+				this.shownLoss = this.getLossKey();
+				return this.getConnectionState().isDriveSignedOut;
+			},
+			render: (setting) => {
+				setting.setClass('papersync-warning-row');
+				setting.setClass('papersync-drive-signed-out');
+				setting.setName(STRINGS.SETTINGS_DRIVE_SIGNED_OUT_TITLE);
+				setting.setDesc(STRINGS.SETTINGS_DRIVE_SIGNED_OUT_DESC);
 			},
 		});
 
