@@ -54,13 +54,6 @@ type DateToken = 'YYYY' | 'YY' | 'MM' | 'DD' | 'M' | 'D';
 const DATE_TOKEN = /YYYY|YY|MM|DD|M|D/g;
 const ALL_DATE_TOKENS = /^(?:YYYY|YY|MM|DD|M|D)+$/;
 
-// The Notes folder when none is set: the Daily Notes folder when Daily Notes is on,
-// so scans join the real daily note ('/' for the vault root, since '' means "not
-// set"); with Daily Notes off there is no daily note to join, so a Papersync folder.
-export function defaultNotesFolder(config: DailyNotesConfig): string {
-	return config.enabled ? config.folder || '/' : 'Papersync';
-}
-
 export function formatDateWithPattern(date: Date, pattern: string): string {
 	const year = String(date.getFullYear());
 	const values: Record<DateToken, string> = {

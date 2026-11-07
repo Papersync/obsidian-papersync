@@ -76,7 +76,7 @@ function makeApp(vault: unknown, frontmatter = new Map<string, Record<string, un
 
 const noteConfig = {
 	templateString: '{{ps_separator}}\n\n## {{ps_scan_time}}\n\n{{ps_markdown}}\n\n> [!abstract]- Original scan\n> ![[{{ps_image_file}}]]',
-	targetFolder: 'PaperSync',
+	saveTo: 'custom' as const, customFolder: 'PaperSync', customFileName: 'YYYY-MM-DD',
 	attachmentsFolder: 'attachments/papersync',
 	downloadImages: true,
 };

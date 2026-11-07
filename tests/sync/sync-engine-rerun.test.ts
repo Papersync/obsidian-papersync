@@ -31,7 +31,7 @@ const app = {
 	fileManager: { processFrontMatter: async () => undefined },
 };
 
-const noteConfig = { templateString: '{{ps_markdown}}', targetFolder: 'P', attachmentsFolder: '', downloadImages: false };
+const noteConfig = { templateString: '{{ps_markdown}}', saveTo: 'custom' as const, customFolder: 'P', customFileName: 'YYYY-MM-DD', attachmentsFolder: '', downloadImages: false };
 
 type Backend = SyncBackend & { discovered: (refs: ScanReference[]) => Promise<void> };
 

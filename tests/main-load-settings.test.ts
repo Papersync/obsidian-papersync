@@ -22,14 +22,14 @@ describe('PaperSyncPlugin.loadSettings endpoint-seam strip', () => {
 	it('strips a persisted endpointOverrides seam without re-persisting', async () => {
 		const plugin = makePlugin({
 			settingsVersion: DEFAULT_SETTINGS.settingsVersion,
-			targetFolder: 'Journal',
+			customFolder: 'Journal',
 			endpointOverrides: { tokenUrl: 'http://127.0.0.1:9/token' },
 		});
 
 		await plugin.loadSettings();
 
 		expect(plugin.settings.endpointOverrides).toBeUndefined();
-		expect(plugin.settings.targetFolder).toBe('Journal'); // the rest of the data survives
+		expect(plugin.settings.customFolder).toBe('Journal'); // the rest of the data survives
 		expect(plugin.saveData).not.toHaveBeenCalled(); // in-memory strip only
 	});
 
@@ -68,14 +68,14 @@ describe('PaperSyncPlugin.loadSettings endpoint-seam strip', () => {
 			settingsVersion: DEFAULT_SETTINGS.settingsVersion,
 			drivePollInterval: 0,
 			templateString: 7,
-			targetFolder: 'Journal',
+			customFolder: 'Journal',
 		});
 
 		await plugin.loadSettings();
 
 		expect(plugin.settings.drivePollInterval).toBe(5);
 		expect(plugin.settings.templateString).toBe(DEFAULT_SETTINGS.templateString);
-		expect(plugin.settings.targetFolder).toBe('Journal');
+		expect(plugin.settings.customFolder).toBe('Journal');
 	});
 
 	it('falls back to defaults when nothing is persisted', async () => {

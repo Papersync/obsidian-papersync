@@ -129,7 +129,7 @@ describe('refresh token in secret storage', () => {
 
 	it('does not re-save on load for a clean current-version data.json (no stray token, no version bump)', async () => {
 		const storage = new SecretStorage();
-		const plugin = makePlugin({ settingsVersion: 4, setupComplete: true, backendType: 'drive' }, storage);
+		const plugin = makePlugin({ settingsVersion: 5, setupComplete: true, backendType: 'drive' }, storage);
 
 		await plugin.loadSettings();
 

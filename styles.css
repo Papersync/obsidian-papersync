@@ -153,3 +153,13 @@
 	border-left: 3px solid var(--color-orange);
 	padding-left: 12px;
 }
+
+/* Save scans to: the custom Folder and File name rows sit indented under it. */
+.papersync-sub-setting {
+	padding-inline-start: var(--size-4-6);
+}
+
+.papersync-save-to-preview {
+	margin-top: 4px;
+	color: var(--text-muted);
+}

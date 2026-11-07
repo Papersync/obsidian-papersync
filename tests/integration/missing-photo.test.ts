@@ -9,7 +9,7 @@ import { ErrorHandler } from '@/errors/error-handler';
 
 const config = {
 	templateString: '{{ps_markdown}}\n![[{{ps_image_file}}]]',
-	targetFolder: 'Notes',
+	saveTo: 'custom' as const, customFolder: 'Notes', customFileName: 'YYYY-MM-DD',
 	attachmentsFolder: 'Attachments',
 	downloadImages: true,
 };

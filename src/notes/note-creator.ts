@@ -5,7 +5,9 @@ import { MAX_SUMMARY_CHARS, MAX_TITLE_CHARS, clampLength, neutralizeMarkdown } f
 import type { TemplateContext } from '@/notes/template-engine';
 import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
-import { getDailyNotesConfig, formatDateWithPattern, defaultNotesFolder } from '@/utils/daily-notes';
+import { getDailyNotesConfig } from '@/utils/daily-notes';
+import { resolveNotePath } from '@/notes/scan-destination';
+import type { SaveTo } from '@/notes/scan-destination';
 import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
 
@@ -39,7 +41,9 @@ function legacyMarker(scanId: string): string {
 
 export interface NoteCreatorConfig {
 	templateString: string;
-	targetFolder: string;
+	saveTo: SaveTo;
+	customFolder: string;
+	customFileName: string;
 	attachmentsFolder: string;
 	downloadImages: boolean;
 }
@@ -66,10 +70,8 @@ export class NoteCreator {
 		const createdDate = new Date(scanFile.createdAt);
 		const dailyConfig = getDailyNotesConfig(this.app);
 
-		// The daily-note filename must match Obsidian's own, which is moment-formatted
-		// (arbitrary format string incl. month names, time tokens, escaped literals, '/').
-		// A hand-rolled Y/M/D replacer diverges (e.g. `MMMM D, YYYY` -> "0707 5, 2026")
-		// and writes a garbage parallel note instead of appending to the real one.
+		// {{ps_scan_date_short}} keeps the Daily notes format (YYYY-MM-DD with Daily
+		// notes off), moment-formatted like Obsidian's own daily-note names.
 		const dateShort = momentOf(createdDate).format(dailyConfig.format);
 		const h24 = createdDate.getHours();
 		const minutes = String(createdDate.getMinutes()).padStart(2, '0');
@@ -77,15 +79,10 @@ export class NoteCreator {
 		const h12 = h24 % 12 || 12;
 		const ampm = h24 < 12 ? 'AM' : 'PM';
 		const time12 = `${h12}:${minutes} ${ampm}`;
-		// The folder pattern keeps the Y/M/D replacer: it can contain literal folder names
-		// (e.g. "Journal") that moment would mangle. Strip a trailing slash so it never
-		// produces a "//" path. normalizePath keeps the existence check and create in sync.
-		const rawFolder = (config.targetFolder || defaultNotesFolder(dailyConfig)).replace(/\/+$/, '');
-		const noteFolder = rawFolder ? formatDateWithPattern(createdDate, rawFolder) : '';
+		// The daily note (folder and format read live) or the custom folder and file.
+		const notePath = resolveNotePath(createdDate, config, dailyConfig);
 
-		const notePath = normalizePath(noteFolder ? `${noteFolder}/${dateShort}.md` : `${dateShort}.md`);
-
-		// Ensure the FULL parent path — dateShort itself can contain '/' (e.g. a
+		// Ensure the FULL parent path: the file name itself can contain '/' (e.g. a
 		// `YYYY/MM/DD` daily format), and vault.create does not create missing parents.
 		const parentFolder = notePath.includes('/') ? notePath.slice(0, notePath.lastIndexOf('/')) : '';
 		if (parentFolder) {

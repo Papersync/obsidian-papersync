@@ -140,6 +140,8 @@ export async function vaultBasePath(): Promise<string> {
 
 export interface FolderBackendConfig {
 	folderPath: string;
+	// The Custom folder (Save scans to = Custom folder and file, File name
+	// YYYY-MM-DD), so every scan lands in <targetFolder>/<YYYY-MM-DD>.md.
 	targetFolder?: string;
 	attachmentsFolder?: string;
 	downloadImages?: boolean;
@@ -158,7 +160,9 @@ export async function configureFolderBackend(cfg: FolderBackendConfig): Promise<
 		plugin.settings.backendType = 'folder';
 		plugin.settings.folderPath = c.folderPath;
 		plugin.settings.folderType = 'custom';
-		plugin.settings.targetFolder = c.targetFolder ?? 'EdgeTest';
+		plugin.settings.saveTo = 'custom';
+		plugin.settings.customFolder = c.targetFolder ?? 'EdgeTest';
+		plugin.settings.customFileName = 'YYYY-MM-DD';
 		plugin.settings.attachmentsFolder = c.attachmentsFolder ?? 'EdgeTest/attachments';
 		plugin.settings.downloadImages = c.downloadImages ?? true;
 		plugin.settings.setupComplete = true;

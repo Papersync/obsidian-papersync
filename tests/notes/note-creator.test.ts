@@ -55,7 +55,7 @@ const defaultConfig = {
 > [!abstract]- Original scan
 > ![[{{ps_image_file}}]]
 `,
-	targetFolder: 'PaperSync',
+	saveTo: 'custom' as const, customFolder: 'PaperSync', customFileName: 'YYYY-MM-DD',
 	attachmentsFolder: 'attachments/papersync',
 	downloadImages: true,
 };
@@ -311,7 +311,7 @@ describe('NoteCreator', () => {
 	it('resolves date tokens in folder path', async () => {
 		const dateTokenConfig = {
 			...defaultConfig,
-			targetFolder: 'Journal/YYYY/MM',
+			saveTo: 'custom' as const, customFolder: 'Journal/YYYY/MM', customFileName: 'YYYY-MM-DD',
 		};
 		const tokenCreator = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, dateTokenConfig);
 
@@ -329,7 +329,7 @@ describe('NoteCreator', () => {
 	it('creates nested folders for date-resolved paths', async () => {
 		const dateTokenConfig = {
 			...defaultConfig,
-			targetFolder: 'Journal/YYYY/MM',
+			saveTo: 'custom' as const, customFolder: 'Journal/YYYY/MM', customFileName: 'YYYY-MM-DD',
 		};
 		const tokenCreator = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, dateTokenConfig);
 
@@ -346,7 +346,7 @@ describe('NoteCreator', () => {
 	it('names the daily note with Obsidian moment format, not a Y/M/D replacer (#1)', async () => {
 		// Format `MMMM D, YYYY` must produce "July 5, 2026", matching Obsidian's real
 		// daily note. The old replacer produced "0707 5, 2026" (a garbage parallel note).
-		const c = creatorWithDailyFormat('MMMM D, YYYY', '', { ...defaultConfig, targetFolder: '' });
+		const c = creatorWithDailyFormat('MMMM D, YYYY', '', { ...defaultConfig, saveTo: 'daily' as const });
 		const scan = makeScanFile({ createdAt: '2026-07-05T14:30:00.000Z' });
 
 		await c.createOrAppend(scan, new ArrayBuffer(10), 'scan-fmt');
@@ -355,7 +355,7 @@ describe('NoteCreator', () => {
 	});
 
 	it('creates every parent folder when the daily format itself nests (#2: YYYY/MM/DD)', async () => {
-		const c = creatorWithDailyFormat('YYYY/MM/DD', '', { ...defaultConfig, targetFolder: '' });
+		const c = creatorWithDailyFormat('YYYY/MM/DD', '', { ...defaultConfig, saveTo: 'daily' as const });
 		const scan = makeScanFile({ createdAt: '2026-07-05T14:30:00.000Z' });
 
 		await c.createOrAppend(scan, new ArrayBuffer(10), 'scan-nest');
@@ -369,7 +369,7 @@ describe('NoteCreator', () => {
 		const c = new NoteCreator(
 			{ ...mockApp, vault: mockVault } as any,
 			mockVault as any,
-			{ ...defaultConfig, targetFolder: 'PaperSync/' }
+			{ ...defaultConfig, saveTo: 'custom' as const, customFolder: 'PaperSync/', customFileName: 'YYYY-MM-DD' }
 		);
 		mockVault.getAbstractFileByPath.mockImplementation((p: string) =>
 			p === 'PaperSync/2026-04-12.md' ? asTFile(p) : null
@@ -593,22 +593,29 @@ describe('NoteCreator', () => {
 		});
 	});
 
-	it('uses a Papersync folder when the Notes folder is empty and Daily Notes is off', async () => {
-		// Same rule as first-run resolution, so a cleared field files notes where
-		// they will also go after a restart.
-		const emptyCreator = new NoteCreator(
+	it('uses the custom fields when Daily note is saved but Daily notes is off', async () => {
+		const c = new NoteCreator(
 			{ ...mockApp, vault: mockVault } as any,
 			mockVault as any,
-			{ ...defaultConfig, targetFolder: '' }
+			{ ...defaultConfig, saveTo: 'daily' as const, customFolder: 'Inbox', customFileName: 'Scans' }
 		);
 
-		await emptyCreator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-empty');
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-off');
 
-		expect(mockVault.create).toHaveBeenCalledWith('Papersync/2026-04-12.md', expect.any(String));
+		expect(mockVault.create).toHaveBeenCalledWith('Inbox/Scans.md', expect.any(String));
 	});
 
-	it('places the note at the root when the Notes folder is empty and Daily Notes is at the root', async () => {
-		const c = creatorWithDailyFormat('YYYY-MM-DD', '', { ...defaultConfig, targetFolder: '' });
+	it('writes into the Daily notes folder in Daily note mode', async () => {
+		const c = creatorWithDailyFormat('YYYY/MM/YYYY-MM-DD', 'Daily/', { ...defaultConfig, saveTo: 'daily' as const });
+
+		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-daily');
+
+		expect(mockVault.create).toHaveBeenCalledWith('Daily/2026/04/2026-04-12.md', expect.any(String));
+		expect(mockVault.createFolder).toHaveBeenCalledWith('Daily/2026/04');
+	});
+
+	it('places the note at the root when Daily notes is at the vault root', async () => {
+		const c = creatorWithDailyFormat('YYYY-MM-DD', '', { ...defaultConfig, saveTo: 'daily' as const });
 
 		await c.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-root');
 
@@ -622,7 +629,7 @@ describe('NoteCreator', () => {
 		let template = '{{ps_markdown}} FIRST';
 		const live = {
 			get templateString() { return template; },
-			targetFolder: 'PaperSync',
+			saveTo: 'custom' as const, customFolder: 'PaperSync', customFileName: 'YYYY-MM-DD',
 			attachmentsFolder: 'attachments',
 			downloadImages: true,
 		};
@@ -636,11 +643,11 @@ describe('NoteCreator', () => {
 		expect(content).not.toContain('CHANGED');
 	});
 
-	it('places the note at the root when the Notes folder is / (Daily Notes at the vault root)', async () => {
+	it('places the note at the root when the custom folder is /', async () => {
 		const rootCreator = new NoteCreator(
 			{ ...mockApp, vault: mockVault } as any,
 			mockVault as any,
-			{ ...defaultConfig, targetFolder: '/' }
+			{ ...defaultConfig, saveTo: 'custom' as const, customFolder: '/', customFileName: 'YYYY-MM-DD' }
 		);
 
 		await rootCreator.createOrAppend(makeScanFile(), new ArrayBuffer(10), 'scan-root');
