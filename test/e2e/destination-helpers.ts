@@ -23,9 +23,10 @@ export function fmt(date: Date, pattern: string): string {
 		dddd: DAYS[date.getDay()]!,
 		MM: pad(date.getMonth() + 1),
 		DD: pad(date.getDate()),
+		M: String(date.getMonth() + 1),
 		D: String(date.getDate()),
 	};
-	return pattern.replace(/YYYY|MMMM|dddd|MM|DD|D/g, (t) => values[t]!);
+	return pattern.replace(/YYYY|MMMM|dddd|MM|DD|M|D/g, (t) => values[t]!);
 }
 
 export const today = (pattern = 'YYYY-MM-DD'): string => fmt(new Date(), pattern);
@@ -194,7 +195,7 @@ export async function readDestinationUI(): Promise<DestinationUI> {
 			const el = document.querySelector(sel) as HTMLElement | null;
 			return !!el && el.offsetParent !== null;
 		};
-		const warnings = Array.from(document.querySelectorAll('.papersync-warning-row, .papersync-folder-missing'))
+		const warnings = Array.from(document.querySelectorAll('.papersync-warning-row, .papersync-folder-missing, .papersync-drive-signed-out'))
 			.filter((el) => (el as HTMLElement).offsetParent !== null).length;
 		return {
 			present: !!row && (row as HTMLElement).offsetParent !== null,
