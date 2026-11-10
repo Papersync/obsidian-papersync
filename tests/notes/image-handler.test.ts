@@ -1,10 +1,11 @@
-import { TFolder } from 'obsidian';
+import { TFile, TFolder } from 'obsidian';
 import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 
 const mockVault = {
 	getAbstractFileByPath: jest.fn(),
 	createBinary: jest.fn().mockResolvedValue(undefined),
 	createFolder: jest.fn().mockResolvedValue(undefined),
+	readBinary: jest.fn(),
 };
 
 describe('saveImageToVault', () => {
@@ -54,13 +55,14 @@ describe('saveImageToVault', () => {
 		);
 	});
 
-	it('skips creation if image already exists', async () => {
+	it('skips creation if the same image already exists', async () => {
+		const imageData = new ArrayBuffer(100);
 		mockVault.getAbstractFileByPath.mockImplementation((path: string) => {
-			if (path === 'attachments/papersync/papersync-scan-001.jpg') return { path };
+			if (path === 'attachments/papersync/papersync-scan-001.jpg') return Object.assign(new TFile(), { path });
 			return null;
 		});
+		mockVault.readBinary.mockResolvedValue(new ArrayBuffer(100));
 
-		const imageData = new ArrayBuffer(100);
 		await saveImageToVault(mockVault as any, imageData, 'attachments/papersync', 'scan-001');
 
 		expect(mockVault.createBinary).not.toHaveBeenCalled();
@@ -105,5 +107,60 @@ describe('attachmentBaseName', () => {
 		['Notes from café', 'papersync-Notes from café'],
 	])('makes %j safe as %j', (id, expected) => {
 		expect(attachmentBaseName(id)).toBe(expected);
+	});
+});
+
+describe('saveImageToVault with a name another file already holds', () => {
+	const asFile = (path: string): TFile => Object.assign(new TFile(), { path });
+	const bytes = (...values: number[]): ArrayBuffer => new Uint8Array(values).buffer;
+	const vault = {
+		getAbstractFileByPath: jest.fn(),
+		createBinary: jest.fn().mockResolvedValue(undefined),
+		createFolder: jest.fn().mockResolvedValue(undefined),
+		readBinary: jest.fn(),
+	};
+	let files: Map<string, ArrayBuffer | 'folder'>;
+
+	beforeEach(() => {
+		jest.clearAllMocks();
+		files = new Map();
+		vault.getAbstractFileByPath.mockImplementation((path: string) => {
+			const entry = files.get(path);
+			if (entry === undefined) return null;
+			return entry === 'folder' ? Object.assign(new TFolder(), { path }) : asFile(path);
+		});
+		vault.readBinary.mockImplementation(async (file: TFile) => files.get(file.path));
+	});
+
+	it('does not reuse another scan\'s photo when two ids sanitize to the same name', async () => {
+		files.set('att/papersync-a_b.jpg', bytes(1, 2, 3));
+
+		const path = await saveImageToVault(vault as any, bytes(9, 9), 'att', 'a#b');
+
+		expect(path).toBe('att/papersync-a_b-2.jpg');
+		expect(vault.createBinary).toHaveBeenCalledWith('att/papersync-a_b-2.jpg', bytes(9, 9));
+	});
+
+	it('reuses the file a retry of the same scan saved, wherever it landed', async () => {
+		files.set('att/papersync-a_b.jpg', bytes(1, 2, 3));
+		files.set('att/papersync-a_b-2.jpg', bytes(9, 9));
+
+		expect(await saveImageToVault(vault as any, bytes(9, 9), 'att', 'a#b')).toBe('att/papersync-a_b-2.jpg');
+		expect(await saveImageToVault(vault as any, bytes(1, 2, 3), 'att', 'a_b')).toBe('att/papersync-a_b.jpg');
+		expect(vault.createBinary).not.toHaveBeenCalled();
+	});
+
+	it('never treats a folder at the path as the photo', async () => {
+		files.set('papersync-scan-1.jpg', 'folder');
+
+		expect(await saveImageToVault(vault as any, bytes(5), '', 'scan-1')).toBe('papersync-scan-1-2.jpg');
+	});
+
+	it('gives up after many taken names rather than looping', async () => {
+		for (let n = 1; n <= 100; n++) {
+			files.set(n === 1 ? 'papersync-s.jpg' : `papersync-s-${n}.jpg`, bytes(n % 250, 7));
+		}
+
+		await expect(saveImageToVault(vault as any, bytes(255), '', 's')).rejects.toThrow('papersync-s');
 	});
 });

@@ -1,4 +1,4 @@
-import { Vault, normalizePath } from 'obsidian';
+import { TFile, Vault, normalizePath } from 'obsidian';
 import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
 
@@ -26,6 +26,19 @@ export function attachmentBaseName(scanId: string): string {
 	return `papersync-${safe || 'scan'}`;
 }
 
+function sameBytes(a: ArrayBuffer, b: ArrayBuffer): boolean {
+	const left = new Uint8Array(a);
+	const right = new Uint8Array(b);
+	return left.length === right.length && left.every((byte, i) => byte === right[i]);
+}
+
+// Distinct ids can sanitize to one name ('a#b' and 'a_b'), so a file already at the
+// path is reused only when it holds these exact bytes: a retry of this scan. Else
+// the next free '-2', '-3'... name is taken, so a note never embeds another scan's
+// photo, and a folder at the path is never mistaken for one. Names stay as before
+// whenever the path is free.
+const MAX_NAME_TRIES = 100;
+
 export async function saveImageToVault(
 	vault: Vault,
 	imageData: ArrayBuffer,
@@ -33,22 +46,29 @@ export async function saveImageToVault(
 	scanId: string
 ): Promise<string> {
 	const folderPath = attachmentsFolder;
-	const fileName = `${attachmentBaseName(scanId)}.${imageExtension(imageData)}`;
-	// An empty folder means the vault root: save the file there with no leading slash and
-	// no folder to create. normalizePath collapses any stray '//' so the embed never breaks.
-	const filePath = normalizePath(folderPath ? `${folderPath}/${fileName}` : fileName);
+	const baseName = attachmentBaseName(scanId);
+	const extension = imageExtension(imageData);
 
 	if (folderPath) {
 		await ensureFolderExists(vault, folderPath);
 	}
 
-	const existing = vault.getAbstractFileByPath(filePath);
-	if (existing) {
-		logger.info(`Image already exists at ${filePath}, skipping`);
-	} else {
-		await vault.createBinary(filePath, imageData);
-		logger.info(`Saved image to ${filePath}`);
+	for (let n = 1; n <= MAX_NAME_TRIES; n++) {
+		const fileName = `${baseName}${n === 1 ? '' : `-${n}`}.${extension}`;
+		// An empty folder means the vault root: save the file there with no leading slash
+		// and no folder to create. normalizePath collapses any stray '//' so the embed
+		// never breaks.
+		const filePath = normalizePath(folderPath ? `${folderPath}/${fileName}` : fileName);
+		const existing = vault.getAbstractFileByPath(filePath);
+		if (existing === null) {
+			await vault.createBinary(filePath, imageData);
+			logger.info(`Saved image to ${filePath}`);
+			return filePath;
+		}
+		if (existing instanceof TFile && sameBytes(await vault.readBinary(existing), imageData)) {
+			logger.info(`Image already exists at ${filePath}, skipping`);
+			return filePath;
+		}
 	}
-
-	return filePath;
+	throw new Error(`No free file name for ${baseName}.${extension} in ${folderPath || 'the vault root'}`);
 }
