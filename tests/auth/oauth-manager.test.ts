@@ -14,11 +14,11 @@ describe('OAuthManager', () => {
 		mockedRequestUrl.mockReset();
 	});
 
-	describe('isAuthenticated / currentAccessToken / restoreFromToken', () => {
+	describe('isAuthenticated / access token / restoreFromToken', () => {
 		it('starts unauthenticated', () => {
 			const mgr = new OAuthManager(makePlugin(), 'client-id');
 			expect(mgr.isAuthenticated).toBe(false);
-			expect(mgr.currentAccessToken).toBeNull();
+			expect((mgr as unknown as { accessToken: string | null }).accessToken).toBeNull();
 		});
 
 		it('becomes authenticated after restoring a refresh token', () => {
@@ -169,7 +169,7 @@ describe('OAuthManager', () => {
 			expect(new URLSearchParams(call.body as string).get('token')).toBe('refresh-abc');
 			// Then the local clear ran.
 			expect(mgr.isAuthenticated).toBe(false);
-			expect(mgr.currentAccessToken).toBeNull();
+			expect((mgr as unknown as { accessToken: string | null }).accessToken).toBeNull();
 			expect(tokenChange).toHaveBeenLastCalledWith('');
 		});
 
@@ -184,7 +184,7 @@ describe('OAuthManager', () => {
 			// Best-effort: the failed revoke is swallowed and disconnect still resolves.
 			await expect(mgr.disconnect()).resolves.toBeUndefined();
 			expect(mgr.isAuthenticated).toBe(false);
-			expect(mgr.currentAccessToken).toBeNull();
+			expect((mgr as unknown as { accessToken: string | null }).accessToken).toBeNull();
 			expect(tokenChange).toHaveBeenLastCalledWith('');
 		});
 
@@ -205,7 +205,7 @@ describe('OAuthManager', () => {
 
 			expect(mockedRequestUrl).not.toHaveBeenCalled();
 			expect(mgr.isAuthenticated).toBe(false);
-			expect(mgr.currentAccessToken).toBeNull();
+			expect((mgr as unknown as { accessToken: string | null }).accessToken).toBeNull();
 		});
 
 		it('does not throw when disconnecting with no token-change listener registered', async () => {

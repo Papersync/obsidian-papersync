@@ -134,7 +134,7 @@ describe('OAuthManager.storeTokens (private)', () => {
 		asInternal(mgr).storeTokens({ accessToken: 'a', refreshToken: 'r', expiresAt });
 
 		expect(mgr.isAuthenticated).toBe(true);
-		expect(mgr.currentAccessToken).toBe('a');
+		expect((mgr as unknown as { accessToken: string | null }).accessToken).toBe('a');
 		expect(tokenChange).toHaveBeenCalledWith('r');
 	});
 });
