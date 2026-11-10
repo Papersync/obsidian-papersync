@@ -148,6 +148,8 @@ describe('OAuthManager.startAuthFlow — callback HTTP server', () => {
 	it('cleanup() closes the active callback server', async () => {
 		const mgr = new OAuthManager(makePlugin(), 'client-id');
 		const { port, flowPromise } = await captureAuthUrl(mgr);
+		// cleanup() rejects the pending flow as superseded.
+		flowPromise.catch(() => undefined);
 
 		// Server is up — first request lands.
 		const before = await httpGet(port, '/callback');
@@ -164,7 +166,6 @@ describe('OAuthManager.startAuthFlow — callback HTTP server', () => {
 		await expect(httpGet(port, '/callback')).rejects.toMatchObject({
 			code: expect.stringMatching(/^ECONN(REFUSED|RESET)$/),
 		});
-		flowPromise.catch(() => undefined);
 	});
 });
 

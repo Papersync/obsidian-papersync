@@ -40,5 +40,8 @@ export const STRINGS = {
 	NOTICE_FOLDER_CREATE_FAILED: (folderPath: string) => `Could not create ${folderPath}. Check the folder permissions and try again.`,
 
 	SETTINGS_CONNECTED: 'Connected to Google Drive',
+	// Google sent the user back with an error (Cancel, Deny, a blocked account).
+	OAUTH_SIGN_IN_ENDED: (error: string) =>
+		error === 'access_denied' ? 'Sign-in was cancelled at Google (access_denied)' : `Google did not finish the sign-in (${error})`,
 
 } as const;

@@ -24,6 +24,11 @@ describe('STRINGS template functions', () => {
 		expect(STRINGS.NOTICE_WAITING_FOR_DOWNLOAD(1)).toBe('Papersync: 1 scan waiting for download');
 	});
 
+	it('OAUTH_SIGN_IN_ENDED says a Cancel at Google plainly and names any other error', () => {
+		expect(STRINGS.OAUTH_SIGN_IN_ENDED('access_denied')).toBe('Sign-in was cancelled at Google (access_denied)');
+		expect(STRINGS.OAUTH_SIGN_IN_ENDED('admin_policy_enforced')).toBe('Google did not finish the sign-in (admin_policy_enforced)');
+	});
+
 	it('NOTICE_PROVIDER_UNAVAILABLE names the provider', () => {
 		expect(STRINGS.NOTICE_PROVIDER_UNAVAILABLE('iCloud Drive')).toBe(
 			'iCloud Drive is not available on this computer. Sign in and enable it, then select it again.'

@@ -5,6 +5,7 @@ import { logger } from '@/utils/logger';
 import { errorMessage, toError } from '@/utils/error-message';
 import { createSyncError } from '@/errors/sync-error';
 import { isSyncError } from '@/errors/error-handler';
+import { STRINGS } from '@/utils/strings';
 import * as http from 'http';
 
 import { OAUTH_TIMEOUT_MS, GOOGLE_CLIENT_SECRET } from '@/config';
@@ -53,6 +54,13 @@ export class OAuthManager {
 	// is ignored.
 	private expectedState: string | null = null;
 	private rejectPendingFlow: ((err: Error) => void) | null = null;
+	// Bumped whenever a sign-in is abandoned (Connect pressed again, Disconnect,
+	// unload). A token exchange still in flight for an older flow then neither
+	// stores its tokens nor closes the newer flow's callback server.
+	private flowGeneration = 0;
+	// Bumped whenever the stored credentials change (a sign-in, Disconnect, a
+	// restore). A token refresh that started before then drops its answer.
+	private credentialGeneration = 0;
 	private endpointsSupplier: GoogleEndpointsSupplier | undefined;
 
 	constructor(plugin: Plugin, clientId: string, endpointsSupplier?: GoogleEndpointsSupplier) {
@@ -72,16 +80,13 @@ export class OAuthManager {
 		return this.refreshToken !== null;
 	}
 
-	get currentAccessToken(): string | null {
-		return this.accessToken;
-	}
-
 	setOnTokenChange(callback: (token: string) => void): void {
 		this.onTokenChange = callback;
 	}
 
 	restoreFromToken(token: string): void {
 		if (token) {
+			this.credentialGeneration++;
 			this.refreshToken = token;
 			logger.info('OAuth refresh token restored from settings');
 		}
@@ -102,6 +107,7 @@ export class OAuthManager {
 
 		const { port, redirectUri } = await this.startCallbackServer(verifier);
 		this.expectedState = state;
+		const flow = this.flowGeneration;
 
 		const authUrl = new URL(this.endpoint('authUrl'));
 		authUrl.searchParams.set('client_id', this.clientId);
@@ -134,6 +140,10 @@ export class OAuthManager {
 				this.rejectPendingFlow = null;
 				void this.exchangeCodeForTokens(code, verifier, redirectUri)
 					.then((tokens) => {
+						if (flow !== this.flowGeneration) {
+							logger.info('OAuth token exchange finished for an abandoned sign-in; ignored');
+							throw supersededError();
+						}
 						this.storeTokens(tokens);
 						resolve(tokens);
 					})
@@ -141,7 +151,10 @@ export class OAuthManager {
 						reject(toError(err));
 					})
 					.finally(() => {
-						this.stopCallbackServer();
+						// A newer flow owns the server now; leave it running.
+						if (flow === this.flowGeneration) {
+							this.stopCallbackServer();
+						}
 					});
 			};
 		});
@@ -174,6 +187,12 @@ export class OAuthManager {
 					const safeDesc = escapeHtml(errorDescription ?? 'Unknown error');
 					res.end(`<html><body><h1>Authorization failed</h1><p>${safeError}: ${safeDesc}</p><p>You can close this window.</p></body></html>`);
 					logger.error(`OAuth callback error: ${error} — ${errorDescription ?? 'no description'}`);
+					// The user pressed Cancel or Deny on this sign-in: end it now rather
+					// than waiting out the timeout. An error without this flow's state
+					// (another local page) changes nothing.
+					if (stateMatches) {
+						this.endPendingFlow(createSyncError('token_revoked', STRINGS.OAUTH_SIGN_IN_ENDED(error)));
+					}
 				} else if (code && stateMatches) {
 					res.end('<html><body><h1>Connected!</h1><p>You can close this window and return to Obsidian.</p></body></html>');
 					logger.info(`OAuth callback received authorization code (${code.length} chars)`);
@@ -223,12 +242,21 @@ export class OAuthManager {
 		this.rejectPendingFlow = null;
 	}
 
+	// Ends the pending flow, whatever stage it is at: a flow waiting for its
+	// callback is rejected as superseded, one whose token exchange is in flight is
+	// rejected the same way when the exchange returns.
 	private supersedePendingFlow(): void {
+		this.flowGeneration++;
+		this.endPendingFlow(supersededError());
+	}
+
+	// Closes the callback server and rejects the flow still waiting for it, if any.
+	private endPendingFlow(error: Error): void {
 		const reject = this.rejectPendingFlow;
 		this.stopCallbackServer();
 		if (reject) {
-			logger.info('OAuth flow restarted; the previous one was cancelled');
-			reject(Object.assign(createSyncError('token_expired', 'Sign-in was restarted'), { superseded: true }));
+			logger.info(`OAuth flow ended: ${error.message}`);
+			reject(error);
 		}
 	}
 
@@ -309,6 +337,7 @@ export class OAuthManager {
 	}
 
 	private async refreshAccessToken(): Promise<string> {
+		const generation = this.credentialGeneration;
 		const body = new URLSearchParams({
 			client_id: this.clientId,
 			client_secret: GOOGLE_CLIENT_SECRET,
@@ -333,12 +362,20 @@ export class OAuthManager {
 			throw createSyncError('network_timeout', `Token refresh network error (${errorMessage(err)})`);
 		}
 
+		// Disconnected or signed in again while this refresh was out: its answer
+		// belongs to credentials that are gone. Answer from the current ones.
+		if (generation !== this.credentialGeneration) {
+			logger.info('Token refresh finished for replaced credentials; ignored');
+			return this.getValidAccessToken();
+		}
+
 		if (response.status >= 400) {
 			const errorData = (jsonOrUndefined(response) ?? {}) as GoogleTokenError;
 			// The ONLY definitive "reconnect" signal is invalid_grant (the refresh token
 			// was actually revoked/expired). Every other 4xx/5xx is treated as transient
 			// so a single bad response cannot clear the token and disconnect the user.
 			if ((response.status === 400 || response.status === 401) && errorData.error === 'invalid_grant') {
+				this.credentialGeneration++;
 				this.accessToken = null;
 				this.refreshToken = null;
 				this.onTokenChange?.('');
@@ -362,6 +399,7 @@ export class OAuthManager {
 	}
 
 	private storeTokens(tokens: OAuthTokens): void {
+		this.credentialGeneration++;
 		this.accessToken = tokens.accessToken;
 		this.refreshToken = tokens.refreshToken;
 		this.expiresAt = tokens.expiresAt;
@@ -401,10 +439,11 @@ export class OAuthManager {
 		// The user-visible disconnect + secret wipe complete immediately; the
 		// best-effort server-side revocation runs afterwards with the captured value.
 		const token = this.refreshToken;
+		this.credentialGeneration++;
 		this.accessToken = null;
 		this.refreshToken = null;
 		this.expiresAt = 0;
-		this.stopCallbackServer();
+		this.supersedePendingFlow();
 		this.onTokenChange?.('');
 		logger.info('OAuth tokens cleared');
 		if (token) {
@@ -413,8 +452,13 @@ export class OAuthManager {
 	}
 
 	cleanup(): void {
-		this.stopCallbackServer();
+		this.supersedePendingFlow();
 	}
+}
+
+// The rejection of a sign-in that a newer one (or Disconnect) replaced.
+function supersededError(): Error {
+	return Object.assign(createSyncError('token_expired', 'Sign-in was restarted'), { superseded: true });
 }
 
 // response.json is a getter that throws on a body that is not JSON (an HTML error
