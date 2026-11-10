@@ -11,8 +11,16 @@ async function vaultFilesNamed(fragment: string): Promise<string[]> {
 
 async function setObsidianAttachmentFolder(value: string): Promise<void> {
 	await switchToMainWindow();
-	await browser.execute((v: string) => {
-		(window as unknown as { app: { vault: { setConfig: (k: string, v: string) => void } } }).app.vault.setConfig('attachmentFolderPath', v);
+	await browser.execute(async (v: string) => {
+		const vault = (window as unknown as { app: { vault: {
+			setConfig: (k: string, v: string) => void;
+			getAbstractFileByPath: (p: string) => unknown;
+			createFolder: (p: string) => Promise<unknown>;
+		} } }).app.vault;
+		vault.setConfig('attachmentFolderPath', v);
+		// A user's attachment folder exists; Obsidian's own attachment path lookup
+		// expects it to.
+		if (v !== '/' && !vault.getAbstractFileByPath(v)) { await vault.createFolder(v); }
 	}, value);
 }
 
