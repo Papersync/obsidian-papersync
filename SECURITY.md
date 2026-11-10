@@ -102,11 +102,21 @@ was photographed, so Papersync treats it as untrusted before it reaches a note:
   on new file creation" turned on.
 - Code blocks that other plugins run (`dataview`, `dataviewjs`, `js-engine`,
   `tasks`, Meta Bind and Buttons blocks) and Dataview inline JS (`` `$=` ``)
-  are broken the same way, so they show as plain code.
-- Remote images (`![](https://...)`, reference-style images) become plain links,
-  and HTML tags that load something (`<img>`, `<iframe>`, `<video>` and the
-  like) are shown as text, so opening a note makes no request.
-- Titles and summaries are escaped to plain text.
+  are broken the same way, so they show as plain code. This holds inside lists
+  and block quotes too, nested or indented.
+- Every image that is not a vault file becomes a plain link: remote images
+  (`![](https://...)`), images with an encoded or escaped address, and
+  reference-style images in all three forms (`![x][ref]`, `![x][]`, `![x]`),
+  since their definition can point anywhere. HTML tags that load something
+  (`<img>`, `<iframe>`, `<video>` and the like) are shown as text, so opening a
+  note makes no request.
+- Titles and summaries are escaped to plain text. The provider and model names
+  are too, keeping the punctuation model names use (`-`, `.`, `/`, `:`, `@`,
+  `_`), so they cannot add code, images, embeds or HTML.
+- Scan text cannot mark another scan as already imported: the import comment
+  older versions wrote (`%% papersync:<id> %%`) is broken in scan text, and is
+  only trusted on a line of its own. Scan text placed at the top of a new note
+  never becomes the note's properties.
 
 Other plugins may define their own executable syntax that this list does not
 cover. If you run such plugins, review imported notes before you let them
