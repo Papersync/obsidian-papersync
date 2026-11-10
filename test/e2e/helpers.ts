@@ -97,18 +97,19 @@ export async function closeSettings(): Promise<void> {
 	// the one being closed, wdio sees its handle vanish and tears the whole
 	// session down ("All window handles were removed").
 	//
-	// The close is deferred to a timer so this script returns BEFORE the window
-	// starts tearing down. Calling close() inside the script made the window go
-	// away while chromedriver was still answering that very command, and on
-	// Obsidian 1.15.0 (macOS) chromedriver then never answered it: one such
-	// executeScript returned only when the session was deleted, 15 min 40 s later
-	// (settings.e2e afterEach, 2026-11-09). With the timer, the script's reply
-	// is sent first and the teardown is watched by polling the handle list only.
+	// The close runs inside the script, not on a timer. Deferring it (so the
+	// script's reply goes out before the window starts tearing down) made the
+	// teardown overlap the next command, the handle-list poll below, and on the
+	// Electron 28 floor chromedriver then crashed outright (ECONNREFUSED from
+	// then on), every time, in template.e2e's first afterEach (2026-11-10).
+	// Known residual: once, on Obsidian 1.15.0 (macOS), this executeScript did not
+	// return until the session was deleted 15 min 40 s later (settings.e2e
+	// afterEach, 2026-11-09); not reproduced in the runs since.
 	const settingsHandle = await findSettingsWindow();
 	await switchToMainWindow();
 	await browser.execute(() => {
 		const setting = (window as unknown as { app?: { setting?: { close?: () => void } } }).app?.setting;
-		window.setTimeout(() => setting?.close?.(), 0);
+		setting?.close?.();
 	});
 	if (settingsHandle) {
 		// 1.13+: wait for the dedicated window to actually go away, polling the
