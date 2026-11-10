@@ -1,4 +1,4 @@
-import { escapePlainText, neutralizeMarkdown, sanitizeInlineValue } from '@/notes/untrusted-text';
+import { escapeMetadataValue, escapePlainText, neutralizeMarkdown } from '@/notes/untrusted-text';
 
 export interface TemplateContext {
 	ps_scan_date: string;
@@ -34,8 +34,10 @@ export const LEGACY_TOKENS: Record<string, keyof TemplateContext> = {
 
 export function renderTemplate(template: string, context: TemplateContext): string {
 	// Every scan-supplied value is untrusted (see untrusted-text.ts). Title and
-	// summary are plain text, flattened and escaped; provider and model are
-	// flattened; the markdown keeps its formatting but loses anything executable.
+	// summary are plain text, flattened and escaped; provider and model too, keeping
+	// the punctuation model names use; the markdown keeps its formatting but loses
+	// anything executable. The other values are made by the plugin (dates from a
+	// validated ISO time, the photo path from a sanitized name).
 	// Do this here so saved notes and the settings preview use the same policy.
 	return template.replace(/\{\{(\w+)\}\}/g, (match, key: string) => {
 		// Own properties only, so {{toString}} and friends stay literal.
@@ -49,7 +51,7 @@ export function renderTemplate(template: string, context: TemplateContext): stri
 				return escapePlainText(value);
 			case 'ps_provider':
 			case 'ps_model':
-				return sanitizeInlineValue(value);
+				return escapeMetadataValue(value);
 			case 'ps_markdown':
 				return neutralizeMarkdown(value);
 			default:
