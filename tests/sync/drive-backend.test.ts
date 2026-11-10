@@ -602,7 +602,7 @@ describe('Drive companion absence classification', () => {
 		mockedRequestUrl.mockResolvedValueOnce({ status: 403, json: {} } as never);
 		await expect(backend.fetchImage(ref)).rejects.toThrow('403');
 		mockedRequestUrl.mockResolvedValueOnce({ status: 404, json: {} } as never);
-		await expect(backend.fetchScan(ref)).rejects.toThrow('404');
+		await expect(backend.fetchScan(ref)).rejects.toMatchObject({ type: 'scan_missing' });
 	});
 });
 

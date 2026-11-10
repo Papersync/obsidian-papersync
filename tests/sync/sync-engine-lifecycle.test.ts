@@ -12,6 +12,8 @@ function makeBackend(): SyncBackend & { startCalls: number; stopCalls: number } 
 	const obj = {
 		startCalls: 0,
 		stopCalls: 0,
+		// Drive-like: the online/offline handling applies to it.
+		needsNetwork: true,
 		discoverUnsynced: jest.fn().mockResolvedValue([]),
 		fetchScan: jest.fn(),
 		fetchImage: jest.fn(),
@@ -554,7 +556,9 @@ describe('SyncEngine.processBatch', () => {
 	});
 
 	// A non-retriable failure fails fast (no backoff sleep) — ideal for cursor-contiguity tests.
-	const nonRetriable = { type: 'schema_mismatch', message: 'nope', retriable: false };
+	// An access failure, not one inside the file: those (schema_mismatch, too
+	// large) are let past the cursor (sync-engine-failures.test.ts).
+	const nonRetriable = { type: 'permission_denied', message: 'nope', retriable: false };
 
 	it('does not advance the cursor to or past an earlier FAILED scan (#2)', async () => {
 		// A (earlier) fails, B (later) succeeds. Advancing to B would strand A forever
@@ -653,7 +657,8 @@ describe('SyncEngine.processBatch', () => {
 		await engine.forceSyncNow();
 
 		expect(state.lastSyncTimestamp).toBe('2026-01-01T00:00:00Z');
-		expect(state.pendingCount).toBe(1);
+		// A permission failure is not a download wait, so nothing counts as pending.
+		expect(state.pendingCount).toBe(0);
 	});
 
 	it('does not double-advance when two successes share a createdTime (#2 tie)', async () => {

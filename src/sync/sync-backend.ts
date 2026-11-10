@@ -6,6 +6,10 @@ export interface ScanReference {
 	jsonPath: string;
 	imagePath: string;
 	createdTime?: string;
+	// Changes whenever the scan JSON changes (Drive's modifiedTime, a folder file's
+	// mtime and size). A scan that failed for good is tried again only once this
+	// differs from the revision that failed.
+	revision?: string;
 	// File sizes in bytes when the backend lists them (Drive), so an oversized
 	// file is refused before it is downloaded.
 	jsonBytes?: number;
@@ -31,6 +35,11 @@ export interface SyncBackend {
 	// watcher sees its folder deleted) report it here, so the failure reaches the
 	// sync state instead of only a log line.
 	setOnUnavailable?(callback: (error: SyncError) => void): void;
+	// Backends that rediscover on a timer of their own (Drive polls) report how
+	// each background discovery ended, so a failing poll reaches the sync state
+	// instead of only a log line, and the next good one clears it. A poll that
+	// found scans is reported through setOnScanDiscovered instead of succeeded.
+	setOnPollResult?(callbacks: { failed: (err: unknown) => void; succeeded: () => void }): void;
 	// How long a JSON whose companion photo is missing waits for it, measured from
 	// the ref's createdTime when valid (else first sight). Backends without one use
 	// the first-sight folder grace (COMPANION_GRACE_MS).
@@ -38,4 +47,7 @@ export interface SyncBackend {
 	// Backends that rediscover on a timer of their own (Drive polls) retry failed
 	// scans anyway; the engine schedules its own retries only for the others.
 	readonly polls?: boolean;
+	// Backends that cannot work without the network (Drive) pause while the
+	// computer is offline. A local or synced folder keeps syncing.
+	readonly needsNetwork?: boolean;
 }

@@ -2,6 +2,7 @@ import { App, Notice } from 'obsidian';
 import type { SyncBackend, ScanReference } from '@/sync/sync-backend';
 import { NoteCreator } from '@/notes/note-creator';
 import type { NoteCreatorConfig } from '@/notes/note-creator';
+import type { SyncError, SyncErrorType } from '@/errors/sync-error';
 import type { ScanFile } from '@/validation/scan-file-schema';
 import { ErrorHandler, isSyncError, stateMessageFor } from '@/errors/error-handler';
 import { SyncState } from '@/sync/sync-state';
@@ -17,13 +18,35 @@ const BATCH_SIZE = 10;
 // an on-demand sync folder) and nothing else will rediscover it, the engine runs
 // a quiet sync again on this schedule, staying at the last step until it clears.
 export const RETRY_SCHEDULE_MS = [30_000, 60_000, 120_000, 300_000, 600_000] as const;
+// Failures that come from the scan file itself: reading it again reads the same
+// bytes, so only a changed file is worth another try.
+const PERMANENT_SCAN_ERRORS = new Set<SyncErrorType>(['schema_mismatch', 'scan_too_large', 'obsidian_version']);
+// Failures that clear once the file or the network comes through: they count as
+// "waiting for download".
+const NETWORK_WAIT_ERRORS = new Set<SyncErrorType>(['icloud_offloaded', 'network_timeout']);
+// A background Drive poll that fails with a network or server error this many
+// times in a row shows the error; a lost sign-in or permission shows at once.
+export const POLL_FAILURES_SHOWN = 3;
 
 export class SyncEngine {
 	private backend: SyncBackend;
 	private noteCreator: NoteCreator;
 	private errorHandler: ErrorHandler;
 	readonly state: SyncState;
+	// Scans whose last failure was a download or network wait, shown as
+	// "waiting for download (N)". Pruned against every listing.
 	private pendingNetwork = new Set<string>();
+	// Scans that failed for a reason inside the file (bad JSON, unsupported
+	// version, too large), by id, with the revision that failed. Their Notice shows
+	// once; the same revision is not fetched again and does not hold the Drive
+	// cursor back, so newer scans keep importing. In memory only: after a reload a
+	// bad file the cursor already passed is not listed again, so it is never retried
+	// and its Notice does not come back. The user saw it once, and the scan can
+	// only import once the phone writes it again as a new file. A bad file still at
+	// or above the cursor is tried (and announced) once more per session.
+	private permanentFailures = new Map<string, string>();
+	// Background Drive polls that failed in a row.
+	private pollFailures = 0;
 	// Scans this session imported or found already synced. Drive re-lists them on
 	// every poll while an older scan holds the cursor back (companion grace), so
 	// they must not count toward the "syncing N" notice. In memory only: it never
@@ -65,7 +88,12 @@ export class SyncEngine {
 
 		backend.setOnScanDiscovered?.((refs) => {
 			this.sourceUnavailable = false;
+			this.pollFailures = 0;
 			return this.processBatch(refs);
+		});
+		backend.setOnPollResult?.({
+			failed: (err) => this.handlePollFailure(err),
+			succeeded: () => this.handleEmptyPoll(),
 		});
 		backend.setOnUnavailable?.((error) => {
 			this.sourceUnavailable = true;
@@ -77,6 +105,10 @@ export class SyncEngine {
 	start(): void {
 		this.active = true;
 		this.companionGrace.resume();
+		if (!this.backend.needsNetwork) {
+			this.backend.start();
+			return;
+		}
 		window.addEventListener('online', this.handleOnline);
 		window.addEventListener('offline', this.handleOffline);
 
@@ -105,7 +137,7 @@ export class SyncEngine {
 			logger.info('Sync engine stopped; not syncing');
 			return;
 		}
-		if (!isOnline()) {
+		if (this.backend.needsNetwork && !isOnline()) {
 			if (!quiet) {
 				new Notice(STRINGS.NOTICE_OFFLINE);
 			}
@@ -122,10 +154,13 @@ export class SyncEngine {
 			const refs = await this.backend.discoverUnsynced();
 			this.companionGrace.retain(refs.map((ref) => ref.id));
 			this.sourceUnavailable = false;
+			this.pollFailures = 0;
 			if (refs.length > 0) {
 				await this.processBatch(refs, !quiet);
 			} else {
 				this.retryLater.clear();
+				this.pendingNetwork.clear();
+				this.permanentFailures.clear();
 				this.state.recordSyncCompleted(0);
 				if (!quiet) {
 					new Notice(STRINGS.NOTICE_NOTHING_NEW);
@@ -161,6 +196,12 @@ export class SyncEngine {
 			for (const id of this.retryLater) {
 				if (!listed.has(id)) {this.retryLater.delete(id);}
 			}
+			for (const id of this.pendingNetwork) {
+				if (!listed.has(id)) {this.pendingNetwork.delete(id);}
+			}
+			for (const id of this.permanentFailures.keys()) {
+				if (!listed.has(id)) {this.permanentFailures.delete(id);}
+			}
 			// Read once per batch so a settings edit cannot change attachment
 			// handling halfway through a scan.
 			const downloadImages = this.noteCreator.config.downloadImages;
@@ -181,7 +222,7 @@ export class SyncEngine {
 			// Announce only scans that will do work: not a re-check of a scan already
 			// waiting for its photo, nor a re-list of one this session already synced.
 			const workCount = unsyncedRefs.filter(
-				(ref) => !this.companionGrace.has(ref.id) && !this.syncedThisSession.has(ref.id)
+				(ref) => !this.companionGrace.has(ref.id) && !this.syncedThisSession.has(ref.id) && !this.failedForGood(ref)
 			).length;
 
 			this.state.setStatus('syncing', remaining);
@@ -207,10 +248,17 @@ export class SyncEngine {
 						logger.info('Sync engine stopped mid-batch; leaving the rest for later');
 						break batches;
 					}
+					if (this.failedForGood(ref)) {
+						// Already announced; it no longer holds the cursor back.
+						if (ref.createdTime) {processedTimes.push(ref.createdTime);}
+						remaining--;
+						continue;
+					}
 					// Set once the note holds this scan. A retry after that point (the
 					// "synced" write-back failed) retries only the write-back: appending
 					// again would duplicate the scan in the note.
 					let written: ScanFile | null = null;
+					let failure: SyncError | null = null;
 					const result = await this.errorHandler.handleWithRetry(ref.id, async () => {
 						try {
 							if (written) {
@@ -221,6 +269,7 @@ export class SyncEngine {
 							const scanFile = await this.backend.fetchScan(ref);
 
 							if (scanFile.synced) {
+								this.pendingNetwork.delete(ref.id);
 								this.companionGrace.complete(ref.id);
 								logger.info(`Scan ${ref.id} already synced, skipping`);
 								return 'skipped';
@@ -253,22 +302,28 @@ export class SyncEngine {
 							if (isSyncError(err) && err.type === 'scan_missing') {
 								logger.info(`Scan ${ref.id} was removed from the source — skipping`);
 								this.pendingNetwork.delete(ref.id);
-								this.companionGrace.complete(ref.id);
 								return 'skipped';
 							}
 							throw err;
 						}
 					}, (error) => {
+						failure = error;
 						if (error.retriable) {
 							this.retryLater.add(ref.id);
 						}
 					});
 
-					if (result === null || result === 'waiting-image') {
-						// Check if the error was icloud_offloaded — add to pending network
-						// The error handler already surfaced the notice; we just track it
-						if (result === null) {
+					// The error handler already surfaced the failure's notice.
+					const gaveUp = failure as SyncError | null;
+					if (result === null && gaveUp && !gaveUp.retriable && PERMANENT_SCAN_ERRORS.has(gaveUp.type)) {
+						this.permanentFailures.set(ref.id, ref.revision ?? '');
+						this.pendingNetwork.delete(ref.id);
+						if (ref.createdTime) {processedTimes.push(ref.createdTime);}
+					} else if (result === null || result === 'waiting-image') {
+						if (result === null && gaveUp && NETWORK_WAIT_ERRORS.has(gaveUp.type)) {
 							this.pendingNetwork.add(ref.id);
+						} else {
+							this.pendingNetwork.delete(ref.id);
 						}
 						// Refs are processed in ascending createdTime order, so the first failure
 						// we see is the earliest — record it once as the cursor ceiling.
@@ -342,6 +397,34 @@ export class SyncEngine {
 			// Release the lock no matter what so a future throw can't deadlock all syncs.
 			this.state.setSyncing(false);
 			this.afterBatch();
+		}
+	}
+
+	private failedForGood(ref: ScanReference): boolean {
+		return this.permanentFailures.get(ref.id) === (ref.revision ?? '');
+	}
+
+	// A background poll failed (the backend reports only while running, so never
+	// after stop()). A lost sign-in, a refused permission or another
+	// error that will not clear by itself shows at once; a network or server error
+	// shows once it has failed POLL_FAILURES_SHOWN times in a row.
+	private handlePollFailure(err: unknown): void {
+		const error = this.errorHandler.classify(err);
+		this.pollFailures++;
+		if (!error.retriable || this.pollFailures >= POLL_FAILURES_SHOWN) {
+			this.state.recordError(stateMessageFor(error));
+		}
+	}
+
+	// A background poll listed nothing to sync: the listing is complete, so nothing
+	// is waiting any more, and an error from earlier polls is over.
+	private handleEmptyPoll(): void {
+		this.pollFailures = 0;
+		this.retryLater.clear();
+		this.permanentFailures.clear();
+		if (this.state.status === 'error' || this.pendingNetwork.size > 0) {
+			this.pendingNetwork.clear();
+			this.state.recordSyncCompleted(this.companionGrace.pendingCount);
 		}
 	}
 

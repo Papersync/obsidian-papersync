@@ -38,6 +38,16 @@ describe('FolderBackend.discoverUnsynced', () => {
 		fs.rmSync(tmp, { recursive: true, force: true });
 	});
 
+	it('gives a ref a revision that changes when its JSON changes', async () => {
+		writeScanJson(tmp, 'a', { ...baseScan, version: '9' });
+		const [first] = await backend.discoverUnsynced();
+		writeScanJson(tmp, 'a', { ...baseScan });
+		fs.utimesSync(path.join(tmp, 'a.json'), new Date(2030, 0, 1), new Date(2030, 0, 1));
+		const [second] = await backend.discoverUnsynced();
+		expect(first!.revision).toEqual(expect.any(String));
+		expect(second!.revision).not.toBe(first!.revision);
+	});
+
 	it('pairs a JSON scan with its .jpg companion', async () => {
 		const base = '2026-04-12-143000';
 		writeScanJson(tmp, base, { ...baseScan, imageFileName: `${base}.jpg` });

@@ -19,6 +19,7 @@ interface DriveFile {
 	id: string;
 	name: string;
 	createdTime?: string;
+	modifiedTime?: string;
 	// int64 as a decimal string; absent for Google Docs types.
 	size?: string;
 }
@@ -91,6 +92,7 @@ export class DriveBackend implements SyncBackend {
 	// out of order. Wait up to 5 minutes from the JSON createdTime for its photo.
 	readonly companionGraceMs = DRIVE_COMPANION_GRACE_MS;
 	readonly polls = true;
+	readonly needsNetwork = true;
 	private oauthManager: OAuthManager;
 	// Seconds, read live: an interval changed in Settings takes effect from the next
 	// tick without restarting sync.
@@ -98,6 +100,7 @@ export class DriveBackend implements SyncBackend {
 	private armedSeconds = 0;
 	private intervalId: number | null = null;
 	private onScanDiscovered: ((refs: ScanReference[]) => Promise<void>) | null = null;
+	private onPollResult: { failed: (err: unknown) => void; succeeded: () => void } | null = null;
 	// False once stopped: a poll still listing then must not hand its scans over.
 	private running = false;
 	private lastSyncTimestamp: string;
@@ -167,6 +170,10 @@ export class DriveBackend implements SyncBackend {
 		this.onScanDiscovered = callback;
 	}
 
+	setOnPollResult(callbacks: { failed: (err: unknown) => void; succeeded: () => void }): void {
+		this.onPollResult = callbacks;
+	}
+
 	start(): void {
 		this.running = true;
 		void this.poll();
@@ -223,11 +230,17 @@ export class DriveBackend implements SyncBackend {
 		try {
 			const refs = await this.discoverUnsynced();
 			logger.info(`Drive poll found ${refs.length} unsynced scans`);
-			if (refs.length > 0 && this.running) {
+			if (!this.running) {return;}
+			if (refs.length > 0) {
 				await this.onScanDiscovered?.(refs);
+			} else {
+				this.onPollResult?.succeeded();
 			}
 		} catch (err) {
 			logger.warn(`Drive poll failed: ${errorMessage(err)}`);
+			// The engine decides what the user sees (a lost sign-in or permission at
+			// once, a network or server error once it keeps failing).
+			if (this.running) {this.onPollResult?.failed(err);}
 			if (err instanceof HttpStatusError) {
 				const retryAfterMs = parseRetryAfter(err.retryAfter);
 				if (retryAfterMs) {
@@ -302,6 +315,7 @@ export class DriveBackend implements SyncBackend {
 				jsonPath: file.id,
 				imagePath: imageFile?.id ?? '',
 				createdTime: file.createdTime,
+				revision: typeof file.modifiedTime === 'string' ? file.modifiedTime : undefined,
 				jsonBytes: byteSize(file),
 				imageBytes: imageFile ? byteSize(imageFile) : undefined,
 			});
@@ -318,7 +332,7 @@ export class DriveBackend implements SyncBackend {
 		let pageToken: string | undefined;
 
 		do {
-			let url = `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime,size),nextPageToken&orderBy=createdTime&pageSize=100`;
+			let url = `${this.endpoint('driveApiBase')}/files?q=${encodeURIComponent(query)}&fields=files(id,name,createdTime,modifiedTime,size),nextPageToken&orderBy=createdTime&pageSize=100`;
 			if (pageToken) {
 				url += `&pageToken=${encodeURIComponent(pageToken)}`;
 			}
@@ -388,10 +402,20 @@ export class DriveBackend implements SyncBackend {
 		const name = `${ref.id}.json`;
 		checkSize(name, ref.jsonBytes, MAX_SCAN_JSON_BYTES);
 		const token = await this.oauthManager.getValidAccessToken();
-		const response = await this.driveRequest({
-			url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
-			headers: { Authorization: `Bearer ${token}` },
-		});
+		let response: RequestUrlResponse;
+		try {
+			response = await this.driveRequest({
+				url: `${this.endpoint('driveApiBase')}/files/${ref.jsonPath}?alt=media`,
+				headers: { Authorization: `Bearer ${token}` },
+			});
+		} catch (err) {
+			// Deleted since listing: the source removed it, which the engine skips
+			// (the folder backend reports a removed file the same way).
+			if (err instanceof HttpStatusError && err.status === 404) {
+				throw createSyncError('scan_missing', `File removed from the Papersync folder on Drive: ${name}`);
+			}
+			throw err;
+		}
 		checkSize(name, downloadedBytes(response), MAX_SCAN_JSON_BYTES);
 		return response;
 	}

@@ -323,6 +323,8 @@ export class FolderBackend implements SyncBackend {
 					id: baseName,
 					jsonPath,
 					imagePath,
+					// Unknown for an offloaded JSON, which has not been read yet.
+					revision: stat ? `${stat.mtimeMs}:${stat.size}` : undefined,
 				});
 			} catch {
 				logger.warn(`Failed to read ${jsonFile} — may be offloaded or corrupted`);
