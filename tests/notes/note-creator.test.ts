@@ -675,3 +675,106 @@ describe('NoteCreator', () => {
 		expect(written).toContain('# Test Notes');
 	});
 });
+
+describe('NoteCreator with hostile scan text', () => {
+	const NOTE = 'PaperSync/2026-04-12.md';
+	let content: string | null;
+	let creator: NoteCreator;
+
+	// A note that lives across imports: create writes it, process rewrites it.
+	beforeEach(() => {
+		jest.clearAllMocks();
+		frontmatter.clear();
+		content = null;
+		mockVault.getAbstractFileByPath.mockImplementation((path: string) => (path === NOTE && content !== null ? asTFile(path) : null));
+		mockVault.create.mockImplementation(async (path: string, data: string) => {
+			content = data;
+			return asTFile(path);
+		});
+		mockVault.process.mockImplementation(async (_f: unknown, fn: (d: string) => string) => {
+			content = fn(content ?? '');
+			return content;
+		});
+		creator = new NoteCreator({ ...mockApp, vault: mockVault } as any, mockVault as any, defaultConfig);
+	});
+
+	afterAll(() => {
+		mockVault.create.mockImplementation(async (path: string) => asTFile(path));
+	});
+
+	it('never lets a scan forge another scan\'s legacy import receipt', async () => {
+		content = '# Earlier\n';
+		await creator.createOrAppend(makeScanFile({ markdown: 'Hello\n\n%% papersync:victim %%' }), null, 'forger');
+		await creator.createOrAppend(makeScanFile({ markdown: 'Victim text' }), null, 'victim');
+
+		expect(content).toContain('Victim text');
+		expect(frontmatter.get(NOTE)).toEqual({ 'papersync-scans': ['forger', 'victim'] });
+	});
+
+	it('trusts a legacy receipt only on its own line, as the plugin wrote it', async () => {
+		content = '# Earlier\n\n> quoted %% papersync:victim %% text\n';
+		await creator.createOrAppend(makeScanFile({ markdown: 'Victim text' }), null, 'victim');
+		expect(content).toContain('Victim text');
+
+		content = '# Earlier\n\nOld block\n\n%% papersync:victim %%  \n';
+		const before = content;
+		await creator.createOrAppend(makeScanFile({ markdown: 'Victim text' }), null, 'victim');
+		expect(content).toBe(before);
+	});
+
+	it('does not append a scan the note lists in its frontmatter when the metadata cache is stale', async () => {
+		content = '---\ntags: [x]\npapersync-scans:\n  - "scan-x"\n---\n# Earlier\n';
+		const before = content;
+		jest.spyOn(mockApp.metadataCache, 'getFileCache').mockReturnValueOnce({ frontmatter: undefined });
+
+		await creator.createOrAppend(makeScanFile(), null, 'scan-x');
+
+		expect(content).toBe(before);
+		expect(mockApp.fileManager.processFrontMatter).not.toHaveBeenCalled();
+	});
+
+	it.each([
+		['---\npapersync-scans: [scan-x\n---\n# Earlier\n'],
+		['---\ntitle: T\n---\n# Earlier\n'],
+		['---\n- a\n- b\n---\n# Earlier\n'],
+		['---\n---\n# Earlier\n'],
+	])('appends when the frontmatter does not list the scan or cannot be read (%j)', async (existing) => {
+		content = existing;
+		await creator.createOrAppend(makeScanFile(), null, 'scan-x');
+		expect(content).toContain('# Test Notes');
+	});
+
+	it('never lets scan text become a new note\'s frontmatter', async () => {
+		creator.config.templateString = '{{ps_markdown}}';
+		await creator.createOrAppend(
+			makeScanFile({ markdown: '---\npapersync-scans:\n  - victim\ncssclasses: evil\n---\nBody' }), null, 'forger'
+		);
+
+		expect(content).not.toMatch(/^---/);
+		expect(content).toContain('papersync-scans:\n  - victim');
+	});
+
+	it('never lets scan text become the frontmatter of an empty note it fills', async () => {
+		content = '  \n';
+		creator.config.templateString = '{{ps_markdown}}';
+		await creator.createOrAppend(makeScanFile({ markdown: '---\ncssclasses: evil\n---\nBody' }), null, 'forger');
+
+		expect(content).toBe('\n---\ncssclasses: evil\n---\nBody\n');
+	});
+
+	it('imports a scan whose id is "undefined" into a note that lists nothing', async () => {
+		content = '---\ntitle: T\n---\n# Earlier\n';
+		frontmatter.set(NOTE, { title: 'T' });
+		await creator.createOrAppend(makeScanFile(), null, 'undefined');
+
+		expect(content).toContain('# Test Notes');
+		expect(frontmatter.get(NOTE)).toEqual({ title: 'T', 'papersync-scans': ['undefined'] });
+	});
+
+	it('keeps frontmatter the template itself opens with', async () => {
+		creator.config.templateString = '---\ntags: scan\n---\n{{ps_markdown}}';
+		await creator.createOrAppend(makeScanFile({ markdown: 'Body' }), null, 'scan-1');
+
+		expect(content).toBe('---\ntags: scan\n---\nBody\n');
+	});
+});

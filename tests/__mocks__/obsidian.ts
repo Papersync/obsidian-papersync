@@ -112,3 +112,14 @@ export class Vault {
 		write: () => Promise.resolve(),
 	};
 }
+
+// Obsidian's frontmatter helpers: a file opening with a `---` line up to the next
+// `---` line, parsed as YAML (Obsidian's parseYaml is js-yaml as well).
+export function getFrontMatterInfo(content: string): { exists: boolean; frontmatter: string } {
+	const match = /^---\r?\n([\s\S]*?)\r?\n?---[ \t]*(?:\r?\n|$)/.exec(content);
+	return { exists: match !== null, frontmatter: match?.[1] ?? '' };
+}
+
+export function parseYaml(yaml: string): unknown {
+	return (require('js-yaml') as { load(text: string): unknown }).load(yaml);
+}

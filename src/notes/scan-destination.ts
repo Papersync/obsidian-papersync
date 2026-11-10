@@ -49,7 +49,7 @@ export function formatFileName(date: Date, name: string): string {
 
 // '' or '/' (any run of slashes) is the vault root; trailing slashes are dropped
 // so a path never gets a '//'.
-function folderPattern(folder: string): string {
+export function folderPattern(folder: string): string {
 	return folder.trim().replace(/\/+$/, '');
 }
 
