@@ -9,7 +9,6 @@ import { isExistingDirectory } from '@/utils/fs';
 import { logger } from '@/utils/logger';
 import { buildScanPlaceholderSvg } from '@/ui/scan-placeholder';
 import { renderTemplate, LEGACY_TOKENS } from '@/notes/template-engine';
-import { isAuthSuperseded } from '@/auth/oauth-manager';
 import type { TemplateContext } from '@/notes/template-engine';
 import { App, Component, MarkdownRenderer, Notice, PluginSettingTab } from 'obsidian';
 import type { Setting } from 'obsidian';
@@ -324,11 +323,7 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 	// below only wire them to rows.
 
 	private async disconnectGoogle(): Promise<void> {
-		this.plugin.stopSync();
-		await this.plugin.oauthManager?.disconnect();
-		this.plugin.settings.backendType = 'none';
-		this.plugin.settings.setupComplete = false;
-		await this.plugin.saveSettings();
+		await this.plugin.disconnectGoogle();
 		new Notice('Disconnected from Google Drive');
 		this.refresh();
 	}
@@ -345,25 +340,15 @@ export class PaperSyncSettingTab extends PluginSettingTab {
 		this.refresh();
 	}
 
+	// The picker (where Connect lives) also shows for a folder backend whose
+	// folder is missing. That storage stays set up, and its engine keeps watching,
+	// until the sign-in succeeds: Cancel at Google changes nothing.
 	private async connectGoogle(): Promise<void> {
-		// The picker (where Connect lives) also shows for a folder backend whose
-		// folder is missing, with that engine still running. Stop it first: a
-		// cancelled or failed sign-in leaves backendType 'none', and nothing may keep
-		// watching (and, once the folder is back, syncing from) the abandoned folder.
-		this.plugin.stopSync();
 		try {
-			this.plugin.settings.backendType = 'drive';
-			await this.plugin.saveSettings();
-			await this.plugin.oauthManager?.startAuthFlow();
-			this.plugin.settings.setupComplete = true;
-			await this.plugin.saveSettings();
-			await this.plugin.startSync();
+			// Connect was pressed again: the newer sign-in owns the settings now.
+			if (await this.plugin.connectGoogle() === 'superseded') {return;}
 			new Notice(STRINGS.SETTINGS_CONNECTED);
 		} catch (err) {
-			// Connect was pressed again: the newer sign-in owns the settings now.
-			if (isAuthSuperseded(err)) {return;}
-			this.plugin.settings.backendType = 'none';
-			await this.plugin.saveSettings();
 			new Notice(`Connection failed: ${errorMessage(err)}`);
 		}
 		this.refresh();

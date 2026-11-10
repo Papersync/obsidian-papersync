@@ -5,7 +5,7 @@ import type { PluginSettings } from '@/settings';
 import { setDebugLogging, logger } from '@/utils/logger';
 import { errorMessage } from '@/utils/error-message';
 import { STRINGS } from '@/utils/strings';
-import { OAuthManager } from '@/auth/oauth-manager';
+import { OAuthManager, isAuthSuperseded } from '@/auth/oauth-manager';
 import { readSecret, writeSecret } from '@/auth/secret-store';
 import { DriveBackend } from '@/sync/drive-backend';
 import { FolderBackend } from '@/sync/folder-backend';
@@ -246,6 +246,48 @@ export default class PaperSyncPlugin extends Plugin {
 		this.syncEngine?.stop();
 		this.syncEngine = null;
 		this.driveBackend = null;
+	}
+
+	// Signs in to Google and switches sync to Drive. Settings change only once the
+	// sign-in succeeded, so a cancelled or failed one (rethrown for the caller to
+	// show) leaves the previous storage exactly as it was, still syncing. Resolves
+	// 'superseded' when Connect was pressed again: the newer sign-in owns the
+	// outcome.
+	async connectGoogle(): Promise<'connected' | 'superseded'> {
+		try {
+			await this.oauthManager?.startAuthFlow();
+		} catch (err) {
+			if (isAuthSuperseded(err)) {return 'superseded';}
+			throw err;
+		}
+		this.detachSync();
+		this.settings.backendType = 'drive';
+		this.settings.setupComplete = true;
+		// The cursor belongs to whatever was synced before (another account, or one
+		// signed out long ago): start over. Already imported scans are marked synced
+		// on Drive and in their notes, so nothing imports twice.
+		this.settings.lastSyncTimestamp = '';
+		await this.saveSettings();
+		await this.startSync();
+		return 'connected';
+	}
+
+	async disconnectGoogle(): Promise<void> {
+		this.detachSync();
+		await this.oauthManager?.disconnect();
+		this.settings.backendType = 'none';
+		this.settings.setupComplete = false;
+		// The next account starts from its oldest scan (see connectGoogle).
+		this.settings.lastSyncTimestamp = '';
+		await this.saveSettings();
+	}
+
+	// Stops sync and stops listening to its state, so a batch the old engine was
+	// still finishing cannot write its cursor back into the settings.
+	private detachSync(): void {
+		this.stopSync();
+		this.unsubscribeSyncState?.();
+		this.unsubscribeSyncState = null;
 	}
 
 	async startSync(): Promise<void> {
