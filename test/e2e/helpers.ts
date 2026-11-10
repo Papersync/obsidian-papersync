@@ -70,8 +70,25 @@ export async function openPluginSettings(): Promise<void> {
 		interval: 200,
 		timeoutMsg: 'settings UI never appeared',
 	});
-	// Let the plugin tab finish painting (template preview etc. render async).
-	await browser.pause(500);
+	// Let the plugin tab finish painting: the template row is always rendered, and
+	// its preview is filled asynchronously, last.
+	await browser.waitUntil(
+		() => browser.execute(() => {
+			const preview = document.querySelector('.papersync-template-preview');
+			return !!document.querySelector('.papersync-template-editor') && !!preview && preview.childElementCount > 0;
+		}),
+		{ timeout: 10_000, interval: 100, timeoutMsg: 'the Papersync settings tab never finished painting' }
+	);
+}
+
+// Names of the settings rows the user can see in the current window (call after
+// focusSettingsUI()). Hidden rows stay in the DOM (Obsidian renders every
+// definition and toggles visibility), so they are filtered out here.
+export async function visibleSettingNames(): Promise<string[]> {
+	return browser.execute(() => Array.from(document.querySelectorAll('.setting-item'))
+		.filter((el) => (el as HTMLElement).offsetParent !== null)
+		.map((el) => el.querySelector('.setting-item-name')?.textContent?.trim() ?? '')
+		.filter((name) => name !== ''));
 }
 
 export async function closeSettings(): Promise<void> {
@@ -79,21 +96,33 @@ export async function closeSettings(): Promise<void> {
 	// while focused on the settings window: if the driver's current window is
 	// the one being closed, wdio sees its handle vanish and tears the whole
 	// session down ("All window handles were removed").
+	//
+	// The close is deferred to a timer so this script returns BEFORE the window
+	// starts tearing down. Calling close() inside the script made the window go
+	// away while chromedriver was still answering that very command, and on
+	// Obsidian 1.15.0 (macOS) chromedriver then never answered it: one such
+	// executeScript returned only when the session was deleted, 15 min 40 s later
+	// (settings.e2e afterEach, 2026-11-09). With the timer, the script's reply
+	// is sent first and the teardown is watched by polling the handle list only.
 	const settingsHandle = await findSettingsWindow();
 	await switchToMainWindow();
 	await browser.execute(() => {
 		const setting = (window as unknown as { app?: { setting?: { close?: () => void } } }).app?.setting;
-		setting?.close?.();
+		window.setTimeout(() => setting?.close?.(), 0);
 	});
 	if (settingsHandle) {
 		// 1.13+: wait for the dedicated window to actually go away, polling the
 		// handle list only — no switching to a window that is mid-teardown.
 		await browser.waitUntil(
 			async () => !(await browser.getWindowHandles()).includes(settingsHandle),
-			{ timeout: 3000, interval: 200, timeoutMsg: 'settings window never closed' }
+			{ timeout: 5000, interval: 200, timeoutMsg: 'settings window never closed' }
 		);
 	} else {
-		await browser.pause(300); // modal teardown
+		// Modal: wait for it to leave the DOM instead of guessing a duration.
+		await browser.waitUntil(
+			async () => browser.execute(() => !document.querySelector('.mod-settings')),
+			{ timeout: 5000, interval: 100, timeoutMsg: 'settings modal never closed' }
+		);
 	}
 	await switchToMainWindow();
 }
@@ -170,7 +199,7 @@ export async function configureFolderBackend(cfg: FolderBackendConfig): Promise<
 		await plugin.saveSettings();
 		await plugin.startSync();
 	}, cfg);
-	await browser.pause(1000);
+	await waitForSyncIdle();
 }
 
 export function writeScan(dir: string, id: string, scan: Record<string, unknown>, image = true): void {
@@ -194,10 +223,76 @@ export async function triggerSyncNow(): Promise<void> {
 	});
 }
 
-export async function syncNow(): Promise<void> {
-	await browser.pause(2500);
-	await triggerSyncNow();
-	await browser.pause(3000);
+// Runs one Sync now and returns once the engine is idle: the pass itself, any
+// background pass (the watcher's) it overlapped, and the extra pass the engine
+// queues for a discovery that arrived during a batch. Waits on the engine's own
+// state instead of fixed pauses, so a slow machine is waited out and a fast one
+// is not. A pass that fails (a missing folder) also ends here; read the result
+// from the vault or getSyncSnapshot().
+export async function syncNow(timeoutMs = 60_000): Promise<void> {
+	await switchToMainWindow();
+	await browser.execute(async () => {
+		const ps = (window as unknown as { app: { plugins: { plugins: Record<string, {
+			syncEngine: { forceSyncNow: () => Promise<void> } | null;
+		}> } } }).app.plugins.plugins;
+		const plugin = ps['papersync'] || ps['obsidian-papersync'];
+		await plugin?.syncEngine?.forceSyncNow();
+	});
+	await waitForSyncIdle(timeoutMs);
+}
+
+// True when no batch is running and none is queued. Checked twice in a row, 250 ms
+// apart: the queued pass reads the folder before it takes the sync lock, so a
+// single idle reading can fall in that gap.
+export async function waitForSyncIdle(timeoutMs = 60_000): Promise<void> {
+	const idleNow = (): Promise<boolean> => browser.execute(() => {
+		const ps = (window as unknown as { app: { plugins: { plugins: Record<string, {
+			syncState: { isSyncing: boolean };
+			syncEngine: { rerunRequested?: boolean } | null;
+		}> } } }).app.plugins.plugins;
+		const plugin = ps['papersync'] || ps['obsidian-papersync'];
+		return !!plugin && !plugin.syncState.isSyncing && !plugin.syncEngine?.rerunRequested;
+	});
+	await switchToMainWindow();
+	await browser.waitUntil(async () => {
+		if (!(await idleNow())) { return false; }
+		await browser.pause(250);
+		return idleNow();
+	}, { timeout: timeoutMs, interval: 200, timeoutMsg: `sync never went idle within ${timeoutMs}ms` });
+}
+
+export interface SyncSnapshot {
+	status: string;
+	pendingCount: number;
+	isSyncing: boolean;
+	lastError: string | null;
+	lastSyncCompletedAt: number;
+}
+
+// The live sync state (startSync replaces the object, so read it fresh each time).
+export async function getSyncSnapshot(): Promise<SyncSnapshot> {
+	await switchToMainWindow();
+	return browser.execute(() => {
+		const ps = (window as unknown as { app: { plugins: { plugins: Record<string, {
+			syncState: { snapshot: SyncSnapshot };
+		}> } } }).app.plugins.plugins;
+		const plugin = ps['papersync'] || ps['obsidian-papersync'];
+		if (!plugin) { throw new Error('PaperSync plugin not loaded'); }
+		return plugin.syncState.snapshot;
+	});
+}
+
+// Waits for a sync pass that completed after `since` (a lastSyncCompletedAt
+// reading taken before the scans were written). The positive signal a negative
+// assertion ("this scan was NOT imported") must wait for: without it, absence
+// only proves the sync had not run yet.
+export async function waitForSyncCompletedAfter(since: number, timeoutMs = 60_000): Promise<SyncSnapshot> {
+	let snap: SyncSnapshot | null = null;
+	await browser.waitUntil(async () => {
+		snap = await getSyncSnapshot();
+		return snap.lastSyncCompletedAt > since && !snap.isSyncing;
+	}, { timeout: timeoutMs, interval: 250, timeoutMsg: `no sync completed within ${timeoutMs}ms` });
+	return snap!;
 }
 
 // Concatenated bodies of every markdown note whose path contains `needle`.
