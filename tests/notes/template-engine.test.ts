@@ -89,10 +89,17 @@ describe('renderTemplate', () => {
 	expect(renderTemplate('{{ps_markdown}}', { ...defaultContext, ps_markdown: value })).toBe(value);
 	expect(renderTemplate('{{ps_provider}}|{{ps_model}}', {
 		...defaultContext, ps_provider: 'a\nb', ps_model: 'm <%* x %>',
-	})).toBe('a b|m <\u200B%* x %\u200B>');
+	})).toBe(String.raw`a b|m \<\%\* x \%\>`);
  });
 
 it('neutralizes executable syntax in the scan markdown', () => {
 	expect(renderTemplate('{{ps_markdown}}', { ...defaultContext, ps_markdown: '<%* app.vault %>' }))
 		.toBe('<\u200B%* app.vault %\u200B>');
+});
+
+it('renders provider and model as plain text, never code, an image, an embed or HTML', () => {
+	const hostile = '`$= dv.span(1)` ![p](https://evil.test/p.png) ![[Secret.md]] <img src=x> %% papersync:v %%';
+	const rendered = renderTemplate('{{ps_provider}} {{ps_model}}', { ...defaultContext, ps_provider: hostile, ps_model: hostile });
+	expect(rendered).not.toMatch(/(?<!\\)[`!<%]/);
+	expect(renderTemplate('{{ps_model}}', { ...defaultContext, ps_model: 'google/gemini-2.5-pro' })).toBe('google/gemini-2.5-pro');
 });
