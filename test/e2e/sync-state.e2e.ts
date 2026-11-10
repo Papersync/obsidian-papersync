@@ -1,65 +1,77 @@
-import { openPluginSettings, closeSettings } from './helpers';
+import * as fs from 'fs';
+import * as path from 'path';
+import { STRINGS } from '../../src/utils/strings';
+import { closeSettings, configureFolderBackend, switchToMainWindow, vaultBasePath, waitForNotes, waitForPlugin, writeScan, isoStamp } from './helpers';
+
+async function noticeTexts(): Promise<string[]> {
+	await switchToMainWindow();
+	return browser.execute(() => Array.from(document.querySelectorAll('.notice')).map((n) => n.textContent ?? ''));
+}
+
+async function statusBarText(): Promise<string> {
+	await switchToMainWindow();
+	return browser.execute(() => Array.from(document.querySelectorAll('.status-bar-item'))
+		.map((el) => el.textContent ?? '')
+		.find((t) => t.startsWith('Papersync')) ?? '');
+}
 
 describe('Sync state management', function () {
+	const SCANS = 'Papersync-syncstate-scans';
+	let dir: string;
+
 	before(async function () {
-		// Wait for plugin init (wizard may open after 500ms delay), then dismiss all modals
-		await browser.pause(1500);
-		// Keep pressing Escape until no modal remains
-		for (let i = 0; i < 5; i++) {
-			const modal = await browser.$('.modal-bg');
-			if (!(await modal.isExisting())) break;
-			await browser.keys('Escape');
-			await browser.pause(500);
-		}
-		// On 1.13+ the first-run settings open as a separate window, which the
-		// modal loop above never sees; close it the window-aware way.
+		await waitForPlugin();
+		// A clean vault opens Settings on first run (a window on 1.13+); close it so
+		// the ribbon and status bar are in reach.
 		await closeSettings();
-		// Ensure setupComplete is true for consistent test state
-		await browser.execute(async () => {
-			const app = (window as unknown as { app: { plugins: { plugins: Record<string, { settings: Record<string, unknown>; saveSettings: () => Promise<void> }> } } }).app;
-			const plugin = app.plugins.plugins['papersync'];
-			if (plugin) {
-				plugin.settings.setupComplete = true;
-				await plugin.saveSettings();
-			}
-		});
+		dir = path.join(await vaultBasePath(), SCANS);
+		fs.mkdirSync(dir, { recursive: true });
 	});
 
-	it('sync now shows notice when not configured', async function () {
-		// Open settings to check if we're connected
-		await openPluginSettings();
-		const body = await browser.$('body');
-		const settingsText = await body.getText();
-		await closeSettings();
-
-		if (!settingsText.includes('Change storage')) {
-			// Not connected — sync now should show a notice
-			await browser.executeObsidianCommand('papersync:sync-now');
-			await browser.pause(500);
-			// The notice DOM appears briefly — just verify no crash
-		}
+	after(function () {
+		try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* best effort */ }
 	});
 
-	it('ribbon icon exists and is clickable', async function () {
-		const ribbon = await browser.$('.side-dock-ribbon-action[aria-label="Papersync"]');
-		if (await ribbon.isExisting()) {
-			await ribbon.click();
-			await browser.pause(500);
-			// Should not crash
-		}
-	});
-
-	it('status bar text updates after sync command', async function () {
-		const bodyBefore = await browser.$('body');
-		const textBefore = await bodyBefore.getText();
-
+	it('Sync now with no storage chosen says Papersync is not configured', async function () {
+		// The clean test vault has no backend, so there is no sync engine.
 		await browser.executeObsidianCommand('papersync:sync-now');
-		await browser.pause(2000);
+		await browser.waitUntil(
+			async () => (await noticeTexts()).some((t) => t.includes('Papersync is not configured')),
+			{ timeout: 5000, interval: 100, timeoutMsg: 'no "not configured" notice after Sync now' }
+		);
+	});
 
-		const bodyAfter = await browser.$('body');
-		const textAfter = await bodyAfter.getText();
+	it('the ribbon icon (tooltip Sync scans now) runs a sync that imports a waiting scan', async function () {
+		await configureFolderBackend({ folderPath: dir, targetFolder: 'SyncStateTest', attachmentsFolder: 'SyncStateTest/attachments' });
+		const ribbon = await browser.$(`.side-dock-ribbon-action[aria-label="${STRINGS.RIBBON_TOOLTIP}"]`);
+		await ribbon.waitForExist({ timeout: 5000 });
 
-		// Status should contain Papersync in some state
-		expect(textAfter).toContain('Papersync');
+		// Stop the watcher so only the ribbon click can import this scan.
+		await browser.execute(() => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, { syncEngine: { backend: { stop: () => void } } | null }> } } }).app.plugins.plugins;
+			ps['papersync']?.syncEngine?.backend.stop();
+		});
+		const stamp = isoStamp();
+		const id = `ribbon-${stamp}`;
+		const marker = `RIBBON_${stamp}`;
+		writeScan(dir, id, {
+			version: 1,
+			createdAt: new Date().toISOString(),
+			markdown: `# ${marker}`,
+			confidence: 90,
+			provider: 'gemini',
+			model: 'gemini-2.5-flash',
+			imageFileName: `${id}.jpg`,
+		});
+
+		await ribbon.click();
+		await waitForNotes('SyncStateTest', marker, 20_000);
+	});
+
+	it('the status bar says synced after a completed sync', async function () {
+		await browser.waitUntil(
+			async () => (await statusBarText()) === STRINGS.STATUS_SYNCED,
+			{ timeout: 10_000, interval: 200, timeoutMsg: `status bar never showed "${STRINGS.STATUS_SYNCED}"` }
+		);
 	});
 });

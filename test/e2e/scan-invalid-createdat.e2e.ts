@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { configureFolderBackend, vaultBasePath, writeScan, syncNow, readNotes, isoStamp } from './helpers';
+import { configureFolderBackend, vaultBasePath, writeScan, syncNow, waitForNotes, isoStamp } from './helpers';
 
 // Regression lock for the createdAt -> z.iso.datetime() tightening: a non-parseable
 // createdAt must be rejected as a schema mismatch (no note, no "Invalid date" /
@@ -48,8 +48,9 @@ describe('Invalid createdAt rejection', function () {
 
 		await syncNow();
 
-		const notes = await readNotes('BadDate');
-		expect(notes).toContain(goodMarker);
+		// The valid sibling's import proves the pass that saw both scans has run, so
+		// the absence checks below are about the rejection, not about timing.
+		const notes = await waitForNotes('BadDate', goodMarker, 20_000);
 		expect(notes).not.toContain(badMarker);
 
 		const corrupt = await browser.execute(() => {
