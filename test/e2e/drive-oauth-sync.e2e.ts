@@ -624,4 +624,167 @@ describe('Drive OAuth + sync against fake Google', function () {
 
 		await closeSettings();
 	});
+
+	// The settings data.json holds right now (not the in-memory copy), so a spec can
+	// prove what was SAVED, e.g. that a cancelled sign-in persisted nothing.
+	async function savedSettings(): Promise<Record<string, unknown>> {
+		await switchToMainWindow();
+		return browser.execute(async () => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
+			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as { loadData: () => Promise<Record<string, unknown>> };
+			return plugin.loadData();
+		});
+	}
+
+	async function setSettings(values: Record<string, unknown>): Promise<void> {
+		await switchToMainWindow();
+		await browser.execute(async (v: Record<string, unknown>) => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
+			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as {
+				settings: Record<string, unknown>;
+				saveSettings: () => Promise<void>;
+			};
+			Object.assign(plugin.settings, v);
+			await plugin.saveSettings();
+		}, values);
+	}
+
+	async function noticesContaining(text: string): Promise<number> {
+		await switchToMainWindow();
+		return browser.execute((t: string) =>
+			Array.from(document.querySelectorAll('.notice')).filter((n) => (n.textContent ?? '').includes(t)).length, text);
+	}
+
+	const scanBody = (base: string, markdown: string): Record<string, unknown> => ({
+		version: '1',
+		imageFileName: `${base}.jpg`,
+		createdAt: new Date().toISOString(),
+		markdown,
+		confidence: 90,
+		provider: 'e2e-fake-google',
+		model: 'mock-model',
+		synced: false,
+	});
+
+	it('ends the sign-in at once when Google consent is declined, keeping the folder setup', async function () {
+		// A folder backend whose folder is missing shows the picker (Connect) while
+		// it stays set up: the state a user switching to Drive is in.
+		const folderSetup = {
+			backendType: 'folder',
+			folderPath: '/nonexistent/papersync-e2e-missing-folder',
+			folderType: 'custom',
+			setupComplete: true,
+		};
+		await switchToMainWindow();
+		await browser.execute(async () => {
+			const ps = (window as unknown as { app: { plugins: { plugins: Record<string, unknown> } } }).app.plugins.plugins;
+			const plugin = (ps['papersync'] ?? ps['obsidian-papersync']) as { oauthManager: { disconnect: () => Promise<void> } | null; stopSync: () => void };
+			plugin.stopSync();
+			await plugin.oauthManager?.disconnect();
+		});
+		await setSettings(folderSetup);
+		fake.clearRequests();
+		fake.denyNextConsent();
+
+		await openPluginSettings();
+		const started = Date.now();
+		await clickConnectWithPatchedOpen();
+
+		// Rejected within seconds (the 3 minute sign-in timeout is far longer).
+		await browser.waitUntil(async () => {
+			for (const handle of await browser.getWindowHandles()) {
+				try {
+					await browser.switchToWindow(handle);
+					const text = await (await browser.$('body')).getText();
+					if (text.includes('Connection failed') && text.includes('cancelled')) { return true; }
+				} catch { /* window closed mid-poll */ }
+			}
+			return false;
+		}, { timeout: 10000, interval: 250, timeoutMsg: 'A declined consent did not end the sign-in within 10 s' });
+		expect(Date.now() - started).toBeLessThan(10000);
+
+		// Nothing switched to Drive, in memory or on disk; the folder setup is intact.
+		const s = await state();
+		expect(s.backendType).toBe('folder');
+		expect(s.setupComplete).toBe(true);
+		expect(s.isAuthenticated).toBe(false);
+		const saved = await savedSettings();
+		expect(saved).toMatchObject(folderSetup);
+		expect(fake.tokenRequests()).toHaveLength(0);
+
+		await closeSettings();
+		await setSettings({ backendType: 'none', folderPath: '', folderType: '', setupComplete: false });
+	});
+
+	it('a new Google connection imports scans older than the previous connection\'s cursor', async function () {
+		// The previous account synced up to a day from now.
+		await seedConnectedState();
+		await setSettings({ lastSyncTimestamp: new Date(Date.now() + 86_400_000).toISOString() });
+		await reloadPlugin();
+
+		const base = `drive-older-${isoStamp()}`;
+		const { jsonId } = fake.seedScan(base, scanBody(base, '# Older account scan'), MINIMAL_JPEG, new Date(Date.now() - 86_400_000).toISOString());
+
+		// Change storage (disconnect), then Connect again, through the real UI.
+		await openPluginSettings();
+		await clickButtonWhenPresent('Change storage');
+		await browser.waitUntil(async () => !(await state()).isAuthenticated, {
+			timeout: 15000, interval: 250, timeoutMsg: 'Change storage never disconnected Google',
+		});
+		expect((await savedSettings()).lastSyncTimestamp).toBe('');
+		await clickConnectWithPatchedOpen();
+
+		await browser.waitUntil(
+			async () => fake.requests.some((r) => r.method === 'PATCH' && r.path === `/upload/drive/v3/files/${jsonId}` && r.responseStatus === 200),
+			{ timeout: 20000, interval: 250, timeoutMsg: 'The older scan never imported after reconnecting (cursor kept?)' }
+		);
+		expect(await readNotes(TARGET_FOLDER)).toContain('# Older account scan');
+		await closeSettings();
+	});
+
+	it('notifies once about a scan it cannot read, and newer scans still import past it', async function () {
+		await seedConnectedState();
+		await setSettings({ lastSyncTimestamp: '' });
+		fake.clearRequests();
+		await reloadPlugin();
+		// Let the reload's own first poll finish before seeding.
+		await browser.waitUntil(async () => fake.driveListRequests().some((r) => r.responseStatus === 200 && !r.query.q?.startsWith('name =')), {
+			timeout: 15000, interval: 250, timeoutMsg: 'The reload never polled Drive',
+		});
+		await browser.pause(1000);
+
+		const stamp = isoStamp();
+		// Newer than every scan earlier tests seeded, which the reload's first poll
+		// already synced and moved the cursor to.
+		const t1 = new Date(Date.now() + 60_000).toISOString();
+		const t2 = new Date(Date.now() + 120_000).toISOString();
+		const bad = fake.seedRawScan(`drive-future-${stamp}`, JSON.stringify({ ...scanBody(`drive-future-${stamp}`, '# Future format'), version: '99' }), MINIMAL_JPEG, t1);
+		const good = fake.seedScan(`drive-newer-${stamp}`, scanBody(`drive-newer-${stamp}`, '# Newer than the bad scan'), MINIMAL_JPEG, t2);
+
+		await triggerSyncNow();
+		await browser.waitUntil(
+			async () => fake.requests.some((r) => r.method === 'PATCH' && r.path === `/upload/drive/v3/files/${good.jsonId}` && r.responseStatus === 200),
+			{ timeout: 20000, interval: 250, timeoutMsg: 'The scan newer than the bad one never imported' }
+		);
+		expect(await readNotes(TARGET_FOLDER)).toContain('# Newer than the bad scan');
+
+		// The cursor moved past the bad scan.
+		await browser.waitUntil(async () => String((await savedSettings()).lastSyncTimestamp) >= t2, {
+			timeout: 10000, interval: 250, timeoutMsg: 'The cursor stayed behind the bad scan',
+		});
+
+		// Two more syncs, each waiting until it re-read the good scan's JSON
+		// (listed again until the saved cursor reaches the next poll).
+		for (let i = 0; i < 2; i++) {
+			const before = fake.driveListRequests().length;
+			await triggerSyncNow();
+			await browser.waitUntil(async () => fake.driveListRequests().length > before, {
+				timeout: 15000, interval: 250, timeoutMsg: `Sync ${i + 2} never listed Drive`,
+			});
+			await browser.pause(1500);
+		}
+
+		expect(fake.downloadsOf(bad.jsonId)).toHaveLength(1);
+		expect(await noticesContaining('newer format')).toBe(1);
+	});
 });

@@ -30,6 +30,8 @@ interface DriveNode {
 	mimeType: string;
 	parentId: string; // 'root' at the top of the chain
 	createdTime: string;
+	// Bumped by every PATCH, like Drive's own modifiedTime.
+	modifiedTime: string;
 	content: Buffer;
 }
 
@@ -45,7 +47,7 @@ interface TokenFault {
 }
 
 interface PageSnapshot {
-	files: Array<{ id: string; name: string; createdTime: string }>;
+	files: Array<{ id: string; name: string; createdTime: string; modifiedTime: string }>;
 	offset: number;
 }
 
@@ -81,6 +83,9 @@ export class FakeGoogle {
 	readonly revokedTokens: string[] = [];
 	private files = new Map<string, DriveNode>();
 	private nextTokenFault: TokenFault | null = null;
+	// The OAuth error the NEXT authorization request returns to the plugin's
+	// callback instead of a code (the user pressing Cancel on Google's consent page).
+	private nextConsentError: string | null = null;
 	// Page tokens reference a snapshot of the result set taken at the FIRST page, so
 	// a seed landing mid-pagination can never skip or duplicate entries the way a
 	// bare mutable offset would.
@@ -141,6 +146,12 @@ export class FakeGoogle {
 	 */
 	clearFaults(): void {
 		this.nextTokenFault = null;
+		this.nextConsentError = null;
+	}
+
+	/** The NEXT consent page is declined: Google redirects with error=<error> and the state. */
+	denyNextConsent(error = 'access_denied'): void {
+		this.nextConsentError = error;
 	}
 
 	/** Mint a refresh token the fake accepts, for specs that seed a connected state directly. */
@@ -182,7 +193,7 @@ export class FakeGoogle {
 			const id = `folder-${++this.seq}`;
 			this.files.set(id, {
 				id, name: part, mimeType: FOLDER_MIME, parentId,
-				createdTime: new Date().toISOString(), content: Buffer.alloc(0),
+				createdTime: new Date().toISOString(), modifiedTime: new Date().toISOString(), content: Buffer.alloc(0),
 			});
 			parentId = id;
 		}
@@ -191,19 +202,29 @@ export class FakeGoogle {
 
 	/** Seed an unsynced scan (<base>.json + <base>.jpg) into the scans folder. */
 	seedScan(baseName: string, scan: Record<string, unknown>, image: Buffer, createdTime?: string): { jsonId: string; imageId: string } {
+		return this.seedRawScan(baseName, JSON.stringify(scan, null, 2), image, createdTime);
+	}
+
+	/** Same as seedScan with the JSON file's bytes as given (a corrupt or future-format scan). */
+	seedRawScan(baseName: string, json: string, image: Buffer, createdTime?: string): { jsonId: string; imageId: string } {
 		const folderId = this.seedScansFolder();
 		const time = createdTime ?? new Date().toISOString();
 		const jsonId = `file-${++this.seq}`;
 		this.files.set(jsonId, {
 			id: jsonId, name: `${baseName}.json`, mimeType: 'application/json', parentId: folderId,
-			createdTime: time, content: Buffer.from(JSON.stringify(scan, null, 2)),
+			createdTime: time, modifiedTime: time, content: Buffer.from(json),
 		});
 		const imageId = `file-${++this.seq}`;
 		this.files.set(imageId, {
 			id: imageId, name: `${baseName}.jpg`, mimeType: 'image/jpeg', parentId: folderId,
-			createdTime: time, content: image,
+			createdTime: time, modifiedTime: time, content: image,
 		});
 		return { jsonId, imageId };
+	}
+
+	/** Every alt=media download of one file, in order. */
+	downloadsOf(id: string): RecordedRequest[] {
+		return this.requests.filter((r) => r.method === 'GET' && r.path === `/drive/v3/files/${id}`);
 	}
 
 	fileJson(id: string): unknown {
@@ -311,6 +332,19 @@ export class FakeGoogle {
 		}
 		if (q.code_challenge_method !== 'S256') {
 			return sendOAuthError(res, 400, 'invalid_request', 'code_challenge_method must be S256');
+		}
+
+		if (this.nextConsentError) {
+			const error = this.nextConsentError;
+			this.nextConsentError = null;
+			const denied = new URL(q.redirect_uri);
+			denied.searchParams.set('error', error);
+			if (q.state) {
+				denied.searchParams.set('state', q.state);
+			}
+			res.writeHead(302, { Location: denied.toString() });
+			res.end();
+			return 302;
 		}
 
 		const code = `code-${crypto.randomBytes(12).toString('hex')}`;
@@ -450,7 +484,7 @@ export class FakeGoogle {
 				if (after) {
 					children = children.filter((f) => f.createdTime > after);
 				}
-				files = children.map((f) => ({ id: f.id, name: f.name, createdTime: f.createdTime }));
+				files = children.map((f) => ({ id: f.id, name: f.name, createdTime: f.createdTime, modifiedTime: f.modifiedTime }));
 			}
 
 			const payload: { files: PageSnapshot['files']; nextPageToken?: string } = {
@@ -489,6 +523,7 @@ export class FakeGoogle {
 			return sendDriveError(res, 400, 'Only uploadType=media is supported by fake-google', 'INVALID_ARGUMENT');
 		}
 		node.content = Buffer.from(body);
+		node.modifiedTime = new Date().toISOString();
 		return sendJson(res, 200, { id: node.id, name: node.name });
 	}
 }
