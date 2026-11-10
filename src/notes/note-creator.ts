@@ -1,22 +1,15 @@
-import { App, Vault, TFile, moment, normalizePath } from 'obsidian';
+import { App, Vault, TFile, getFrontMatterInfo, normalizePath, parseYaml } from 'obsidian';
 import { scanTitle } from '@papersync/scan-format';
 import { renderTemplate } from '@/notes/template-engine';
 import { MAX_SUMMARY_CHARS, MAX_TITLE_CHARS, clampLength, neutralizeMarkdown } from '@/notes/untrusted-text';
 import type { TemplateContext } from '@/notes/template-engine';
 import { attachmentBaseName, saveImageToVault } from '@/notes/image-handler';
 import type { ScanFile } from '@/validation/scan-file-schema';
-import { getDailyNotesConfig } from '@/utils/daily-notes';
-import { resolveNotePath } from '@/notes/scan-destination';
+import { getDailyNotesConfig, momentOf } from '@/utils/daily-notes';
+import { folderPattern, resolveNotePath } from '@/notes/scan-destination';
 import type { SaveTo } from '@/notes/scan-destination';
 import { ensureFolderExists } from '@/utils/vault';
 import { logger } from '@/utils/logger';
-
-// obsidian.d.ts types its `moment` export as `typeof Moment` from
-// `import * as Moment from 'moment'`. Under esModuleInterop (TypeScript 6's
-// default) a namespace import of an `export =` module is not callable, although
-// the runtime value is the moment function. Describe the one call made here
-// rather than depend on moment's typings directly (it is only a transitive dep).
-const momentOf = moment as unknown as (date: Date) => { format(pattern: string): string };
 
 // The plugin-owned frontmatter list of scan ids already written into a note. The
 // import checks it before appending, so a scan whose "synced" flag could not be
@@ -30,14 +23,46 @@ const momentOf = moment as unknown as (date: Date) => { format(pattern: string):
 // retry appends it once more (a visible duplicate the user can delete). A duplicate is
 // recoverable, a lost scan is not, so the block goes first. The window is two adjacent
 // local writes. The id is added with processFrontMatter, never by editing YAML by hand.
+//
+// The list is checked twice: in the metadata cache first (no write at all when it
+// lists the id), then in the note's own text inside the atomic append, since the
+// cache can lag behind the file.
 export const SCANS_PROPERTY = 'papersync-scans';
 
-// Closed-test notes carry `%% papersync:<id> %% ` comments from the earlier scheme.
-// They still count as "already imported" (matched in their URI-encoded form); the
-// plugin never writes them any more.
-function legacyMarker(scanId: string): string {
-	return `%% papersync:${encodeURIComponent(scanId)} %%`;
+// The ids a papersync-scans value lists: a list, a lone scalar, or nothing.
+function listedIds(value: unknown): string[] {
+	return [value].flat().filter((id) => id != null).map(String);
 }
+
+// Whether the note text's own frontmatter lists the id. Unreadable YAML lists nothing.
+function frontmatterLists(content: string, scanId: string): boolean {
+	const info = getFrontMatterInfo(content);
+	if (!info.exists) {
+		return false;
+	}
+	try {
+		const properties = parseYaml(info.frontmatter) as Record<string, unknown> | null | undefined;
+		return listedIds(properties?.[SCANS_PROPERTY]).includes(scanId);
+	} catch {
+		return false;
+	}
+}
+
+// Closed-test notes carry `%% papersync:<id> %%` comments from the earlier scheme,
+// each on a line of its own at the end of its block. They still count as "already
+// imported" (matched in their URI-encoded form), but only on such a line: scan text
+// cannot write one any more (untrusted-text.ts breaks it), and a marker inside
+// other text was never the plugin's. The plugin never writes them any more.
+function hasLegacyMarker(content: string, scanId: string): boolean {
+	const marker = `%% papersync:${encodeURIComponent(scanId)} %%`;
+	return content.split('\n').some((line) => line.trimEnd() === marker);
+}
+
+// A note opens with frontmatter when its first line is '---'. Only the template may
+// open it: scan text placed first would become the note's properties (a forged
+// papersync-scans list included). A leading line break keeps that text in the body,
+// where it renders as it does when appended under an earlier scan.
+const FRONTMATTER_FENCE = /^---[ \t]*(?:\r?\n|$)/;
 
 export interface NoteCreatorConfig {
 	templateString: string;
@@ -144,37 +169,41 @@ export class NoteCreator {
 		}
 
 		rendered = `${rendered.trimEnd()}\n`;
+		// What the note holds when this scan is all of it (a new or empty note).
+		const wholeNote = FRONTMATTER_FENCE.test(rendered) && !FRONTMATTER_FENCE.test(config.templateString)
+			? `\n${rendered}`
+			: rendered;
 
 		let target: TFile;
 		if (existingFile instanceof TFile) {
 			target = existingFile;
 			const listed: unknown = this.app.metadataCache.getFileCache(existingFile)?.frontmatter?.[SCANS_PROPERTY];
-			if ([listed].flat().map(String).includes(scanId)) {
+			if (listedIds(listed).includes(scanId)) {
 				logger.info(`Scan ${scanId} is already listed in ${notePath}, not appending it again`);
 				return notePath;
 			}
 			// vault.process is an atomic read-modify-write that goes through Obsidian's
 			// cache and fires modify events, unlike adapter.read/write which bypasses both.
-			// The legacy marker check runs inside it, on the content it is about to change.
-			const marker = legacyMarker(scanId);
+			// The frontmatter and legacy marker checks run inside it, on the content it is
+			// about to change.
 			let alreadyImported = false;
 			await this.vault.process(existingFile, (existingContent) => {
-				if (existingContent.includes(marker)) {
+				if (frontmatterLists(existingContent, scanId) || hasLegacyMarker(existingContent, scanId)) {
 					alreadyImported = true;
 					return existingContent;
 				}
 				const trimmed = existingContent.trimEnd();
 				return trimmed.length > 0
 					? trimmed + '\n\n' + rendered
-					: rendered;
+					: wholeNote;
 			});
 			if (alreadyImported) {
-				logger.info(`Scan ${scanId} is already in ${notePath} (legacy marker), not appending it again`);
+				logger.info(`Scan ${scanId} is already in ${notePath}, not appending it again`);
 				return notePath;
 			}
 			logger.info(`Appended scan ${scanId} to ${notePath}`);
 		} else {
-			target = await this.vault.create(notePath, rendered);
+			target = await this.vault.create(notePath, wholeNote);
 			logger.info(`Created new note ${notePath} for scan ${scanId}`);
 		}
 
@@ -211,7 +240,7 @@ export class NoteCreator {
 		}
 		// Strip a trailing slash for parity with targetFolder, so 'Attachments/' does not
 		// become 'Attachments//papersync-<id>.jpg' and a broken embed.
-		const override = setting.trim().replace(/\/+$/, '');
+		const override = folderPattern(setting);
 		if (override) {
 			return override;
 		}
