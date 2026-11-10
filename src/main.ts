@@ -1,4 +1,4 @@
-import { Notice, Plugin } from 'obsidian';
+import { Notice, Plugin, requireApiVersion } from 'obsidian';
 import { DEFAULT_SETTINGS, PaperSyncSettingTab, migrateSettings } from '@/settings';
 import { sanitizeSettings } from '@/settings-validation';
 import type { PluginSettings } from '@/settings';
@@ -124,9 +124,9 @@ export default class PaperSyncPlugin extends Plugin {
 
 	private checkMinObsidianVersion(): boolean {
 		const MIN_VERSION = '1.13.4';
-		// requireApiVersion is an Obsidian global that checks minAppVersion
-		const requireApiVersion = (window as unknown as { requireApiVersion?: (version: string) => boolean }).requireApiVersion;
-		if (requireApiVersion && !requireApiVersion(MIN_VERSION)) {
+		// Next to the manifest's minAppVersion. requireApiVersion is exported by the
+		// obsidian module; it is not a window global, so a window lookup never ran it.
+		if (!requireApiVersion(MIN_VERSION)) {
 			new Notice(STRINGS.NOTICE_OBSIDIAN_VERSION, 0);
 			logger.error(`Obsidian version too old — requires ${MIN_VERSION}+`);
 			return false;

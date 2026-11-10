@@ -80,6 +80,8 @@ export const Platform = {
 	isDesktop: true,
 };
 
+export const requireApiVersion = jest.fn(() => true);
+
 export const requestUrl = jest.fn(() =>
 	Promise.resolve({ json: {}, arrayBuffer: new ArrayBuffer(0), status: 200 })
 );
