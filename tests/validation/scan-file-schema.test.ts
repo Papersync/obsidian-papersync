@@ -46,7 +46,12 @@ describe('validateScanFile', () => {
 		if ('error' in result) {
 			expect(result.error).toContain('Unsupported Papersync scan version');
 			expect(result.error).toContain('update the Papersync plugin');
+			expect(result.newerVersion).toBe(true);
 		}
+	});
+
+	it('marks a damaged or foreign file as not from a newer app', () => {
+		expect(validateScanFile({ papersyncManualTest: true })).toMatchObject({ newerVersion: false });
 	});
 
 	it('rejects null input', () => {
@@ -75,16 +80,16 @@ describe('validateScanFile', () => {
 	it.each([0, -1, 2.5, '01', '2.0', '2e0', 'foo', Infinity, NaN, 1e9, null, true])(
 		'reports malformed version %j as a schema error', (version) => {
 			const result = validateScanFile({ ...validScanFile, version });
-			expect(result).toEqual({ error: expect.stringContaining('Invalid Papersync scan file:') });
+			expect(result).toEqual({ error: expect.stringContaining('Invalid Papersync scan file:'), newerVersion: false });
 		}
 	);
 
 	it('does not suggest updating the plugin for an unrelated object with a version', () => {
-		expect(validateScanFile({ version: 2 })).toEqual({ error: expect.stringContaining('Invalid Papersync scan file:') });
+		expect(validateScanFile({ version: 2 })).toEqual({ error: expect.stringContaining('Invalid Papersync scan file:'), newerVersion: false });
 	});
 
 	it.each([2, '2', 999999999])('recognizes future version %j even with other invalid fields', (version) => {
-		expect(validateScanFile({ version, markdown: '' })).toEqual({ error: expect.stringContaining('update the Papersync plugin') });
+		expect(validateScanFile({ version, markdown: '' })).toEqual({ error: expect.stringContaining('update the Papersync plugin'), newerVersion: true });
 	});
 
 	it('rejects a non-ISO createdAt so it never reaches new Date() as garbage (#10)', () => {

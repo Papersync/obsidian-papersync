@@ -363,7 +363,7 @@ export class DriveBackend implements SyncBackend {
 		const validated = validateScanFile(raw);
 
 		if ('error' in validated) {
-			throw createSyncError('schema_mismatch', validated.error);
+			throw createSyncError(validated.newerVersion ? 'scan_newer_version' : 'schema_mismatch', validated.error);
 		}
 
 		return validated;

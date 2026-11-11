@@ -16,14 +16,16 @@ z.config(en());
 
 export type { ScanFile } from '@papersync/scan-format';
 
-export function validateScanFile(raw: unknown): ScanFile | { error: string } {
+// `newerVersion`: the file is a valid scan from a newer app (updating the plugin
+// imports it), not a damaged or foreign file.
+export function validateScanFile(raw: unknown): ScanFile | { error: string; newerVersion: boolean } {
 	const result = parseScanFile(raw);
 	if (result.ok) {
 		return result.file;
 	}
+	const newerVersion = result.kind === 'unsupported_version';
 	return {
-		error: result.kind === 'unsupported_version'
-			? `${result.message} Please update the Papersync plugin.`
-			: result.message,
+		error: newerVersion ? `${result.message} Please update the Papersync plugin.` : result.message,
+		newerVersion,
 	};
 }

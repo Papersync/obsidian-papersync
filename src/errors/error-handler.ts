@@ -17,7 +17,8 @@ const USER_MESSAGES: Record<SyncErrorType, string> = {
 	permission_denied: STRINGS.NOTICE_DRIVE_PERMISSION,
 	token_expired: STRINGS.NOTICE_TOKEN_EXPIRED,
 	token_revoked: STRINGS.NOTICE_TOKEN_EXPIRED,
-	schema_mismatch: STRINGS.NOTICE_SCHEMA_MISMATCH,
+	schema_mismatch: STRINGS.NOTICE_SCAN_UNREADABLE,
+	scan_newer_version: STRINGS.NOTICE_SCAN_NEWER_VERSION,
 	obsidian_version: STRINGS.NOTICE_OBSIDIAN_VERSION,
 	icloud_offloaded: STRINGS.NOTICE_DOWNLOADING_OFFLOADED,
 	folder_missing: STRINGS.NOTICE_FOLDER_MISSING,
@@ -34,6 +35,13 @@ const USER_MESSAGES: Record<SyncErrorType, string> = {
 // report. A missing folder is the exception. Its raw message is an absolute local
 // path, and the settings tab already names the folder in its own warning, so the
 // plain-language guidance reads better than the internal detail.
+// A scan the plugin gave up on names its file, so the user can find it. Scan ids
+// are the file name stem on both backends.
+const SCAN_NAMED_MESSAGES: Partial<Record<SyncErrorType, (fileName: string) => string>> = {
+	schema_mismatch: STRINGS.NOTICE_SCAN_UNREADABLE_NAMED,
+	scan_newer_version: STRINGS.NOTICE_SCAN_NEWER_VERSION_NAMED,
+};
+
 export function stateMessageFor(error: SyncError): string {
 	return error.type === 'folder_missing' ? USER_MESSAGES.folder_missing : error.message;
 }
@@ -68,7 +76,7 @@ export class ErrorHandler {
 				return this.handleWithRetry(scanId, operation, onGiveUp);
 			}
 
-			this.surface(syncError);
+			this.surface(syncError, scanId);
 			onGiveUp?.(syncError);
 			this.retryCountMap.delete(scanId);
 			return null;
@@ -129,8 +137,9 @@ export class ErrorHandler {
 		return STRINGS.NOTICE_DRIVE_403_UNKNOWN;
 	}
 
-	surface(error: SyncError): void {
-		const userMessage = error.guidance ?? USER_MESSAGES[error.type];
+	surface(error: SyncError, scanId?: string): void {
+		const named = scanId === undefined ? undefined : SCAN_NAMED_MESSAGES[error.type]?.(`${scanId}.json`);
+		const userMessage = error.guidance ?? named ?? USER_MESSAGES[error.type];
 		logger.error(`${error.type}: ${error.message}`);
 
 		// Always notify. surface() runs only terminally (after retries are exhausted),

@@ -262,6 +262,15 @@ describe('DriveBackend', () => {
 				backend.fetchScan({ id: 'a', jsonPath: 'json-1', imagePath: 'img-1' })
 			).rejects.toMatchObject({ type: 'schema_mismatch' });
 		});
+
+		it('throws scan_newer_version for a scan from a newer app', async () => {
+			mockedRequestUrl.mockResolvedValueOnce({ json: { version: 99, markdown: 'x' } } as never);
+			const backend = new DriveBackend(makeOAuthManager(), 30);
+
+			await expect(
+				backend.fetchScan({ id: 'a', jsonPath: 'json-1', imagePath: 'img-1' })
+			).rejects.toMatchObject({ type: 'scan_newer_version', retriable: false });
+		});
 	});
 
 	describe('fetchImage', () => {
