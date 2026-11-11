@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'crypto';
 import { FakeGoogle } from './fake-google';
-import { MINIMAL_JPEG, openPluginSettings, waitForPlugin, triggerSyncNow, readNotes, isoStamp, switchToMainWindow, focusSettingsUI, closeSettings, clickButtonWhenPresent } from './helpers';
+import { MINIMAL_JPEG, openPluginSettings, waitForPlugin, triggerSyncNow, readNotes, isoStamp, switchToMainWindow, focusSettingsUI, closeSettings, clickButtonWhenPresent, closeSettingsIfOpen } from './helpers';
 import { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, OAUTH_TOKEN_SECRET_ID } from '../../src/config';
 
 // Drives the REAL Google Drive lane (PKCE OAuth + Drive v3 sync client) end-to-end
@@ -215,6 +215,7 @@ describe('Drive OAuth + sync against fake Google', function () {
 		// A fault armed by a failed (or retried) test must not stay stranded and
 		// poison the next test's token request.
 		fake.clearFaults();
+		await closeSettingsIfOpen();
 		// The window.open patch is scoped per Connect click — restore it here so no
 		// later test (or retry) runs under a stale patch. The patch lives on the
 		// MAIN window's global (where plugin code runs), so restore it there.

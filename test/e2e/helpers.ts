@@ -72,13 +72,36 @@ export async function openPluginSettings(): Promise<void> {
 	});
 	// Let the plugin tab finish painting: the template row is always rendered, and
 	// its preview is filled asynchronously, last.
-	await browser.waitUntil(
-		() => browser.execute(() => {
-			const preview = document.querySelector('.papersync-template-preview');
-			return !!document.querySelector('.papersync-template-editor') && !!preview && preview.childElementCount > 0;
-		}),
-		{ timeout: 10_000, interval: 100, timeoutMsg: 'the Papersync settings tab never finished painting' }
-	);
+	try {
+		await browser.waitUntil(
+			() => browser.execute(() => {
+				const preview = document.querySelector('.papersync-template-preview');
+				return !!document.querySelector('.papersync-template-editor') && !!preview && preview.childElementCount > 0;
+			}),
+			{ timeout: 10_000, interval: 100, timeoutMsg: 'the Papersync settings tab never finished painting' }
+		);
+	} catch (err) {
+		// Say what WAS on screen, so a red names the state instead of only the wait.
+		const seen = await browser.execute(() => ({
+			title: document.title,
+			tab: document.querySelector('.vertical-tab-nav-item.is-active')?.textContent ?? null,
+			rows: document.querySelectorAll('.papersync-template-row').length,
+			editors: document.querySelectorAll('.papersync-template-editor').length,
+			previews: Array.from(document.querySelectorAll('.papersync-template-preview')).map((p) => p.childElementCount),
+			settingNames: Array.from(document.querySelectorAll('.setting-item-name')).map((n) => n.textContent ?? '').slice(0, 12),
+		})).catch((e: unknown) => ({ unreadable: String(e) }));
+		throw new Error(`${(err as Error).message}; on screen: ${JSON.stringify(seen)}`);
+	}
+}
+
+// Close Settings if a failed test left them open, so one red stays one red
+// instead of failing every later test that opens Settings (2026-11-10, master
+// e2e: one paint timeout became six failures in drive-oauth-sync).
+export async function closeSettingsIfOpen(): Promise<void> {
+	if (await focusSettingsUI()) {
+		await closeSettings();
+	}
+	await switchToMainWindow();
 }
 
 // Names of the settings rows the user can see in the current window (call after
