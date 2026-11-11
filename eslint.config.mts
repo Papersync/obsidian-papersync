@@ -34,6 +34,8 @@ export default tseslint.config(
 		"tests/**",
 		"test/**",
 		"coverage/**",
+		// The local E2E download cache (Obsidian, its plugins); never project source.
+		".obsidian-cache/**",
 		"jest.config.cjs",
 		"wdio.conf.mts",
 	]),
