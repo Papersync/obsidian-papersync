@@ -216,7 +216,14 @@ describe('FolderBackend stop during a discovery pass', () => {
 		try {
 			backend.start();
 			await jest.advanceTimersByTimeAsync(600);
-			await jest.advanceTimersByTimeAsync(0);
+			// Discovery reads the folder with real fs calls, which fake timers do not
+			// wait for: on a slow CI runner the read was still pending after the
+			// advance (PR 24, 2026-11-11). Let real I/O finish, bounded so a broken
+			// discovery still fails here rather than hanging.
+			for (let i = 0; i < 200 && onDiscovered.mock.calls.length === 0; i++) {
+				await fs.promises.stat(tmp);
+				await jest.advanceTimersByTimeAsync(0);
+			}
 			expect(onDiscovered).toHaveBeenCalledTimes(1);
 		} finally {
 			backend.stop();
