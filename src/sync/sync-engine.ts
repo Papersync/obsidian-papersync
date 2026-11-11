@@ -20,7 +20,7 @@ const BATCH_SIZE = 10;
 export const RETRY_SCHEDULE_MS = [30_000, 60_000, 120_000, 300_000, 600_000] as const;
 // Failures that come from the scan file itself: reading it again reads the same
 // bytes, so only a changed file is worth another try.
-const PERMANENT_SCAN_ERRORS = new Set<SyncErrorType>(['schema_mismatch', 'scan_too_large', 'obsidian_version']);
+const PERMANENT_SCAN_ERRORS = new Set<SyncErrorType>(['schema_mismatch', 'scan_newer_version', 'scan_too_large', 'obsidian_version']);
 // Failures that clear once the file or the network comes through: they count as
 // "waiting for download".
 const NETWORK_WAIT_ERRORS = new Set<SyncErrorType>(['icloud_offloaded', 'network_timeout']);

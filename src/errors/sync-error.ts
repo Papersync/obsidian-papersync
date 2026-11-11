@@ -5,6 +5,7 @@ export type SyncErrorType =
 	| 'token_expired'
 	| 'token_revoked'
 	| 'schema_mismatch'
+	| 'scan_newer_version'
 	| 'obsidian_version'
 	| 'icloud_offloaded'
 	| 'folder_missing'
@@ -62,6 +63,7 @@ export function createSyncError(
 		token_expired: true,
 		token_revoked: false,
 		schema_mismatch: false,
+		scan_newer_version: false,
 		obsidian_version: false,
 		icloud_offloaded: true,
 		folder_missing: false,

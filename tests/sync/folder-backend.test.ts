@@ -215,6 +215,12 @@ describe('FolderBackend.fetchScan', () => {
 		await expect(backend.fetchScan(ref)).rejects.toMatchObject({ type: 'schema_mismatch' });
 	});
 
+	it('throws scan_newer_version for a scan from a newer app', async () => {
+		fs.writeFileSync(path.join(tmp, 'newer.json'), JSON.stringify({ version: 99, markdown: 'x' }));
+		const ref = { id: 'newer', jsonPath: path.join(tmp, 'newer.json'), imagePath: '' };
+		await expect(backend.fetchScan(ref)).rejects.toMatchObject({ type: 'scan_newer_version', retriable: false });
+	});
+
 	it('normalizes string version to numeric v1', async () => {
 		const base = '2026-04-12-143000';
 		// Older writers emitted string v1; reads now normalize it.

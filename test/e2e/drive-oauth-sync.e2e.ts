@@ -785,6 +785,6 @@ describe('Drive OAuth + sync against fake Google', function () {
 		}
 
 		expect(fake.downloadsOf(bad.jsonId)).toHaveLength(1);
-		expect(await noticesContaining('newer format')).toBe(1);
+		expect(await noticesContaining(`"drive-future-${stamp}.json" yet: a newer Papersync app made it`)).toBe(1);
 	});
 });

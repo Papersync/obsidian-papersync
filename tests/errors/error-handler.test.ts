@@ -101,6 +101,30 @@ describe('ErrorHandler', () => {
 				noticeSpy.mockRestore();
 			}
 		});
+
+		it.each([
+			['schema_mismatch', STRINGS.NOTICE_SCAN_UNREADABLE_NAMED('2026-11-01-a.json'), STRINGS.NOTICE_SCAN_UNREADABLE],
+			['scan_newer_version', STRINGS.NOTICE_SCAN_NEWER_VERSION_NAMED('2026-11-01-a.json'), STRINGS.NOTICE_SCAN_NEWER_VERSION],
+		] as const)('names the scan file for %s, and stays generic without one', (type, named, generic) => {
+			const noticeSpy = jest.spyOn(obsidian, 'Notice').mockImplementation(() => undefined as never);
+			try {
+				handler.surface(createSyncError(type, 'raw detail'), '2026-11-01-a');
+				handler.surface(createSyncError(type, 'raw detail'));
+				expect(noticeSpy.mock.calls).toEqual([[named, 10_000], [generic, 10_000]]);
+			} finally {
+				noticeSpy.mockRestore();
+			}
+		});
+
+		it('keeps the canned message for a type without a scan-named one', () => {
+			const noticeSpy = jest.spyOn(obsidian, 'Notice').mockImplementation(() => undefined as never);
+			try {
+				handler.surface(createSyncError('scan_too_large', 'x'), 'big');
+				expect(noticeSpy).toHaveBeenCalledWith(STRINGS.NOTICE_SCAN_TOO_LARGE, 10_000);
+			} finally {
+				noticeSpy.mockRestore();
+			}
+		});
 	});
 
 	describe('handleWithRetry', () => {

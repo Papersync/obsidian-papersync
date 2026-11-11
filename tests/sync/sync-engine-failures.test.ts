@@ -117,11 +117,11 @@ describe('SyncEngine failure handling across syncs', () => {
 		it('lets the cursor advance past it and notifies once, not on every poll', async () => {
 			const backend = makeBackend();
 			backend.refs = [ref('bad', T1, 'rev1'), ref('good', T2, 'rev1')];
-			backend.failures.set('bad', createSyncError('schema_mismatch', 'Unsupported scan version 9'));
+			backend.failures.set('bad', createSyncError('scan_newer_version', 'Unsupported scan version 9'));
 			const { engine, state } = engineFor(backend);
 
 			await sync(engine);
-			expect(notices.filter((n) => n === STRINGS.NOTICE_SCHEMA_MISMATCH)).toHaveLength(1);
+			expect(notices.filter((n) => n === STRINGS.NOTICE_SCAN_NEWER_VERSION_NAMED('bad.json'))).toHaveLength(1);
 			expect(state.lastSyncTimestamp).toBe(T2);
 			expect(backend.updateLastSyncTimestamp).toHaveBeenLastCalledWith(T2);
 
@@ -158,6 +158,7 @@ describe('SyncEngine failure handling across syncs', () => {
 			backend.failures.set('bad', createSyncError('schema_mismatch', 'not a scan'));
 			const { engine } = engineFor(backend);
 			await sync(engine);
+			expect(notices).toContain(STRINGS.NOTICE_SCAN_UNREADABLE_NAMED('bad.json'));
 			await sync(engine);
 			const fetchesOfBad = (): number => (backend.fetchScan as jest.Mock).mock.calls.filter(([r]) => (r as ScanReference).id === 'bad').length;
 			expect(fetchesOfBad()).toBe(1);
