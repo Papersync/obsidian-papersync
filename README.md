@@ -13,11 +13,11 @@
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-success">
 </p>
 
-Snap a handwritten page with the [Papersync app](https://play.google.com/store/apps/details?id=ai.papersync.app), and it lands in today's daily note as Markdown.
+Snap a handwritten page with the [Papersync app](https://papersync.ai), and it lands in today's daily note as Markdown.
 
 ## What you need
 
-- The Papersync app (Android now, iPhone soon).
+- The Papersync app on iPhone or Android.
 - An API key from an AI provider you pick in the app. Some providers charge for use.
 - Obsidian on desktop.
 
@@ -41,5 +41,3 @@ Search **Papersync** in **Settings › Community plugins**. Or copy `main.js`, `
 ## Help
 
 [Discussions](https://github.com/Papersync/obsidian-papersync/discussions/categories/q-a) for questions, [issues](https://github.com/Papersync/obsidian-papersync/issues/new/choose) for bugs. Building from source: [CONTRIBUTING.md](CONTRIBUTING.md). Licensed under [MIT](LICENSE).
-
-<sub>Google Play is a trademark of Google LLC.</sub>
