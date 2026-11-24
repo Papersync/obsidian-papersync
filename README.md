@@ -13,7 +13,7 @@
   <img alt="No telemetry" src="https://img.shields.io/badge/telemetry-none-success">
 </p>
 
-Snap a handwritten page with the [Papersync app](https://papersync.ai), and it lands in today's daily note as Markdown.
+Snap a handwritten page with the [Papersync app](https://papersync.ai), and it lands in today's note as Markdown.
 
 ## What you need
 
@@ -36,7 +36,7 @@ Scans waiting there import right away. Edit the template first if you want a dif
 
 ## Install
 
-Search **Papersync** in **Settings › Community plugins**. Or copy `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersync/releases/latest) into `<vault>/.obsidian/plugins/papersync/`.
+Search **Papersync** in **Settings › Community plugins**, or open it in the [plugin directory](https://obsidian.md/plugins?id=papersync). Or copy `main.js`, `manifest.json` and `styles.css` from the [latest release](https://github.com/Papersync/obsidian-papersync/releases/latest) into `<vault>/.obsidian/plugins/papersync/`.
 
 ## Help
 
